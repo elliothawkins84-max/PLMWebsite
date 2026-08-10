@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- <title>[Business Name] — Laser Engraving</title> -->
+  <meta name="description" content="Precision laser engraving on wood, metal, glass, and more." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="site-header" id="top">
+    <div class="container nav">
+      <a href="#top" class="logo logo-text"><img src="logo-text.png" alt="[Business Name]" /></a>
+      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="nav-links">
+        <a href="#services">SPECIALTIES</a>
+        <!-- <a href="#work">[ WORK ]</a> -->
+        <a href="#about">ABOUT</a>
+        <a href="#contact">CONTACT</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero: video background + company name -->
+    <section class="hero" id="hero">
+      <div class="hero-video" aria-hidden="true">
+        <video
+          class="hero-video-frame"
+          id="hero-video-frame"
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="auto"
+          tabindex="-1"
+        >
+          <source src="hero-video.mp4" type="video/mp4" />
+        </video>
+      </div>
+      <div class="hero-overlay" aria-hidden="true"></div>
+      <div class="hero-inner container">
+        <!-- <p class="index-line">( LASER ENGRAVING STUDIO )</p> -->
+        <h1 class="display hero-title">
+          <img class="hero-title-logo" src="hero-logo.png" alt="[Business Name]" />
+        </h1>
+        <!-- <p class="lead hero-lead">
+          Precision engraving &amp; on wood, metal, glass, leather, acrylic, and more.
+        </p> -->
+        <!-- <div class="hero-actions">
+          <a href="#contact" class="btn">Get a Quote</a>
+          <a href="#services" class="btn btn-ghost">See Services &rarr;</a>
+        </div> -->
+      </div>
+      <a href="#services" class="scroll-hint" aria-label="Scroll to specialties">SCROLL &darr;</a>
+    </section>
+
+    <!-- Specialties (numbered catalog) -->
+    <section id="services" class="section container">
+      <header class="section-head">
+        <!-- <p class="eyebrow">( SPECIALTIES )</p> -->
+        <h2>Our specialties.</h2>
+      </header>
+      <div class="explorer" id="explorer">
+        <div class="selector">
+          <div class="sel-group">
+            <span class="sel-label">MATERIALS</span>
+            <div class="sel-btns">
+              <button class="chip" data-target="card-metal">Metal</button>
+              <button class="chip" data-target="card-plastic">Plastic</button>
+              <button class="chip" data-target="card-glass">Glass</button>
+              <button class="chip" data-target="card-leather">Organics</button>
+              <button class="chip" data-target="card-other">Other</button>
+            </div>
+          </div>
+          <div class="sel-group">
+            <span class="sel-label">OUR WAVELENGTHS</span>
+            <div class="sel-btns">
+              <button class="chip" data-target="card-co2">10,600<span class="u">nm</span></button>
+              <button class="chip" data-target="card-fiber">1064<span class="u">nm</span></button>
+              <button class="chip" data-target="card-diode">455<span class="u">nm</span></button>
+              <button class="chip" data-target="card-uv">355<span class="u">nm</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage" id="stage">
+          <!-- Materials -->
+          <article class="mat-card" id="card-metal" data-kind="metal">
+            <div class="mat-tilt">
+              <div class="mat-tex" aria-hidden="true"></div>
+              <div class="mat-inner">
+                <span class="mat-tag">MATERIAL / 01</span>
+                <h3 class="mat-title">Metal</h3>
+                <p class="mat-desc">High precision permanent marks onto stainless steel, aluminum, titanium, brass, copper, and other metals.
+                    Ideal for serialization, traceability, logos, bar codes, part identification, and fine-detail graphics where permanence, legibility, and durability are critical.</p>
+                <div class="mat-art" aria-hidden="true">
+                  <svg class="art-svg" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
+                    <polygon points="30,10 70,10 92,50 70,90 30,90 8,50" />
+                    <circle cx="50" cy="50" r="19" />
+                  </svg>
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+
+          <article class="mat-card" id="card-plastic" data-kind="plastic">
+            <div class="mat-tilt">
+              <div class="mat-tex" aria-hidden="true"></div>
+              <div class="mat-inner">
+                <span class="mat-tag">MATERIAL / 02</span>
+                <h3 class="mat-title">Plastic</h3>
+                <p class="mat-desc">Clean, high-contrast/ permanent marks for identification across a broad range of engineered and molded plastics.
+                    Ideal for components, electronic, controls, housings, face plates, adapters, and technical parts where conventional labels or printing may not provide the required durability or precision.</p>
+                <div class="mat-art" aria-hidden="true">
+                  <svg class="art-svg" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+                    <polyline points="12,64 31,42 50,64 69,42 88,64" />
+                    <line x1="31" y1="42" x2="31" y2="24" />
+                    <line x1="69" y1="42" x2="69" y2="24" />
+                    <circle cx="12" cy="64" r="6.5" />
+                    <circle cx="31" cy="42" r="6.5" />
+                    <circle cx="50" cy="64" r="6.5" />
+                    <circle cx="69" cy="42" r="6.5" />
+                    <circle cx="88" cy="64" r="6.5" />
+                  </svg>
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+
+          <article class="mat-card" id="card-glass" data-kind="glass">
+            <div class="mat-tilt">
+              <div class="mat-tex" aria-hidden="true"></div>
+              <div class="mat-inner">
+                <span class="mat-tag">MATERIAL / 03</span>
+                <h3 class="mat-title">Glass</h3>
+                <p class="mat-desc">Laser marking produces a controlled frosted etched effect with exceptional detail and consistency.
+                    Ideal for premium branding, laboratory glassware, bottles, architectural applications, and specialty products that require a durable, chemical-resistant mark.</p>
+                <div class="mat-art" aria-hidden="true">
+                  <svg class="art-svg" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+                    <path d="M30 14 h40 v6 a20 20 0 0 1 -20 22 a20 20 0 0 1 -20 -22 z" />
+                    <line x1="50" y1="42" x2="50" y2="82" />
+                    <line x1="32" y1="86" x2="68" y2="86" />
+                  </svg>
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+
+          <article class="mat-card" id="card-leather" data-kind="leather">
+            <div class="mat-tilt">
+              <div class="mat-tex" aria-hidden="true"></div>
+              <div class="mat-inner">
+                <span class="mat-tag">MATERIAL / 04</span>
+                <h3 class="mat-title">Organics</h3>
+                <p class="mat-desc">Wood, leather, paper, cork, textiles, and other materials can be precisely engraved to produce crisp detail and depth control.
+                  Well-suited for premium branding, personalization, decorative products, signage, and custom fabrication.</p>
+                <div class="mat-art" aria-hidden="true">
+                  <svg class="art-svg" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
+                    <rect x="16" y="20" width="68" height="60" rx="8" />
+                    <rect x="26" y="30" width="48" height="40" rx="5" stroke-width="2" stroke-dasharray="3 6" stroke-linecap="round" />
+                  </svg>
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+
+          <article class="mat-card" id="card-other" data-kind="other">
+            <div class="mat-tilt">
+              <div class="mat-tex" aria-hidden="true"></div>
+              <div class="mat-inner">
+                <span class="mat-tag">MATERIAL / 05</span>
+                <h3 class="mat-title">Other</h3>
+                <p class="mat-desc">Here at PLM, we do not simply engrave things. We select the appropriate laser/material process for your specific manufacturing requirement.</p>
+                <div class="mat-art mat-art-logo" aria-hidden="true">
+                  <img class="art-svg" src="logo-mark.png" alt="" />
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+
+          <!-- Wavelengths (no texturing) -->
+          <article class="mat-card wl-card" id="card-co2" data-kind="wave">
+            <div class="mat-tilt">
+              <div class="mat-inner">
+                <span class="mat-tag">WAVELENGTH / CO₂</span>
+                <h3 class="mat-title">10,600 nm</h3>
+                <p class="mat-desc">
+                  <em>The industry standard for non-metallic materials.</em>
+                  The CO2 laser source is ideal for processing wood, acrylic, paper, coated metals and organic materials. Typical spot size of approx. 0.2mm
+                </p>
+                <div class="mat-art" aria-hidden="true">
+                  <svg class="art-svg" viewBox="0 0 120 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <defs>
+                      <clipPath id="wave-clip" clipPathUnits="userSpaceOnUse">
+                        <rect x="0" y="0" width="120" height="100" />
+                      </clipPath>
+                      <linearGradient id="wave-fade" x1="-20" y1="0" x2="120" y2="0" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stop-color="#fff" stop-opacity="0" />
+                        <stop offset="14.3%" stop-color="#fff" stop-opacity="0" />
+                        <stop offset="42.9%" stop-color="#fff" stop-opacity="1" />
+                        <stop offset="100%" stop-color="#fff" stop-opacity="1" />
+                      </linearGradient>
+                      <mask id="wave-fade-mask" maskUnits="userSpaceOnUse" x="-20" y="0" width="140" height="100">
+                        <rect x="-20" y="0" width="140" height="100" fill="url(#wave-fade)" />
+                      </mask>
+                    </defs>
+                    <g class="wave-clip-wrap" mask="url(#wave-fade-mask)">
+                      <g class="wave-scroll">
+                      <path d="M0,50.0 L2,46.7 L4,43.5 L6,40.6 L8,38.1 L10,36.1 L12,34.8 L14,34.1 L16,34.1 L18,34.8 L20,36.1 L22,38.1 L24,40.6 L26,43.5 L28,46.7 L30,50.0 L32,53.3 L34,56.5 L36,59.4 L38,61.9 L40,63.9 L42,65.2 L44,65.9 L46,65.9 L48,65.2 L50,63.9 L52,61.9 L54,59.4 L56,56.5 L58,53.3 L60,50.0 L62,46.7 L64,43.5 L66,40.6 L68,38.1 L70,36.1 L72,34.8 L74,34.1 L76,34.1 L78,34.8 L80,36.1 L82,38.1 L84,40.6 L86,43.5 L88,46.7 L90,50.0 L92,53.3 L94,56.5 L96,59.4 L98,61.9 L100,63.9 L102,65.2 L104,65.9 L106,65.9 L108,65.2 L110,63.9 L112,61.9 L114,59.4 L116,56.5 L118,53.3 L120,50.0" />
+                      <path d="M0,50.0 L2,46.7 L4,43.5 L6,40.6 L8,38.1 L10,36.1 L12,34.8 L14,34.1 L16,34.1 L18,34.8 L20,36.1 L22,38.1 L24,40.6 L26,43.5 L28,46.7 L30,50.0 L32,53.3 L34,56.5 L36,59.4 L38,61.9 L40,63.9 L42,65.2 L44,65.9 L46,65.9 L48,65.2 L50,63.9 L52,61.9 L54,59.4 L56,56.5 L58,53.3 L60,50.0 L62,46.7 L64,43.5 L66,40.6 L68,38.1 L70,36.1 L72,34.8 L74,34.1 L76,34.1 L78,34.8 L80,36.1 L82,38.1 L84,40.6 L86,43.5 L88,46.7 L90,50.0 L92,53.3 L94,56.5 L96,59.4 L98,61.9 L100,63.9 L102,65.2 L104,65.9 L106,65.9 L108,65.2 L110,63.9 L112,61.9 L114,59.4 L116,56.5 L118,53.3 L120,50.0" transform="translate(120,0)" />
+                    </g>
+                    </g>
+                    <circle class="wave-dot" cx="120" cy="50" r="7" fill="var(--burn)" stroke="none" />                  </svg>
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+
+          <article class="mat-card wl-card" id="card-fiber" data-kind="wave">
+            <div class="mat-tilt">
+              <div class="mat-inner">
+                <span class="mat-tag">WAVELENGTH / FIBER</span>
+                <h3 class="mat-title">1064 nm</h3>
+                <p class="mat-desc"> 
+                  <em> The proven standard for precision metal marking.</em> 
+                  Note* Permanent, high-resolution marking across a wide range of metals where durability and repeatability are essential. Exceptional for serialization, traceability, logos, barcodes, deep engraving, annealing and production identification. Typical spot size of approximately .05mm in diameter</p>
+                <div class="mat-art" aria-hidden="true">
+                  <svg class="art-svg" viewBox="0 0 120 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <g class="wave-clip-wrap" mask="url(#wave-fade-mask)">
+                      <g class="wave-scroll">
+                      <path d="M0,50.0 L2,45.1 L4,40.6 L6,37.1 L8,34.8 L10,34.0 L12,34.8 L14,37.1 L16,40.6 L18,45.1 L20,50.0 L22,54.9 L24,59.4 L26,62.9 L28,65.2 L30,66.0 L32,65.2 L34,62.9 L36,59.4 L38,54.9 L40,50.0 L42,45.1 L44,40.6 L46,37.1 L48,34.8 L50,34.0 L52,34.8 L54,37.1 L56,40.6 L58,45.1 L60,50.0 L62,54.9 L64,59.4 L66,62.9 L68,65.2 L70,66.0 L72,65.2 L74,62.9 L76,59.4 L78,54.9 L80,50.0 L82,45.1 L84,40.6 L86,37.1 L88,34.8 L90,34.0 L92,34.8 L94,37.1 L96,40.6 L98,45.1 L100,50.0 L102,54.9 L104,59.4 L106,62.9 L108,65.2 L110,66.0 L112,65.2 L114,62.9 L116,59.4 L118,54.9 L120,50.0" />
+                      <path d="M0,50.0 L2,45.1 L4,40.6 L6,37.1 L8,34.8 L10,34.0 L12,34.8 L14,37.1 L16,40.6 L18,45.1 L20,50.0 L22,54.9 L24,59.4 L26,62.9 L28,65.2 L30,66.0 L32,65.2 L34,62.9 L36,59.4 L38,54.9 L40,50.0 L42,45.1 L44,40.6 L46,37.1 L48,34.8 L50,34.0 L52,34.8 L54,37.1 L56,40.6 L58,45.1 L60,50.0 L62,54.9 L64,59.4 L66,62.9 L68,65.2 L70,66.0 L72,65.2 L74,62.9 L76,59.4 L78,54.9 L80,50.0 L82,45.1 L84,40.6 L86,37.1 L88,34.8 L90,34.0 L92,34.8 L94,37.1 L96,40.6 L98,45.1 L100,50.0 L102,54.9 L104,59.4 L106,62.9 L108,65.2 L110,66.0 L112,65.2 L114,62.9 L116,59.4 L118,54.9 L120,50.0" transform="translate(120,0)" />
+                    </g>
+                    </g>
+                    <circle class="wave-dot" cx="120" cy="50" r="7" fill="var(--burn)" stroke="none" />                  </svg>
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+
+          <article class="mat-card wl-card" id="card-diode" data-kind="wave">
+            <div class="mat-tilt">
+              <div class="mat-inner">
+                <span class="mat-tag">WAVELENGTH / DIODE</span>
+                <h3 class="mat-title">455 nm</h3>
+                <p class="mat-desc"> 
+                  <em>Efficient, high-resolution processing for select materials. </em>
+                      Note* Blue diode lasers provide excellent absorption on many organic materials and select plastics and coatings.
+                      Precision and efficiency make them well-suited for detailed engraving, personalization, prototyping, and applications requiring controlled material removal.
+                      Typical spot size of approx. .08mm x 0.1mm </p>
+                <div class="mat-art" aria-hidden="true">
+                  <svg class="art-svg" viewBox="0 0 120 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <g class="wave-clip-wrap" mask="url(#wave-fade-mask)">
+                      <g class="wave-scroll">
+                      <path d="M0,50.0 L2,43.5 L4,38.1 L6,34.8 L8,34.1 L10,36.1 L12,40.6 L14,46.7 L16,53.3 L18,59.4 L20,63.9 L22,65.9 L24,65.2 L26,61.9 L28,56.5 L30,50.0 L32,43.5 L34,38.1 L36,34.8 L38,34.1 L40,36.1 L42,40.6 L44,46.7 L46,53.3 L48,59.4 L50,63.9 L52,65.9 L54,65.2 L56,61.9 L58,56.5 L60,50.0 L62,43.5 L64,38.1 L66,34.8 L68,34.1 L70,36.1 L72,40.6 L74,46.7 L76,53.3 L78,59.4 L80,63.9 L82,65.9 L84,65.2 L86,61.9 L88,56.5 L90,50.0 L92,43.5 L94,38.1 L96,34.8 L98,34.1 L100,36.1 L102,40.6 L104,46.7 L106,53.3 L108,59.4 L110,63.9 L112,65.9 L114,65.2 L116,61.9 L118,56.5 L120,50.0" />
+                      <path d="M0,50.0 L2,43.5 L4,38.1 L6,34.8 L8,34.1 L10,36.1 L12,40.6 L14,46.7 L16,53.3 L18,59.4 L20,63.9 L22,65.9 L24,65.2 L26,61.9 L28,56.5 L30,50.0 L32,43.5 L34,38.1 L36,34.8 L38,34.1 L40,36.1 L42,40.6 L44,46.7 L46,53.3 L48,59.4 L50,63.9 L52,65.9 L54,65.2 L56,61.9 L58,56.5 L60,50.0 L62,43.5 L64,38.1 L66,34.8 L68,34.1 L70,36.1 L72,40.6 L74,46.7 L76,53.3 L78,59.4 L80,63.9 L82,65.9 L84,65.2 L86,61.9 L88,56.5 L90,50.0 L92,43.5 L94,38.1 L96,34.8 L98,34.1 L100,36.1 L102,40.6 L104,46.7 L106,53.3 L108,59.4 L110,63.9 L112,65.9 L114,65.2 L116,61.9 L118,56.5 L120,50.0" transform="translate(120,0)" />
+                    </g>
+                    </g>
+                    <circle class="wave-dot" cx="120" cy="50" r="7" fill="var(--burn)" stroke="none" />                  </svg>
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+
+          <article class="mat-card wl-card" id="card-uv" data-kind="wave">
+            <div class="mat-tilt">
+              <div class="mat-inner">
+                <span class="mat-tag">WAVELENGTH / UV</span>
+                <h3 class="mat-title">355 nm</h3>
+                <p class="mat-desc"> <em>Ultra-fine marking with excellent thermal control.</em>
+                  Note* UV Laser technology produces extremely precise marks while minimizing heat transfer to the surrounding material.
+                  This makes it particularly valuable for sensitive plastics, electronics, glass, coatings, and other applications where fine detail, minimal thermal distortion, and premium cosmetic results are paramount.
+                  Typical spot size of approx. 0.02mm</p>
+                <div class="mat-art" aria-hidden="true">
+                  <svg class="art-svg" viewBox="0 0 120 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <g class="wave-clip-wrap" mask="url(#wave-fade-mask)">
+                      <g class="wave-scroll">
+                      <path d="M0,50.0 L2,42.0 L4,36.1 L6,34.0 L8,36.1 L10,42.0 L12,50.0 L14,58.0 L16,63.9 L18,66.0 L20,63.9 L22,58.0 L24,50.0 L26,42.0 L28,36.1 L30,34.0 L32,36.1 L34,42.0 L36,50.0 L38,58.0 L40,63.9 L42,66.0 L44,63.9 L46,58.0 L48,50.0 L50,42.0 L52,36.1 L54,34.0 L56,36.1 L58,42.0 L60,50.0 L62,58.0 L64,63.9 L66,66.0 L68,63.9 L70,58.0 L72,50.0 L74,42.0 L76,36.1 L78,34.0 L80,36.1 L82,42.0 L84,50.0 L86,58.0 L88,63.9 L90,66.0 L92,63.9 L94,58.0 L96,50.0 L98,42.0 L100,36.1 L102,34.0 L104,36.1 L106,42.0 L108,50.0 L110,58.0 L112,63.9 L114,66.0 L116,63.9 L118,58.0 L120,50.0" />
+                      <path d="M0,50.0 L2,42.0 L4,36.1 L6,34.0 L8,36.1 L10,42.0 L12,50.0 L14,58.0 L16,63.9 L18,66.0 L20,63.9 L22,58.0 L24,50.0 L26,42.0 L28,36.1 L30,34.0 L32,36.1 L34,42.0 L36,50.0 L38,58.0 L40,63.9 L42,66.0 L44,63.9 L46,58.0 L48,50.0 L50,42.0 L52,36.1 L54,34.0 L56,36.1 L58,42.0 L60,50.0 L62,58.0 L64,63.9 L66,66.0 L68,63.9 L70,58.0 L72,50.0 L74,42.0 L76,36.1 L78,34.0 L80,36.1 L82,42.0 L84,50.0 L86,58.0 L88,63.9 L90,66.0 L92,63.9 L94,58.0 L96,50.0 L98,42.0 L100,36.1 L102,34.0 L104,36.1 L106,42.0 L108,50.0 L110,58.0 L112,63.9 L114,66.0 L116,63.9 L118,58.0 L120,50.0" transform="translate(120,0)" />
+                    </g>
+                    </g>
+                    <circle class="wave-dot" cx="120" cy="50" r="7" fill="var(--burn)" stroke="none" />                  </svg>
+                </div>
+              </div>
+              <span class="sweep-bar" aria-hidden="true"></span>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Work / Gallery -->
+    <!-- <section id="work" class="section container">
+      <header class="section-head">
+        <p class="eyebrow">( SELECTED WORK )</p>
+        <h2>Recent pieces.</h2>
+      </header>
+      <div class="gallery">
+        <figure class="gallery-item">
+          <div class="placeholder placeholder-square">[ PHOTO ]</div>
+          <figcaption>FIG. 1 — [ project name ]</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <div class="placeholder placeholder-square">[ PHOTO ]</div>
+          <figcaption>FIG. 2 — [ project name ]</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <div class="placeholder placeholder-square">[ PHOTO ]</div>
+          <figcaption>FIG. 3 — [ project name ]</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <div class="placeholder placeholder-square">[ PHOTO ]</div>
+          <figcaption>FIG. 4 — [ project name ]</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <div class="placeholder placeholder-square">[ PHOTO ]</div>
+          <figcaption>FIG. 5 — [ project name ]</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <div class="placeholder placeholder-square">[ PHOTO ]</div>
+          <figcaption>FIG. 6 — [ project name ]</figcaption>
+        </figure>
+      </div>
+    </section> -->
+
+    <!-- About -->
+    <section id="about" class="section container">
+      <div class="about">
+        <div class="about-media">
+          <figure class="about-photo placeholder-square">
+            <img src="about.jpg" alt="[Business Name] studio" />
+          </figure>
+        </div>
+        <div class="about-text">
+          <!-- <p class="eyebrow">( ABOUT )</p> -->
+          <h2>Built on OCD</h2>
+          <p class="lead">
+            Our team is obsessed with all things laser and suffer from a severe case of OCD (in a good way). Which means we take your projects seriously and do sweat the details.
+          </p>
+          <!-- <ul class="meta-list">
+            <li><span>01</span> Fast turnaround on quotes</li>
+            <li><span>02</span> Wide range of materials</li>
+            <li><span>03</span> No minimum order</li>
+          </ul> -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact -->
+    <section id="contact" class="section container">
+      <div class="contact">
+        <div class="contact-head">
+          <!-- <p class="eyebrow">( CONTACT )</p> -->
+          <h2 class="display sm">Start your<br />project.</h2>
+          <p class="lead">Tell us what you have in mind and we'll send a quote.</p>
+        </div>
+        <form class="contact-form" onsubmit="event.preventDefault(); alert('Placeholder form — not yet connected.');">
+          <label>
+            <span>Name</span>
+            <input type="text" placeholder="Your name" />
+          </label>
+          <label>
+            <span>Email</span>
+            <input type="email" placeholder="you@example.com" />
+          </label>
+          <label>
+            <span>Project details</span>
+            <textarea rows="4" placeholder="Material, quantity, and what you'd like engraved..."></textarea>
+          </label>
+          <label class="file-field">
+            <span>Artwork <em>— vector files</em></span>
+            <input
+              type="file"
+              class="file-input"
+              multiple
+              accept=".svg,.ai,.eps,.pdf,.dxf,.dwg,.cdr,.plt,image/svg+xml,application/postscript,application/illustrator,application/pdf,image/vnd.dxf"
+            />
+            <span class="file-drop">
+              <span class="file-cta">+ Attach artwork</span>
+              <span class="file-hint">SVG · AI · EPS · PDF · DXF · DWG · CDR · PLT</span>
+              <span class="file-name" data-empty="No file selected — drop or browse">No file selected — drop or browse</span>
+            </span>
+          </label>
+          <button type="submit" class="btn btn-block">Send Request &rarr;</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <span class="logo"><img src="logo-mark.png" alt="[Business Name]" /></span>
+        <p>Precision Laser Mark · Orange, CA</p>
+      </div>
+      <div class="footer-links">
+        <!-- <a href="#">[ INSTAGRAM ]</a> -->
+        <a href="#">info@precisionlasermark.com</a>
+        <!-- <a href="#">[ PHONE ]</a> -->
+      </div>
+      <!-- <p class="fine">LAST UPDATED <span id="updated"></span> · © <span id="year"></span> [BUSINESS NAME]</p> -->
+    </div>
+  </footer>
+
+  <!-- Scroll ruler: replaces the native scrollbar with a row of tick marks.
+       The tick nearest the current scroll position grows longer; ticks are
+       injected by script.js. -->
+  <div class="scroll-ruler" aria-hidden="true"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
