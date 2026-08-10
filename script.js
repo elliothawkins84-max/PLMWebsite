@@ -18,12 +18,31 @@ links.querySelectorAll('a').forEach((a) => {
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Hero background video: the `autoplay muted loop playsinline` attributes
-// on the <video> tag handle normal playback. Under reduced-motion we stop
-// it from playing at all (the first frame still shows as a static image).
+// on the <video> tag handle normal playback in most browsers. Under
+// reduced-motion we stop it from playing at all (the first frame still
+// shows as a static image).
 const heroVideoFrame = document.getElementById('hero-video-frame');
-if (heroVideoFrame && reduceMotion) {
-  heroVideoFrame.removeAttribute('autoplay');
-  heroVideoFrame.pause();
+if (heroVideoFrame) {
+  if (reduceMotion) {
+    heroVideoFrame.removeAttribute('autoplay');
+    heroVideoFrame.pause();
+  } else {
+    // The `autoplay` attribute alone is unreliable on some mobile
+    // browsers (iOS Low Power Mode, data-saver modes, some Android
+    // WebViews) — force the property and call play() explicitly. If the
+    // browser still blocks it, retry once on the visitor's first touch
+    // or click, which is always allowed since it's a real user gesture.
+    heroVideoFrame.muted = true;
+    const tryPlay = () => heroVideoFrame.play().catch(() => {});
+    tryPlay();
+    const playOnFirstInteraction = () => {
+      tryPlay();
+      window.removeEventListener('touchstart', playOnFirstInteraction);
+      window.removeEventListener('click', playOnFirstInteraction);
+    };
+    window.addEventListener('touchstart', playOnFirstInteraction, { passive: true });
+    window.addEventListener('click', playOnFirstInteraction);
+  }
 }
 
 // Parallax: drift the hero video slower than the page scroll
