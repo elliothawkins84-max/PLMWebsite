@@ -45,9 +45,13 @@ if (heroVideoFrame) {
   }
 }
 
-// Parallax: drift the hero video slower than the page scroll
+// Parallax: drift the hero video slower than the page scroll. Skipped on
+// touch devices — applying a transform to the video's parent on scroll
+// can interrupt/pause autoplay on mobile Safari, and a tiny scroll often
+// fires immediately on load there as the address bar collapses.
+const isTouchDevice = window.matchMedia('(hover: none), (pointer: coarse)').matches;
 const heroVideo = document.querySelector('.hero-video');
-if (heroVideo && !reduceMotion) {
+if (heroVideo && !reduceMotion && !isTouchDevice) {
   let ticking = false;
   const update = () => {
     const y = window.scrollY;
