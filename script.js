@@ -29,37 +29,62 @@ if (heroVideoFrame) {
   } else {
     // The `autoplay` attribute alone is unreliable on some mobile
     // browsers (iOS Low Power Mode, data-saver modes, some Android
-    // WebViews) — force the property and call play() explicitly. A
-    // single attempt right at script load can be too early (the video
-    // may not have buffered enough yet, especially on cellular), so we
-    // also retry once the browser signals it's actually ready, on a
-    // short safety-net interval, and on the visitor's first interaction
-    // (always allowed, since that's a real user gesture).
+    // WebViews) — force the property and call play() explicitly.
+    //
+    // Critically, browsers also refuse to (re)start autoplay for a video
+    // that isn't actually visible in the viewport — e.g. if the page
+    // loads scrolled straight to a URL hash like #contact, the hero
+    // never appears on screen and autoplay never gets a chance to start,
+    // even if the visitor later scrolls up to it. An IntersectionObserver
+    // makes sure we only (and always) attempt play() once the video is
+    // actually on screen, rather than a handful of one-shot attempts
+    // clustered around page load.
     heroVideoFrame.muted = true;
     heroVideoFrame.setAttribute('muted', ''); // some WebKit versions only honor the attribute, not just the property
     const tryPlay = () => heroVideoFrame.play().catch(() => {});
-    tryPlay();
+
+    const playButton = document.getElementById('hero-video-play');
+    let playButtonTimer = null;
+    const armPlayButton = () => {
+      if (playButtonTimer || !playButton) return;
+      playButtonTimer = setTimeout(() => {
+        if (heroVideoFrame.paused) playButton.hidden = false;
+      }, 1800);
+    };
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          tryPlay();
+          armPlayButton();
+        }
+      });
+    }, { threshold: 0.2 });
+    io.observe(heroVideoFrame);
+
     heroVideoFrame.addEventListener('loadeddata', tryPlay);
     heroVideoFrame.addEventListener('canplay', tryPlay);
 
-    let retries = 0;
-    const retryTimer = setInterval(() => {
-      retries += 1;
-      if (!heroVideoFrame.paused || retries >= 8) { clearInterval(retryTimer); return; }
-      tryPlay();
-    }, 500);
+    // A real user gesture anywhere on the page is always allowed to
+    // start playback, regardless of visibility rules — kept as a
+    // permanent (not one-shot) listener, since the first gesture might
+    // happen before the video has scrolled into view.
+    window.addEventListener('touchstart', tryPlay, { passive: true });
+    window.addEventListener('scroll', tryPlay, { passive: true });
+    window.addEventListener('click', tryPlay);
 
-    const playOnFirstInteraction = () => {
-      tryPlay();
-      window.removeEventListener('touchstart', playOnFirstInteraction);
-      window.removeEventListener('touchmove', playOnFirstInteraction);
-      window.removeEventListener('scroll', playOnFirstInteraction);
-      window.removeEventListener('click', playOnFirstInteraction);
-    };
-    window.addEventListener('touchstart', playOnFirstInteraction, { passive: true });
-    window.addEventListener('touchmove', playOnFirstInteraction, { passive: true });
-    window.addEventListener('scroll', playOnFirstInteraction, { passive: true });
-    window.addEventListener('click', playOnFirstInteraction);
+    // Some restrictions (iOS Low Power Mode chief among them) block
+    // autoplay outright, even on a real user gesture. Once the video has
+    // had a chance to start (armed the moment it's visible) and still
+    // hasn't, show an explicit play button rather than leaving visitors
+    // looking at a frozen frame with no indication anything's interactive.
+    if (playButton) {
+      playButton.addEventListener('click', tryPlay);
+      heroVideoFrame.addEventListener('playing', () => {
+        playButton.hidden = true;
+        if (playButtonTimer) { clearTimeout(playButtonTimer); playButtonTimer = null; }
+      });
+    }
   }
 }
 
