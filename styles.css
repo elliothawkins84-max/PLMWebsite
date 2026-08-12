@@ -184,36 +184,6 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   background: radial-gradient(130% 100% at 50% 38%, rgba(0,0,0,0.30), rgba(0,0,0,0.80));
 }
 .hero-inner { position: relative; z-index: 2; width: 100%; }
-
-/* Shown only if autoplay genuinely fails (e.g. iOS Low Power Mode blocks
-   it outright) — script.js reveals this after a short grace period so
-   those visitors get an obvious, real way to start the video instead of
-   silently seeing a frozen frame with no indication anything's wrong. */
-.hero-video-play {
-  /* fixed (not absolute-to-.hero) so it's always anchored to the actual
-     viewport — the hero's own box extends slightly below the fold on
-     load because of the sticky header above it, so "bottom" relative to
-     .hero itself could land off-screen */
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 3;
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
-  color: var(--fg);
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-.hero-video-play svg { margin-left: 2px; } /* optically center the play triangle */
-.hero-video-play:hover { background: rgba(0, 0, 0, 0.55); border-color: var(--fg); }
-.hero-video-play[hidden] { display: none; }
 .index-line { margin-bottom: 22px; }
 .hero-title { font-size: clamp(3rem, 11vw, 8rem); margin-bottom: 22px; }
 .hero-title-logo {

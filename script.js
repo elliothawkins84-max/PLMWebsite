@@ -43,21 +43,9 @@ if (heroVideoFrame) {
     heroVideoFrame.setAttribute('muted', ''); // some WebKit versions only honor the attribute, not just the property
     const tryPlay = () => heroVideoFrame.play().catch(() => {});
 
-    const playButton = document.getElementById('hero-video-play');
-    let playButtonTimer = null;
-    const armPlayButton = () => {
-      if (playButtonTimer || !playButton) return;
-      playButtonTimer = setTimeout(() => {
-        if (heroVideoFrame.paused) playButton.hidden = false;
-      }, 1800);
-    };
-
     const io = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          tryPlay();
-          armPlayButton();
-        }
+        if (entry.isIntersecting) tryPlay();
       });
     }, { threshold: 0.2 });
     io.observe(heroVideoFrame);
@@ -72,19 +60,6 @@ if (heroVideoFrame) {
     window.addEventListener('touchstart', tryPlay, { passive: true });
     window.addEventListener('scroll', tryPlay, { passive: true });
     window.addEventListener('click', tryPlay);
-
-    // Some restrictions (iOS Low Power Mode chief among them) block
-    // autoplay outright, even on a real user gesture. Once the video has
-    // had a chance to start (armed the moment it's visible) and still
-    // hasn't, show an explicit play button rather than leaving visitors
-    // looking at a frozen frame with no indication anything's interactive.
-    if (playButton) {
-      playButton.addEventListener('click', tryPlay);
-      heroVideoFrame.addEventListener('playing', () => {
-        playButton.hidden = true;
-        if (playButtonTimer) { clearTimeout(playButtonTimer); playButtonTimer = null; }
-      });
-    }
   }
 }
 
