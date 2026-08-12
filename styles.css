@@ -195,6 +195,9 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   max-width: 100%;
   height: auto;
   margin: 0 auto;
+  /* nudge slightly right of dead-center, scaling gently with viewport
+     width so it reads as "a little" on both phones and wide desktops */
+  transform: translateX(clamp(8px, 2.5vw, 26px));
 }
 .hero-lead { margin: 0 auto 34px; max-width: 44ch; }
 .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
@@ -1454,8 +1457,8 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   .nav-links a { padding: 12px 0; font-size: 0.85rem; }
 
   .hero {
-    padding: 110px 28px 44px;
-    align-items: flex-start; /* sit higher than vertical-center on phones */
+    padding: 52dvh 28px 44px; /* dvh-based so the logo lands in the same relative spot across phone sizes */
+    align-items: flex-start;
   }
   .section { padding: 64px 28px; }
   .gallery { grid-template-columns: 1fr 1fr; }
