@@ -1460,6 +1460,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
     padding: 39dvh 28px 44px; /* dvh-based so the logo lands in the same relative spot across phone sizes */
     align-items: flex-start;
   }
+  .hero-title-logo { width: clamp(220px, 72vw, 480px); }
   .section { padding: 64px 28px; }
   .gallery { grid-template-columns: 1fr 1fr; }
   .stage { min-height: 500px; }
