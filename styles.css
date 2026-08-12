@@ -1453,7 +1453,10 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   .nav-links.open { display: flex; }
   .nav-links a { padding: 12px 0; font-size: 0.85rem; }
 
-  .hero { padding: 56px 28px 44px; }
+  .hero {
+    padding: 110px 28px 44px;
+    align-items: flex-start; /* sit higher than vertical-center on phones */
+  }
   .section { padding: 64px 28px; }
   .gallery { grid-template-columns: 1fr 1fr; }
   .stage { min-height: 500px; }
