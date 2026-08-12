@@ -29,18 +29,36 @@ if (heroVideoFrame) {
   } else {
     // The `autoplay` attribute alone is unreliable on some mobile
     // browsers (iOS Low Power Mode, data-saver modes, some Android
-    // WebViews) — force the property and call play() explicitly. If the
-    // browser still blocks it, retry once on the visitor's first touch
-    // or click, which is always allowed since it's a real user gesture.
+    // WebViews) — force the property and call play() explicitly. A
+    // single attempt right at script load can be too early (the video
+    // may not have buffered enough yet, especially on cellular), so we
+    // also retry once the browser signals it's actually ready, on a
+    // short safety-net interval, and on the visitor's first interaction
+    // (always allowed, since that's a real user gesture).
     heroVideoFrame.muted = true;
+    heroVideoFrame.setAttribute('muted', ''); // some WebKit versions only honor the attribute, not just the property
     const tryPlay = () => heroVideoFrame.play().catch(() => {});
     tryPlay();
+    heroVideoFrame.addEventListener('loadeddata', tryPlay);
+    heroVideoFrame.addEventListener('canplay', tryPlay);
+
+    let retries = 0;
+    const retryTimer = setInterval(() => {
+      retries += 1;
+      if (!heroVideoFrame.paused || retries >= 8) { clearInterval(retryTimer); return; }
+      tryPlay();
+    }, 500);
+
     const playOnFirstInteraction = () => {
       tryPlay();
       window.removeEventListener('touchstart', playOnFirstInteraction);
+      window.removeEventListener('touchmove', playOnFirstInteraction);
+      window.removeEventListener('scroll', playOnFirstInteraction);
       window.removeEventListener('click', playOnFirstInteraction);
     };
     window.addEventListener('touchstart', playOnFirstInteraction, { passive: true });
+    window.addEventListener('touchmove', playOnFirstInteraction, { passive: true });
+    window.addEventListener('scroll', playOnFirstInteraction, { passive: true });
     window.addEventListener('click', playOnFirstInteraction);
   }
 }
