@@ -147,7 +147,9 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 /* ---- Hero (video background + parallax) ---- */
 .hero {
   position: relative;
-  height: 100vh;
+  height: 100vh; /* fallback for browsers without dvh support */
+  height: 100dvh; /* accounts for mobile browser chrome (address bar) so
+                      centered content isn't pushed below the visible area */
   min-height: 560px;
   overflow: hidden;
   display: flex;
@@ -283,7 +285,11 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .chip .u { opacity: 0.55; }
 
 /* Stage — one card visible at a time */
-.stage { position: relative; min-height: 380px; }
+/* overflow: hidden clips the inactive cards' off-screen entrance/exit
+   transform (translateX ±44px) — without it, that invisible (opacity: 0)
+   content still counts toward the page's scrollable area, causing a
+   stray horizontal scroll on mobile. */
+.stage { position: relative; min-height: 380px; overflow: hidden; }
 
 .mat-card {
   position: absolute;
