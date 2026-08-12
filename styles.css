@@ -197,7 +197,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   margin: 0 auto;
   /* nudge slightly right of dead-center, scaling gently with viewport
      width so it reads as "a little" on both phones and wide desktops */
-  transform: translateX(clamp(8px, 2.5vw, 26px));
+  transform: translateX(clamp(8px, 2.5vw, 12px));
 }
 .hero-lead { margin: 0 auto 34px; max-width: 44ch; }
 .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
