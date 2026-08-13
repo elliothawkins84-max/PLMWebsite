@@ -366,33 +366,37 @@
           <h2 class="display sm">Start your<br />project.</h2>
           <p class="lead">Tell us what you have in mind and we'll send a quote.</p>
         </div>
-        <form class="contact-form" onsubmit="event.preventDefault(); alert('Placeholder form — not yet connected.');">
+        <form class="contact-form" id="rfq-form">
+          <input type="hidden" name="access_key" value="2d13ff7f-a3f0-4113-95c5-06dcab3d5ff0" />
+          <input type="hidden" name="subject" value="New RFQ — precisionlasermark.com" />
+          <input type="checkbox" name="botcheck" class="botcheck" tabindex="-1" autocomplete="off" />
           <label>
             <span>Name</span>
-            <input type="text" placeholder="Your name" />
+            <input type="text" name="name" placeholder="Your name" required />
           </label>
           <label>
             <span>Email</span>
-            <input type="email" placeholder="you@example.com" />
+            <input type="email" name="email" placeholder="you@example.com" required />
           </label>
           <label>
             <span>Project details</span>
-            <textarea rows="4" placeholder="Material, quantity, and what you'd like engraved..."></textarea>
+            <textarea name="message" rows="4" placeholder="Material, quantity, and what you'd like engraved..." required></textarea>
           </label>
           <label class="file-field">
             <span>Artwork <em>— vector files</em></span>
             <input
               type="file"
               class="file-input"
-              multiple
+              name="attachment"
               accept=".svg,.ai,.eps,.pdf,.dxf,.dwg,.cdr,.plt,image/svg+xml,application/postscript,application/illustrator,application/pdf,image/vnd.dxf"
             />
             <span class="file-drop">
               <span class="file-cta">+ Attach artwork</span>
-              <span class="file-hint">SVG · AI · EPS · PDF · DXF · DWG · CDR · PLT</span>
+              <span class="file-hint">SVG · AI · EPS · PDF · DXF · DWG · CDR · PLT — 1 file, 5MB max</span>
               <span class="file-name" data-empty="No file selected — drop or browse">No file selected — drop or browse</span>
             </span>
           </label>
+          <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
           <button type="submit" class="btn btn-block">Send Request &rarr;</button>
         </form>
       </div>

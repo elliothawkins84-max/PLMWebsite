@@ -1454,6 +1454,24 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .file-field.has-file .file-name { color: var(--burn); }
 .file-input:focus-visible + .file-drop { outline: 2px solid var(--fg); outline-offset: 3px; }
 
+/* Spam honeypot — must stay invisible to humans but present for bots */
+.botcheck {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+.form-status {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  min-height: 1em;
+}
+.form-status.error { color: var(--muted); }
+.form-status.error::before { content: "! "; }
+.form-status.success::before { content: "✓ "; }
+
 /* ---- Footer ---- */
 .site-footer { border-top: 1px solid var(--line); padding: 60px 0 40px; }
 .footer-inner { display: flex; flex-direction: column; gap: 28px; }

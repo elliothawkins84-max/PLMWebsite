@@ -338,8 +338,57 @@ if (fileField) {
     e.preventDefault();
     fileField.classList.remove('dragover');
     if (e.dataTransfer && e.dataTransfer.files.length) {
-      input.files = e.dataTransfer.files; // assign dropped FileList to the input
+      // Input only accepts one file — take the first even if several were dropped.
+      const dt = new DataTransfer();
+      dt.items.add(e.dataTransfer.files[0]);
+      input.files = dt.files;
       showFiles();
+    }
+  });
+}
+
+// Quote form — submit via Web3Forms
+const rfqForm = document.getElementById('rfq-form');
+if (rfqForm) {
+  const status = document.getElementById('form-status');
+  const submitBtn = rfqForm.querySelector('button[type="submit"]');
+  const submitLabel = submitBtn.innerHTML;
+
+  rfqForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.textContent = '';
+    status.className = 'form-status';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending…';
+
+    try {
+      const res = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: new FormData(rfqForm),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        rfqForm.reset();
+        const fileField = rfqForm.querySelector('.file-field');
+        if (fileField) {
+          fileField.classList.remove('has-file');
+          const nameEl = fileField.querySelector('.file-name');
+          if (nameEl) nameEl.textContent = nameEl.dataset.empty;
+        }
+        status.textContent = "Request sent — we'll be in touch shortly.";
+        status.className = 'form-status success';
+      } else {
+        status.textContent = data.message || 'Something went wrong — please try again.';
+        status.className = 'form-status error';
+      }
+    } catch (err) {
+      status.textContent = 'Network error — please try again.';
+      status.className = 'form-status error';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = submitLabel;
     }
   });
 }
