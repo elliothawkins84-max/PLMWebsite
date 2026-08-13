@@ -339,6 +339,11 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   padding: 38px;
   display: flex;
   flex-direction: column;
+}
+/* filter forces its own GPU compositing layer, which desyncs from .mat-tilt's
+   layer during fast, continuous tilt updates. Only apply it while the reveal
+   glow is actually fading (see script.js) — never while the card can be tilted. */
+.mat-inner.heating {
   filter:
     brightness(calc(0.98 + var(--heat) * 0.12))
     saturate(calc(0.98 + var(--heat) * 0.45))
