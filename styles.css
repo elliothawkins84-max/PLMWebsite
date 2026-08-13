@@ -33,6 +33,15 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Prevents the stray horizontal scroll caused by off-screen inactive
+     .mat-card elements. Deliberately kept here instead of on .stage: .stage
+     is the direct parent of .mat-card, which establishes the 3D perspective
+     for the tilting card, and an overflow:hidden ancestor sitting right next
+     to a 3D-transformed, per-frame-animated layer can desync from it during
+     fast updates (Chrome compositor clip/3D interaction). Clipping at the
+     body level is coarse enough that it never has to rasterize-clip near
+     the tilting card, so it avoids the interaction entirely. */
+  overflow-x: hidden;
 }
 
 .container { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
@@ -288,11 +297,12 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .chip .u { opacity: 0.55; }
 
 /* Stage — one card visible at a time */
-/* overflow: hidden clips the inactive cards' off-screen entrance/exit
-   transform (translateX ±44px) — without it, that invisible (opacity: 0)
-   content still counts toward the page's scrollable area, causing a
-   stray horizontal scroll on mobile. */
-.stage { position: relative; min-height: 380px; overflow: hidden; }
+/* The inactive cards' off-screen entrance/exit transform (translateX ±44px)
+   is clipped at the body level (see body's overflow-x comment above), not
+   here — .stage is the direct parent of .mat-card, which establishes the 3D
+   perspective for the tilting card, and clipping right next to that caused
+   the tilt/content desync bug. */
+.stage { position: relative; min-height: 380px; }
 
 .mat-card {
   position: absolute;
