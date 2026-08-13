@@ -182,9 +182,6 @@ if (stage) {
     inner.style.willChange = 'clip-path';
     inner.classList.add('heating');
     const start = performance.now();
-    // A bit longer than DURATION so the heat glow can fade all the way to 0
-    // before .heating (and its layer-forcing filter) comes off.
-    const HEAT_FADE = DURATION + 400;
 
     const stopHeating = () => {
       inner.style.willChange = '';
@@ -201,8 +198,9 @@ if (stage) {
       const elapsed = performance.now() - start;
       const t = Math.min(1, elapsed / DURATION);
       const p = easeInOutCubic(t);
-      const heatT = Math.min(1, elapsed / HEAT_FADE);
-      const heat = t >= 1 ? Math.max(0, 1 - (elapsed - DURATION) / (HEAT_FADE - DURATION)) : Math.pow(1 - p, 0.20);
+      // Reaches 0 exactly as the sweep finishes (p -> 1), so the glow fades
+      // out smoothly instead of jumping back up for a separate fade-out phase.
+      const heat = Math.pow(1 - p, 0.20);
       card.style.setProperty('--heat', heat.toFixed(3));
 
       inner.style.clipPath = `inset(0 0 ${((1 - p) * 100).toFixed(1)}% 0)`;
@@ -217,8 +215,6 @@ if (stage) {
       if (t >= 1) {
         inner.style.clipPath = '';
         if (bar) { bar.style.transition = ''; bar.style.opacity = '0'; }
-      }
-      if (heatT >= 1) {
         stopHeating();
         return;
       }
