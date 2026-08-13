@@ -1,0 +1,6 @@
+name = "plm-rfq"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# After deploying, set the Resend API key as a secret (never commit it):
+#   wrangler secret put RESEND_API_KEY

@@ -344,27 +344,51 @@ if (fileField) {
   });
 }
 
-// Quote form — submits via a real POST to FormSubmit.co (not fetch/AJAX) so
-// file attachments are actually delivered; FormSubmit redirects back to
-// #contact-sent on success, which the block below picks up.
+// Quote form — submits to our own Cloudflare Worker, which relays the
+// request to Resend as an email (with attachment) to info@precisionlasermark.com.
+const RFQ_ENDPOINT = 'https://plm-rfq.precisionlasermark.workers.dev';
 const rfqForm = document.getElementById('rfq-form');
 if (rfqForm) {
+  const status = document.getElementById('form-status');
   const submitBtn = rfqForm.querySelector('button[type="submit"]');
+  const submitLabel = submitBtn.innerHTML;
 
-  rfqForm.addEventListener('submit', () => {
+  rfqForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.textContent = '';
+    status.className = 'form-status';
     submitBtn.disabled = true;
     submitBtn.textContent = 'Sending…';
-  });
-}
 
-if (location.hash === '#contact-sent') {
-  const status = document.getElementById('form-status');
-  if (status) {
-    status.textContent = "Request sent — we'll be in touch shortly.";
-    status.className = 'form-status success';
-  }
-  history.replaceState(null, '', location.pathname + location.search + '#contact');
-  document.getElementById('contact')?.scrollIntoView();
+    try {
+      const res = await fetch(RFQ_ENDPOINT, {
+        method: 'POST',
+        body: new FormData(rfqForm),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        rfqForm.reset();
+        const fileField = rfqForm.querySelector('.file-field');
+        if (fileField) {
+          fileField.classList.remove('has-file');
+          const nameEl = fileField.querySelector('.file-name');
+          if (nameEl) nameEl.textContent = nameEl.dataset.empty;
+        }
+        status.textContent = "Request sent — we'll be in touch shortly.";
+        status.className = 'form-status success';
+      } else {
+        status.textContent = data.message || 'Something went wrong — please try again.';
+        status.className = 'form-status error';
+      }
+    } catch (err) {
+      status.textContent = 'Network error — please try again.';
+      status.className = 'form-status error';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = submitLabel;
+    }
+  });
 }
 
 // Footer year + "last updated" timestamp

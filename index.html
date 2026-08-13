@@ -366,17 +366,8 @@
           <h2 class="display sm">Start your<br />project.</h2>
           <p class="lead">Tell us what you have in mind and we'll send a quote.</p>
         </div>
-        <form
-          class="contact-form"
-          id="rfq-form"
-          action="https://formsubmit.co/info@precisionlasermark.com"
-          method="POST"
-          enctype="multipart/form-data"
-        >
-          <input type="hidden" name="_subject" value="New RFQ — precisionlasermark.com" />
-          <input type="hidden" name="_next" value="https://precisionlasermark.com/#contact-sent" />
-          <input type="hidden" name="_captcha" value="false" />
-          <input type="text" name="_honey" class="botcheck" tabindex="-1" autocomplete="off" />
+        <form class="contact-form" id="rfq-form">
+          <input type="text" name="company" class="botcheck" tabindex="-1" autocomplete="off" />
           <label>
             <span>Name</span>
             <input type="text" name="name" placeholder="Your name" required />
