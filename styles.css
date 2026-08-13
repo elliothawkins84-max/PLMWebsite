@@ -1271,8 +1271,12 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 
 /* Reveal effect: a single bar swipes top-to-bottom over the card, and the
    content underneath (text + icon) is clipped so it only becomes visible
-   once the bar has passed that point (see script.js). */
-.mat-inner { will-change: clip-path; }
+   once the bar has passed that point (see script.js). will-change is
+   applied by script.js only while this animation is actually running —
+   leaving it on permanently promotes .mat-inner to its own persistent
+   compositor layer, which can render very slightly out of step with
+   .mat-tilt's layer (also transform-hinted) during the unrelated
+   cursor-tilt effect, especially during fast dragging. */
 
 .sweep-bar {
   position: absolute;

@@ -176,11 +176,16 @@ if (stage) {
       bar.style.transition = 'none';
       bar.style.opacity = '1';
     }
+    // Only hint the browser to promote .mat-inner to its own compositor
+    // layer while this clip-path animation is actually running — see the
+    // CSS comment above for why leaving it on permanently is a problem.
+    inner.style.willChange = 'clip-path';
     const start = performance.now();
 
     const tick = () => {
       if (token !== engraveToken) {
         if (bar) { bar.style.transition = ''; bar.style.opacity = '0'; }
+        inner.style.willChange = '';
         return;
       }
       const elapsed = performance.now() - start;
@@ -200,6 +205,7 @@ if (stage) {
 
       if (t >= 1) {
         inner.style.clipPath = '';
+        inner.style.willChange = '';
         if (bar) { bar.style.transition = ''; bar.style.opacity = '0'; }
         return;
       }
