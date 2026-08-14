@@ -106,6 +106,15 @@ if (rulerEl) {
   let litFrom = 0;
   let litTo = -1; // empty range initially
   let rulerTicking = false;
+  let idleTimer = null;
+  const IDLE_DELAY = 250; // ms of no scroll events before treating it as "stopped"
+
+  const clearRuler = () => {
+    for (let i = litFrom; i <= litTo; i++) ticks[i].style.setProperty('--t', '0');
+    litFrom = 0;
+    litTo = -1;
+  };
+
   const updateRuler = () => {
     const doc = document.documentElement;
     const scrollable = doc.scrollHeight - window.innerHeight;
@@ -131,6 +140,12 @@ if (rulerEl) {
   updateRuler();
   window.addEventListener('scroll', () => {
     if (!rulerTicking) { requestAnimationFrame(updateRuler); rulerTicking = true; }
+    // Nothing re-runs updateRuler once scroll events stop, so the crest
+    // would otherwise stay lit at the last position forever. Treat a gap
+    // with no scroll events as "stopped" and fade the whole ruler back to
+    // its resting state.
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(clearRuler, IDLE_DELAY);
   }, { passive: true });
 }
 
