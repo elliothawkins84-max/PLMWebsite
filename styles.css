@@ -242,6 +242,17 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
    ruler rather than a single dot hopping between ticks. Driving it from
    the continuous scroll fraction (not a rounded "active index") means
    there's nothing to snap or vanish even when scrolling fast. */
+/* Registers --t as a typed, animatable number. Without this, browsers treat
+   an unregistered custom property as an opaque token substitution — width/
+   background-color/box-shadow below all *reference* --t via calc(), but the
+   transition on those properties won't actually interpolate across a --t
+   change; it jumps straight to the new value. This is the standard fix. */
+@property --t {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
 .scroll-ruler {
   position: fixed;
   top: 96px; /* clears the 70px header with room to breathe */
