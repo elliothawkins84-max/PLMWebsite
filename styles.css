@@ -257,9 +257,9 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   transform: translateY(-50%);
   transition: width 0.2s ease-out;
 }
-.ruler-tick.near-2 { width: 12px; background: #fff; }
-.ruler-tick.near-1 { width: 18px; background: #fff; }
-.ruler-tick.active { width: 25px; background: #fff; }
+.ruler-tick.near-2 { width: 12px; background: #fff; box-shadow: 0 0 4px rgba(255, 255, 255, 0.5); }
+.ruler-tick.near-1 { width: 18px; background: #fff; box-shadow: 0 0 6px rgba(255, 255, 255, 0.7); }
+.ruler-tick.active { width: 25px; background: #fff; box-shadow: 0 0 9px rgba(255, 255, 255, 0.9); }
 @media (max-width: 760px) {
   .scroll-ruler { display: none; }
 }
