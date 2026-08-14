@@ -260,7 +260,14 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   background: rgba(255, 255, 255, calc(0.28 + 0.72 * var(--t)));
   box-shadow: 0 0 calc(8px * var(--t)) rgba(255, 255, 255, calc(0.6 * var(--t)));
   transform: translateY(-50%);
-  transition: width 0.12s ease-out, background-color 0.12s ease-out, box-shadow 0.12s ease-out;
+  /* Longer than it looks like it needs to be: while scrolling, --t is
+     retargeted every ~16ms, so each transition gets interrupted and
+     restarted long before finishing, which is what actually reads as a
+     smooth trailing wave. The moment scrolling stops, only one transition
+     plays out uninterrupted — if that duration is too short (it was
+     0.12s), that single step reads as a snap instead of a fade, since
+     there's no more retriggering to mask it. */
+  transition: width 0.35s ease-out, background-color 0.35s ease-out, box-shadow 0.35s ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
   .ruler-tick { transition: none; }
