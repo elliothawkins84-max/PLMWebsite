@@ -84,16 +84,13 @@ if (heroVideo && !reduceMotion && !isTouchDevice) {
 }
 
 // Scroll ruler: an evenly-spaced row of ticks stands in for the native
-// scrollbar. Every tick's --t "intensity" (0-1) is recomputed each scroll
-// frame from a Gaussian falloff centered on the exact (unrounded) scroll
-// fraction, so the tick right at that position is longest/brightest and
-// its neighbors taper off smoothly — one soft crest sliding down the
-// ruler, rather than a single tick popping on/off between fixed steps.
+// scrollbar. The single tick nearest the current scroll position gets
+// .active, a fixed constant appearance — it just moves from tick to tick
+// as you scroll, with no brightness variation over time or across
+// neighboring ticks.
 const rulerEl = document.querySelector('.scroll-ruler');
 if (rulerEl) {
   const TICK_COUNT = 40;
-  const FALLOFF_SIGMA = 1.15; // spread of the crest, in tick-index units
-  const FALLOFF_RADIUS = 4; // ticks beyond this distance are left at 0, skipped for cheapness
   const ticks = [];
   for (let i = 0; i < TICK_COUNT; i++) {
     const tick = document.createElement('span');
@@ -103,29 +100,19 @@ if (rulerEl) {
     ticks.push(tick);
   }
 
-  let litFrom = 0;
-  let litTo = -1; // empty range initially
+  let activeIndex = -1;
   let rulerTicking = false;
   const updateRuler = () => {
     const doc = document.documentElement;
     const scrollable = doc.scrollHeight - window.innerHeight;
     const frac = scrollable > 0 ? window.scrollY / scrollable : 0;
-    const exactIndex = frac * (TICK_COUNT - 1);
-    const lo = Math.max(0, Math.floor(exactIndex - FALLOFF_RADIUS));
-    const hi = Math.min(TICK_COUNT - 1, Math.ceil(exactIndex + FALLOFF_RADIUS));
+    const index = Math.round(frac * (TICK_COUNT - 1));
 
-    // Clear ticks that were lit last frame but fall outside this frame's
-    // range (cheaper than resetting all 40 every frame).
-    for (let i = litFrom; i <= litTo; i++) {
-      if (i < lo || i > hi) ticks[i].style.setProperty('--t', '0');
+    if (index !== activeIndex) {
+      if (activeIndex >= 0) ticks[activeIndex].classList.remove('active');
+      ticks[index].classList.add('active');
+      activeIndex = index;
     }
-    for (let i = lo; i <= hi; i++) {
-      const d = i - exactIndex;
-      const t = Math.exp(-(d * d) / (2 * FALLOFF_SIGMA * FALLOFF_SIGMA));
-      ticks[i].style.setProperty('--t', t.toFixed(3));
-    }
-    litFrom = lo;
-    litTo = hi;
     rulerTicking = false;
   };
   updateRuler();

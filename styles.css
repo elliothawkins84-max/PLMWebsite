@@ -234,25 +234,10 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 
 /* Scroll ruler: a row of even tick marks stands in for the native
    scrollbar. Ticks are evenly spaced (in %, so they reflow on resize with
-   no JS regeneration). Each tick carries a --t "intensity" custom
-   property (0-1) set every scroll frame from its distance to the exact
-   (unrounded) scroll position, via a falloff curve — so the tick right
-   at that position is longest/brightest and neighbors taper off
-   smoothly, reading as one soft crest that slides continuously down the
-   ruler rather than a single dot hopping between ticks. Driving it from
-   the continuous scroll fraction (not a rounded "active index") means
-   there's nothing to snap or vanish even when scrolling fast. */
-/* Registers --t as a typed, animatable number. Without this, browsers treat
-   an unregistered custom property as an opaque token substitution — width/
-   background-color/box-shadow below all *reference* --t via calc(), but the
-   transition on those properties won't actually interpolate across a --t
-   change; it jumps straight to the new value. This is the standard fix. */
-@property --t {
-  syntax: '<number>';
-  inherits: false;
-  initial-value: 0;
-}
-
+   no JS regeneration). The single tick nearest the current scroll position
+   gets .active — a fixed, constant appearance (no brightness/glow
+   variation over time or across neighbors), so it just slides from tick
+   to tick as you scroll rather than pulsing. */
 .scroll-ruler {
   position: fixed;
   top: 96px; /* clears the 70px header with room to breathe */
@@ -263,25 +248,16 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   z-index: 60;
 }
 .ruler-tick {
-  --t: 0;
   position: absolute;
   right: 0;
-  width: calc(9px + 16px * var(--t));
+  width: 9px;
   height: 1px;
-  background: rgba(255, 255, 255, calc(0.28 + 0.72 * var(--t)));
-  box-shadow: 0 0 calc(8px * var(--t)) rgba(255, 255, 255, calc(0.6 * var(--t)));
+  background: rgba(255, 255, 255, 0.28);
   transform: translateY(-50%);
-  /* Longer than it looks like it needs to be: while scrolling, --t is
-     retargeted every ~16ms, so each transition gets interrupted and
-     restarted long before finishing, which is what actually reads as a
-     smooth trailing wave. The moment scrolling stops, only one transition
-     plays out uninterrupted — if that duration is too short (it was
-     0.12s), that single step reads as a snap instead of a fade, since
-     there's no more retriggering to mask it. */
-  transition: width 0.35s ease-out, background-color 0.35s ease-out, box-shadow 0.35s ease-out;
 }
-@media (prefers-reduced-motion: reduce) {
-  .ruler-tick { transition: none; }
+.ruler-tick.active {
+  width: 25px;
+  background: #fff;
 }
 @media (max-width: 760px) {
   .scroll-ruler { display: none; }
