@@ -234,10 +234,11 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 
 /* Scroll ruler: a row of even tick marks stands in for the native
    scrollbar. Ticks are evenly spaced (in %, so they reflow on resize with
-   no JS regeneration). The single tick nearest the current scroll position
-   gets .active — a fixed, constant appearance (no brightness/glow
-   variation over time or across neighbors), so it just slides from tick
-   to tick as you scroll rather than pulsing. */
+   no JS regeneration). The tick nearest the current scroll position gets
+   .active, with its immediate neighbors tapering shorter via .near-1/
+   .near-2 — a static peak shape, not an animated glow. Color is the same
+   fixed white for all of them; only width tapers, so nothing brightens
+   or dims over time, it just slides as you scroll. */
 .scroll-ruler {
   position: fixed;
   top: 96px; /* clears the 70px header with room to breathe */
@@ -254,11 +255,11 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   height: 1px;
   background: rgba(255, 255, 255, 0.28);
   transform: translateY(-50%);
+  transition: width 0.2s ease-out;
 }
-.ruler-tick.active {
-  width: 25px;
-  background: #fff;
-}
+.ruler-tick.near-2 { width: 12px; background: #fff; }
+.ruler-tick.near-1 { width: 18px; background: #fff; }
+.ruler-tick.active { width: 25px; background: #fff; }
 @media (max-width: 760px) {
   .scroll-ruler { display: none; }
 }

@@ -84,13 +84,15 @@ if (heroVideo && !reduceMotion && !isTouchDevice) {
 }
 
 // Scroll ruler: an evenly-spaced row of ticks stands in for the native
-// scrollbar. The single tick nearest the current scroll position gets
-// .active, a fixed constant appearance — it just moves from tick to tick
-// as you scroll, with no brightness variation over time or across
-// neighboring ticks.
+// scrollbar. The tick nearest the current scroll position gets .active,
+// with immediate neighbors tapering shorter via .near-1/.near-2 — a
+// static peak shape (fixed width per distance, same color throughout),
+// not an animated glow. It just slides between ticks as you scroll, with
+// no brightness variation over time.
 const rulerEl = document.querySelector('.scroll-ruler');
 if (rulerEl) {
   const TICK_COUNT = 40;
+  const NEAR_CLASSES = ['active', 'near-1', 'near-2']; // index = distance from center
   const ticks = [];
   for (let i = 0; i < TICK_COUNT; i++) {
     const tick = document.createElement('span');
@@ -100,19 +102,27 @@ if (rulerEl) {
     ticks.push(tick);
   }
 
-  let activeIndex = -1;
+  let litFrom = 0;
+  let litTo = -1; // empty range initially
   let rulerTicking = false;
   const updateRuler = () => {
     const doc = document.documentElement;
     const scrollable = doc.scrollHeight - window.innerHeight;
     const frac = scrollable > 0 ? window.scrollY / scrollable : 0;
     const index = Math.round(frac * (TICK_COUNT - 1));
+    const radius = NEAR_CLASSES.length - 1;
+    const lo = Math.max(0, index - radius);
+    const hi = Math.min(TICK_COUNT - 1, index + radius);
 
-    if (index !== activeIndex) {
-      if (activeIndex >= 0) ticks[activeIndex].classList.remove('active');
-      ticks[index].classList.add('active');
-      activeIndex = index;
+    for (let i = litFrom; i <= litTo; i++) {
+      if (i < lo || i > hi) ticks[i].classList.remove(...NEAR_CLASSES);
     }
+    for (let i = lo; i <= hi; i++) {
+      ticks[i].classList.remove(...NEAR_CLASSES);
+      ticks[i].classList.add(NEAR_CLASSES[Math.abs(i - index)]);
+    }
+    litFrom = lo;
+    litTo = hi;
     rulerTicking = false;
   };
   updateRuler();
