@@ -390,7 +390,11 @@ if (rfqForm) {
 
 // Footer year + "last updated" timestamp
 const now = new Date();
-document.getElementById('year').textContent = now.getFullYear();
-document.getElementById('updated').textContent = now
-  .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  .toUpperCase();
+const yearEl = document.getElementById('year');
+const updatedEl = document.getElementById('updated');
+if (yearEl) yearEl.textContent = now.getFullYear();
+if (updatedEl) {
+  updatedEl.textContent = now
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    .toUpperCase();
+}

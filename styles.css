@@ -1386,6 +1386,26 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   color: var(--muted);
 }
 
+/* ---- Products (reuses .gallery grid) ---- */
+.product-item figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.product-name {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+}
+.product-price {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* ---- About ---- */
 .about { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 60px; align-items: center; }
 .meta-list { list-style: none; margin-top: 32px; border-top: 1px solid var(--line); }
