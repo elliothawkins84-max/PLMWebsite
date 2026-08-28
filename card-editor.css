@@ -293,12 +293,29 @@
 .editor-field-icon { width: 15px; height: 15px; flex: none; }
 .editor-field-label { font-size: 0.68rem; font-family: var(--mono); width: 9px; flex: none; }
 .editor-field-unit { font-size: 0.62rem; font-family: var(--mono); flex: none; }
-.editor-text-toolbar #text-rotation,
+.editor-text-toolbar #text-rotation {
+  width: 52px;
+}
+/* Position/size fields: wide enough for a full value like "123.45", and
+   no spin arrows — with 2-decimal-mm precision the up/down step is more
+   fiddly than useful, so typing is the only input method. */
 .editor-text-toolbar #text-pos-x,
 .editor-text-toolbar #text-pos-y,
 .editor-text-toolbar #text-size-w,
 .editor-text-toolbar #text-size-h {
-  width: 52px;
+  width: 72px;
+  -moz-appearance: textfield;
+}
+.editor-text-toolbar #text-pos-x::-webkit-outer-spin-button,
+.editor-text-toolbar #text-pos-x::-webkit-inner-spin-button,
+.editor-text-toolbar #text-pos-y::-webkit-outer-spin-button,
+.editor-text-toolbar #text-pos-y::-webkit-inner-spin-button,
+.editor-text-toolbar #text-size-w::-webkit-outer-spin-button,
+.editor-text-toolbar #text-size-w::-webkit-inner-spin-button,
+.editor-text-toolbar #text-size-h::-webkit-outer-spin-button,
+.editor-text-toolbar #text-size-h::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .editor-canvas-scroll {
