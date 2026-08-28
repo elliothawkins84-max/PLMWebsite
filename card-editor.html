@@ -36,39 +36,56 @@
     <div class="editor-main">
       <!-- Left toolbar -->
       <nav class="editor-toolbar" aria-label="Editor tools">
-        <button type="button" class="editor-tool is-active" disabled>
-          <span class="editor-tool-icon">&#9992;</span>
-          <span>Select</span>
-        </button>
-        <button type="button" class="editor-tool" disabled>
-          <span class="editor-tool-icon">T</span>
-          <span>Text</span>
-        </button>
-        <button type="button" class="editor-tool" disabled>
-          <span class="editor-tool-icon">&#9723;</span>
-          <span>Shapes</span>
-        </button>
-        <button type="button" class="editor-tool" disabled>
-          <span class="editor-tool-icon">&#9635;</span>
-          <span>Images</span>
-        </button>
-        <button type="button" class="editor-tool" disabled>
-          <span class="editor-tool-icon">&#8593;</span>
-          <span>Upload</span>
-        </button>
+        <div class="editor-tool-group">
+          <button type="button" class="editor-tool is-active" disabled>
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M5 3l14 6-6 2-2 6-6-14z"/></svg>
+            <span class="editor-tool-label">Select</span>
+          </button>
+          <button type="button" class="editor-tool" disabled>
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="5"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
+            <span class="editor-tool-label">Text</span>
+          </button>
+          <button type="button" class="editor-tool" disabled>
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="8.5" width="10" height="10"/><circle cx="16" cy="8" r="4.5"/></svg>
+            <span class="editor-tool-label">Shapes</span>
+          </button>
+          <button type="button" class="editor-tool" disabled>
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4" width="18" height="16"/><circle cx="8.5" cy="9.5" r="1.4"/><path d="M21 16.5l-5.5-5.5L9 17"/></svg>
+            <span class="editor-tool-label">Images</span>
+          </button>
+          <button type="button" class="editor-tool" disabled>
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            <span class="editor-tool-label">Upload</span>
+          </button>
+        </div>
+
         <div class="editor-tool-divider"></div>
-        <button type="button" class="editor-tool" disabled>
-          <span class="editor-tool-icon">&#8676;</span>
-          <span>Align</span>
-        </button>
-        <button type="button" class="editor-tool" disabled>
-          <span class="editor-tool-icon">&#9776;</span>
-          <span>Layers</span>
-        </button>
-        <button type="button" class="editor-tool" disabled>
-          <span class="editor-tool-icon">&#8862;</span>
-          <span>Guides</span>
-        </button>
+
+        <div class="editor-tool-group">
+          <button type="button" class="editor-tool" disabled>
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="17" y2="18"/></svg>
+            <span class="editor-tool-label">Align</span>
+          </button>
+          <button type="button" class="editor-tool" disabled>
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><polygon points="12,3 21,8 12,13 3,8"/><polyline points="3,14 12,19 21,14"/></svg>
+            <span class="editor-tool-label">Layers</span>
+          </button>
+          <button type="button" class="editor-tool" disabled>
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="22" stroke-dasharray="2 2.4"/><line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="2 2.4"/><circle cx="12" cy="12" r="3"/></svg>
+            <span class="editor-tool-label">Guides</span>
+          </button>
+        </div>
+
+        <div class="editor-zoom">
+          <span class="editor-zoom-label">Zoom</span>
+          <div class="editor-zoom-controls">
+            <button type="button" class="editor-icon-btn" disabled aria-label="Zoom out">&minus;</button>
+            <span class="editor-zoom-value">100%</span>
+            <button type="button" class="editor-icon-btn" disabled aria-label="Zoom in">+</button>
+          </div>
+        </div>
+
+        <button type="button" class="editor-help-btn" disabled aria-label="Help">?</button>
       </nav>
 
       <!-- Canvas -->

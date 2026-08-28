@@ -71,42 +71,81 @@
 .editor-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 200px 1fr 300px;
+  grid-template-columns: 112px 1fr 300px;
   min-height: 0;
 }
 
 /* ---- Left toolbar ---- */
 .editor-toolbar {
   border-right: 1px solid var(--line);
-  padding: 20px 12px;
+  padding: 16px 10px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
 }
+.editor-tool-group { display: flex; flex-direction: column; gap: 2px; }
 .editor-tool {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 7px;
+  padding: 12px 4px;
   background: transparent;
   border: none;
   color: var(--muted);
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-align: left;
   cursor: not-allowed;
 }
-.editor-tool.is-active { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
-.editor-tool-icon {
-  width: 18px;
-  flex: none;
-  text-align: center;
-  font-size: 0.9rem;
+.editor-tool.is-active { color: var(--bg); background: var(--fg); }
+.editor-tool-icon { width: 20px; height: 20px; flex: none; }
+.editor-tool-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
-.editor-tool-divider { height: 1px; background: var(--line); margin: 8px 4px; }
+.editor-tool-divider { height: 1px; background: var(--line); margin: 10px 4px; }
+
+/* ---- Zoom + help, pinned to the bottom of the toolbar ---- */
+.editor-zoom {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.editor-zoom-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.editor-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.editor-zoom-controls .editor-icon-btn { width: 22px; height: 22px; font-size: 0.85rem; }
+.editor-zoom-value { min-width: 34px; text-align: center; }
+.editor-help-btn {
+  margin-top: 14px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  align-self: center;
+  cursor: not-allowed;
+}
 
 /* ---- Canvas ---- */
 .editor-canvas-area {
