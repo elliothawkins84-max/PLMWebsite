@@ -140,7 +140,7 @@ if (addBackBtn) {
 const ZOOM_MIN = 25;
 const ZOOM_MAX = 300;
 const ZOOM_STEP = 10; // per button click — a deliberate, discrete action
-const ZOOM_WHEEL_STEP = 2; // per wheel/trackpad tick — these fire many times per gesture, so a big step feels wildly oversensitive
+const ZOOM_WHEEL_STEP = 5; // per wheel/trackpad tick
 let zoomLevel = 100;
 
 const canvasFrame = document.querySelector('.editor-canvas-frame');
