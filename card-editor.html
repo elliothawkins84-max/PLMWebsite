@@ -176,16 +176,33 @@
 
           <div class="editor-text-toolbar-divider"></div>
 
-          <label class="editor-field" title="Anchor point — where X/Y is measured from, and where rotation pivots">
-            <span class="editor-field-label">Anchor</span>
-            <select id="text-anchor" aria-label="Anchor point">
-              <option value="tl">Top Left</option>
-              <option value="tr">Top Right</option>
-              <option value="bl">Bottom Left</option>
-              <option value="br">Bottom Right</option>
-              <option value="c">Center</option>
-            </select>
-          </label>
+          <!-- Anchor point — an Illustrator-style reference-point picker:
+               the icon shows which point is currently active, click for a
+               dropdown to pick a different one. Drives where X/Y is
+               measured from and where rotation pivots (see card-editor.js). -->
+          <div class="editor-align-dropdown" id="anchor-dropdown">
+            <button type="button" class="editor-align-dropdown-btn" id="anchor-dropdown-btn" aria-haspopup="true" aria-expanded="false" aria-label="Anchor point" title="Anchor point — where X/Y is measured from, and where rotation pivots">
+              <svg class="editor-anchor-icon" id="anchor-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+                <rect x="3" y="3" width="18" height="18" rx="1"/>
+                <circle class="anchor-dot" data-dot="tl" cx="3" cy="3" r="2.6"/>
+                <circle class="anchor-dot" data-dot="tr" cx="21" cy="3" r="2.6"/>
+                <circle class="anchor-dot" data-dot="bl" cx="3" cy="21" r="2.6"/>
+                <circle class="anchor-dot" data-dot="br" cx="21" cy="21" r="2.6"/>
+                <circle class="anchor-dot" data-dot="c" cx="12" cy="12" r="2.6"/>
+              </svg>
+              <svg class="editor-align-dropdown-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg>
+            </button>
+            <div class="editor-align-dropdown-panel" id="anchor-dropdown-panel">
+              <p class="editor-align-dropdown-label">Anchor point</p>
+              <div class="editor-anchor-grid">
+                <button type="button" class="editor-align-btn editor-anchor-btn" data-anchor="tl" aria-label="Top left" title="Top left"><span class="editor-anchor-dot"></span></button>
+                <button type="button" class="editor-align-btn editor-anchor-btn" data-anchor="tr" aria-label="Top right" title="Top right"><span class="editor-anchor-dot"></span></button>
+                <button type="button" class="editor-align-btn editor-anchor-btn" data-anchor="c" aria-label="Center" title="Center"><span class="editor-anchor-dot"></span></button>
+                <button type="button" class="editor-align-btn editor-anchor-btn" data-anchor="bl" aria-label="Bottom left" title="Bottom left"><span class="editor-anchor-dot"></span></button>
+                <button type="button" class="editor-align-btn editor-anchor-btn" data-anchor="br" aria-label="Bottom right" title="Bottom right"><span class="editor-anchor-dot"></span></button>
+              </div>
+            </div>
+          </div>
 
           <div class="editor-text-toolbar-divider"></div>
 

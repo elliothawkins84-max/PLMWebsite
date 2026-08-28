@@ -358,7 +358,8 @@ if (fabricCanvasEl && window.fabric) {
   const fontSizeInput = document.getElementById('text-font-size');
   const alignButtons = document.querySelectorAll('.editor-align-btn[data-align]');
   const rotationInput = document.getElementById('text-rotation');
-  const anchorSelect = document.getElementById('text-anchor');
+  const anchorDots = document.querySelectorAll('#anchor-icon .anchor-dot');
+  const anchorPanelButtons = document.querySelectorAll('.editor-anchor-btn');
   const posXInput = document.getElementById('text-pos-x');
   const posYInput = document.getElementById('text-pos-y');
   const sizeWInput = document.getElementById('text-size-w');
@@ -394,6 +395,12 @@ if (fabricCanvasEl && window.fabric) {
     obj.setPositionByOrigin(center, 'center', 'center');
     obj.setCoords();
   }
+  // Updates both the toggle icon's highlighted dot and the panel's
+  // highlighted button to reflect the given anchor key.
+  function updateAnchorIcon(key) {
+    anchorDots.forEach((dot) => dot.classList.toggle('is-active', dot.dataset.dot === key));
+    anchorPanelButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.anchor === key));
+  }
 
   // Rotation reads straight off the object's angle. Position is the
   // anchor point relative to the card's top-left corner (0,0), in mm to
@@ -402,7 +409,7 @@ if (fabricCanvasEl && window.fabric) {
   // doesn't make its W/H climb.
   function refreshTransformFields(obj) {
     if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
-    if (anchorSelect) anchorSelect.value = anchorKeyFor(obj);
+    updateAnchorIcon(anchorKeyFor(obj));
     if (posXInput) posXInput.value = (obj.left / PX_PER_MM).toFixed(2);
     if (posYInput) posYInput.value = (obj.top / PX_PER_MM).toFixed(2);
     if (sizeWInput) sizeWInput.value = (obj.getScaledWidth() / PX_PER_MM).toFixed(2);
@@ -410,7 +417,7 @@ if (fabricCanvasEl && window.fabric) {
   }
   function clearTransformFields() {
     if (rotationInput) rotationInput.value = 0;
-    if (anchorSelect) anchorSelect.value = 'tl';
+    updateAnchorIcon('tl');
     if (posXInput) posXInput.value = '';
     if (posYInput) posYInput.value = '';
     if (sizeWInput) sizeWInput.value = '';
@@ -558,6 +565,7 @@ if (fabricCanvasEl && window.fabric) {
   }
   setupAlignDropdown('text-align-dropdown', 'text-align-dropdown-btn');
   setupAlignDropdown('position-align-dropdown', 'position-align-dropdown-btn');
+  setupAlignDropdown('anchor-dropdown', 'anchor-dropdown-btn');
   document.addEventListener('click', (e) => {
     if (![...allAlignDropdowns].some((d) => d.contains(e.target))) closeAlignDropdowns();
   });
@@ -575,16 +583,16 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
 
-  // ---- Anchor dropdown ----
-  if (anchorSelect) {
-    anchorSelect.addEventListener('change', () => {
+  // ---- Anchor picker: clicking a point in the dropdown grid sets it ----
+  anchorPanelButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
       const obj = fabricCanvas.getActiveObject();
       if (!obj) return;
-      setObjectAnchor(obj, anchorSelect.value);
+      setObjectAnchor(obj, btn.dataset.anchor);
       fabricCanvas.requestRenderAll();
       refreshTransformFields(obj);
     });
-  }
+  });
 
   // ---- Position fields (anchor point, mm from the card's top-left) ----
   // obj.left/top already *are* the anchor point's coordinates once

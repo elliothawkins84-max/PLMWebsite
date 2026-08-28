@@ -205,6 +205,7 @@
    toolbar appears/disappears. */
 .editor-text-toolbar {
   display: flex;
+  flex-wrap: wrap;
   visibility: hidden;
   pointer-events: none;
   align-items: center;
@@ -281,6 +282,38 @@
 }
 .editor-align-dropdown-row { display: flex; gap: 4px; }
 .editor-align-dropdown-row + .editor-align-dropdown-label { margin-top: 10px; }
+
+/* Anchor point — Illustrator-style reference-point icon (a box with 5
+   dots) as the dropdown toggle, and a matching corner/center grid of
+   buttons inside the panel to pick a new one. */
+.editor-anchor-icon .anchor-dot { fill: var(--muted); }
+.editor-anchor-icon .anchor-dot.is-active { fill: var(--fg); }
+.editor-anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 28px);
+  grid-template-rows: repeat(3, 28px);
+  gap: 4px;
+}
+.editor-anchor-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.editor-anchor-btn:hover:not(.is-active) { background: rgba(255, 255, 255, 0.08); border-color: var(--fg); }
+.editor-anchor-btn.is-active { background: var(--fg); border-color: var(--fg); }
+.editor-anchor-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.editor-anchor-btn:hover:not(.is-active) .editor-anchor-dot { background: var(--fg); }
+.editor-anchor-btn.is-active .editor-anchor-dot { background: var(--bg); }
+.editor-anchor-btn[data-anchor="tl"] { grid-column: 1; grid-row: 1; }
+.editor-anchor-btn[data-anchor="tr"] { grid-column: 3; grid-row: 1; }
+.editor-anchor-btn[data-anchor="c"]  { grid-column: 2; grid-row: 2; }
+.editor-anchor-btn[data-anchor="bl"] { grid-column: 1; grid-row: 3; }
+.editor-anchor-btn[data-anchor="br"] { grid-column: 3; grid-row: 3; }
 
 /* Rotation / position / size fields */
 .editor-field {
