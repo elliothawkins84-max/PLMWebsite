@@ -4,6 +4,13 @@
 // canvas functionality (what a selected tool actually does) yet.
 
 const PX_PER_MM = 9; // matches the fixed sizing in card-editor.css
+// The fabric canvas is bigger than the card itself and extends this many
+// px past each edge (see card-editor.css, .editor-card canvas) — so
+// something dragged off the card stays visible instead of being clipped
+// right at the edge and potentially submitted unnoticed. All of a card
+// object's canvas-internal coordinates are offset by this from the
+// card's own true top-left corner.
+const CARD_MARGIN_PX = 100;
 
 // ---- Toolbar tool selection ----
 // Panel-toggle (Layers) and standalone-toggle (Guides) buttons are
@@ -296,11 +303,32 @@ const fabricCanvasEl = document.getElementById('fabric-canvas');
 let fabricCanvas = null;
 if (fabricCanvasEl && window.fabric) {
   fabricCanvas = new fabric.Canvas('fabric-canvas', {
-    width: 774,
-    height: 486,
-    backgroundColor: '#3a3a3a',
+    width: 774 + CARD_MARGIN_PX * 2,
+    height: 486 + CARD_MARGIN_PX * 2,
+    // Off-card background — matches the surrounding canvas-area
+    // background so the margin reads as "outside the card" rather than
+    // looking like a rendering glitch; the card itself is marked out by
+    // a locked rect below, not by the canvas's own background.
+    backgroundColor: '#000000',
     selection: true,
   });
+
+  // A plain, non-interactive rect standing in for "the card" at its
+  // true position within the oversized canvas — never selectable,
+  // movable, or exported, just a visual boundary so on-card vs.
+  // off-card is obvious at a glance.
+  const cardBackground = new fabric.Rect({
+    left: CARD_MARGIN_PX,
+    top: CARD_MARGIN_PX,
+    width: 774,
+    height: 486,
+    fill: '#3a3a3a',
+    selectable: false,
+    evented: false,
+    excludeFromExport: true,
+    hoverCursor: 'default',
+  });
+  fabricCanvas.add(cardBackground);
 
   const textBtn = document.getElementById('tool-text');
   const shapesBtn = document.getElementById('tool-shapes');
@@ -577,8 +605,8 @@ if (fabricCanvasEl && window.fabric) {
   function refreshTransformFields(obj) {
     if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
     updateAnchorIcon(anchorKeyFor(obj));
-    if (posXInput) posXInput.value = (obj.left / PX_PER_MM).toFixed(2);
-    if (posYInput) posYInput.value = (obj.top / PX_PER_MM).toFixed(2);
+    if (posXInput) posXInput.value = ((obj.left - CARD_MARGIN_PX) / PX_PER_MM).toFixed(2);
+    if (posYInput) posYInput.value = ((obj.top - CARD_MARGIN_PX) / PX_PER_MM).toFixed(2);
     if (sizeWInput) sizeWInput.value = (obj.getScaledWidth() / PX_PER_MM).toFixed(2);
     if (sizeHInput) sizeHInput.value = (obj.getScaledHeight() / PX_PER_MM).toFixed(2);
   }
@@ -870,7 +898,7 @@ if (fabricCanvasEl && window.fabric) {
   function moveActiveObjectAnchorTo(axis, valueMm) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj) return;
-    const targetPx = valueMm * PX_PER_MM;
+    const targetPx = valueMm * PX_PER_MM + CARD_MARGIN_PX;
     if (axis === 'x') obj.set({ left: targetPx });
     else obj.set({ top: targetPx });
     obj.setCoords();
@@ -942,22 +970,27 @@ if (fabricCanvasEl && window.fabric) {
   function alignActiveObject(op) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj) return;
-    const canvasW = fabricCanvas.getWidth();
-    const canvasH = fabricCanvas.getHeight();
+    // Align against the card's own true bounds, not the oversized
+    // canvas's — the canvas extends CARD_MARGIN_PX past the card on
+    // every side so off-card content stays visible (see CARD_MARGIN_PX).
+    const cardLeft = CARD_MARGIN_PX;
+    const cardTop = CARD_MARGIN_PX;
+    const canvasW = 774;
+    const canvasH = 486;
     const rect = obj.getBoundingRect(true, true);
     let dx = 0;
     let dy = 0;
     if (op === 'left' || op === 'center' || op === 'center-h') {
-      const targetLeft = op === 'left' ? 0 : (canvasW - rect.width) / 2;
+      const targetLeft = op === 'left' ? cardLeft : cardLeft + (canvasW - rect.width) / 2;
       dx = targetLeft - rect.left;
     } else if (op === 'right') {
-      dx = canvasW - (rect.left + rect.width);
+      dx = cardLeft + canvasW - (rect.left + rect.width);
     }
     if (op === 'top' || op === 'center' || op === 'center-v') {
-      const targetTop = op === 'top' ? 0 : (canvasH - rect.height) / 2;
+      const targetTop = op === 'top' ? cardTop : cardTop + (canvasH - rect.height) / 2;
       dy = targetTop - rect.top;
     } else if (op === 'bottom') {
-      dy = canvasH - (rect.top + rect.height);
+      dy = cardTop + canvasH - (rect.top + rect.height);
     }
     obj.set({ left: obj.left + dx, top: obj.top + dy });
     obj.setCoords();
