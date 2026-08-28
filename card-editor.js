@@ -302,14 +302,22 @@ if (fabricCanvasEl && window.fabric) {
     selection: true,
   });
 
-  const selectBtn = document.getElementById('tool-select');
   const textBtn = document.getElementById('tool-text');
   const isTextToolActive = () => !!(textBtn && textBtn.classList.contains('is-active'));
 
-  // Update the canvas cursor whenever the active tool changes.
+  // Update the canvas cursor whenever the active tool changes, and show
+  // the text formatting toolbar as soon as the Text tool is selected
+  // (reflecting the defaults new text will use), not only once a text
+  // object is actually selected. Switching to another tool hides it
+  // again, unless a text object is still selected.
   toolButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       fabricCanvas.defaultCursor = btn.id === 'tool-text' ? 'text' : 'default';
+      if (btn.id === 'tool-text') {
+        showTextToolbarFor({ fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
+      } else if (!fabricCanvas.getActiveObject()) {
+        hideTextToolbar();
+      }
     });
   });
 
@@ -334,12 +342,6 @@ if (fabricCanvasEl && window.fabric) {
     fabricCanvas.setActiveObject(text);
     text.enterEditing();
     fabricCanvas.requestRenderAll();
-
-    // One placement per Text-tool click, then back to Select — matches
-    // how most design tools behave (Figma, Illustrator's type tool).
-    if (textBtn) textBtn.classList.remove('is-active');
-    if (selectBtn) selectBtn.classList.add('is-active');
-    fabricCanvas.defaultCursor = 'default';
   });
 
   // ---- Text formatting toolbar: font, size, alignment ----
@@ -416,5 +418,22 @@ if (fabricCanvasEl && window.fabric) {
       alignButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
       fabricCanvas.requestRenderAll();
     });
+  });
+
+  // ---- Delete the selected object ----
+  // Skip it while a text object is actively being edited (Backspace/Delete
+  // there should just edit the text, which Fabric already handles) and
+  // while focus is in one of the toolbar's own inputs.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj || obj.isEditing) return;
+    e.preventDefault();
+    fabricCanvas.remove(obj);
+    fabricCanvas.discardActiveObject();
+    fabricCanvas.requestRenderAll();
+    hideTextToolbar();
   });
 }
