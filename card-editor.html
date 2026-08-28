@@ -176,12 +176,25 @@
 
           <div class="editor-text-toolbar-divider"></div>
 
-          <label class="editor-field" title="X position (center, from card's top-left)">
+          <label class="editor-field" title="Anchor point — where X/Y is measured from, and where rotation pivots">
+            <span class="editor-field-label">Anchor</span>
+            <select id="text-anchor" aria-label="Anchor point">
+              <option value="tl">Top Left</option>
+              <option value="tr">Top Right</option>
+              <option value="bl">Bottom Left</option>
+              <option value="br">Bottom Right</option>
+              <option value="c">Center</option>
+            </select>
+          </label>
+
+          <div class="editor-text-toolbar-divider"></div>
+
+          <label class="editor-field" title="X position (from card's top-left, measured at the anchor point)">
             <span class="editor-field-label">X</span>
             <input type="number" id="text-pos-x" aria-label="X position" step="0.01" />
             <span class="editor-field-unit">mm</span>
           </label>
-          <label class="editor-field" title="Y position (center, from card's top-left)">
+          <label class="editor-field" title="Y position (from card's top-left, measured at the anchor point)">
             <span class="editor-field-label">Y</span>
             <input type="number" id="text-pos-y" aria-label="Y position" step="0.01" />
             <span class="editor-field-unit">mm</span>

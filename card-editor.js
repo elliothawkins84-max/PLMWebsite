@@ -337,6 +337,14 @@ if (fabricCanvasEl && window.fabric) {
       fontSize: 24,
       fill: '#ffffff',
       textAlign: 'left',
+      // Default anchor is top-left (matches the default originX/Y below,
+      // and the click point becoming the box's top-left as you type).
+      // centeredRotation:false so a never-touched object's rotation
+      // pivot is consistent with that anchor, not fabric's own default
+      // (which rotates around center regardless of origin).
+      originX: 'left',
+      originY: 'top',
+      centeredRotation: false,
     });
     fabricCanvas.add(text);
     fabricCanvas.setActiveObject(text);
@@ -350,27 +358,59 @@ if (fabricCanvasEl && window.fabric) {
   const fontSizeInput = document.getElementById('text-font-size');
   const alignButtons = document.querySelectorAll('.editor-align-btn[data-align]');
   const rotationInput = document.getElementById('text-rotation');
+  const anchorSelect = document.getElementById('text-anchor');
   const posXInput = document.getElementById('text-pos-x');
   const posYInput = document.getElementById('text-pos-y');
   const sizeWInput = document.getElementById('text-size-w');
   const sizeHInput = document.getElementById('text-size-h');
 
+  // The anchor point drives both where X/Y is measured from and where
+  // rotation pivots — both are native Fabric concepts tied to an object's
+  // originX/originY (the point that render, and interactive rotation
+  // with centeredRotation:false, both pivot around). So switching anchor
+  // just changes originX/Y, repositioning to keep the object visually in
+  // place. Once that's set, obj.left/obj.top directly *are* the anchor
+  // point's canvas coordinates — invariant to the object's own rotation,
+  // since a pivot point doesn't move when the thing pivoting around it
+  // rotates — so no separate bounding-box math is needed to read them.
+  const ANCHORS = {
+    tl: { originX: 'left', originY: 'top' },
+    tr: { originX: 'right', originY: 'top' },
+    bl: { originX: 'left', originY: 'bottom' },
+    br: { originX: 'right', originY: 'bottom' },
+    c: { originX: 'center', originY: 'center' },
+  };
+  function anchorKeyFor(obj) {
+    const key = Object.keys(ANCHORS).find(
+      (k) => ANCHORS[k].originX === obj.originX && ANCHORS[k].originY === obj.originY
+    );
+    return key || 'tl';
+  }
+  function setObjectAnchor(obj, key) {
+    const anchor = ANCHORS[key];
+    if (!anchor || (obj.originX === anchor.originX && obj.originY === anchor.originY)) return;
+    const center = obj.getCenterPoint();
+    obj.set({ originX: anchor.originX, originY: anchor.originY, centeredRotation: false });
+    obj.setPositionByOrigin(center, 'center', 'center');
+    obj.setCoords();
+  }
+
   // Rotation reads straight off the object's angle. Position is the
-  // object's center point relative to the card's top-left corner (0,0),
-  // in mm to match the ruler — using the center (rather than a corner)
-  // means it doesn't jump around as the object rotates. Size is the
-  // object's own un-rotated width/height (not the rotated axis-aligned
-  // bounding box), so spinning an object doesn't make its W/H climb.
+  // anchor point relative to the card's top-left corner (0,0), in mm to
+  // match the ruler. Size is the object's own un-rotated width/height
+  // (not the rotated axis-aligned bounding box), so spinning an object
+  // doesn't make its W/H climb.
   function refreshTransformFields(obj) {
     if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
-    const center = obj.getCenterPoint();
-    if (posXInput) posXInput.value = (center.x / PX_PER_MM).toFixed(2);
-    if (posYInput) posYInput.value = (center.y / PX_PER_MM).toFixed(2);
+    if (anchorSelect) anchorSelect.value = anchorKeyFor(obj);
+    if (posXInput) posXInput.value = (obj.left / PX_PER_MM).toFixed(2);
+    if (posYInput) posYInput.value = (obj.top / PX_PER_MM).toFixed(2);
     if (sizeWInput) sizeWInput.value = (obj.getScaledWidth() / PX_PER_MM).toFixed(2);
     if (sizeHInput) sizeHInput.value = (obj.getScaledHeight() / PX_PER_MM).toFixed(2);
   }
   function clearTransformFields() {
     if (rotationInput) rotationInput.value = 0;
+    if (anchorSelect) anchorSelect.value = 'tl';
     if (posXInput) posXInput.value = '';
     if (posYInput) posYInput.value = '';
     if (sizeWInput) sizeWInput.value = '';
@@ -535,27 +575,40 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
 
-  // ---- Position fields (object's center, mm from the card's top-left) ----
-  function moveActiveObjectCenterTo(axis, valueMm) {
+  // ---- Anchor dropdown ----
+  if (anchorSelect) {
+    anchorSelect.addEventListener('change', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj) return;
+      setObjectAnchor(obj, anchorSelect.value);
+      fabricCanvas.requestRenderAll();
+      refreshTransformFields(obj);
+    });
+  }
+
+  // ---- Position fields (anchor point, mm from the card's top-left) ----
+  // obj.left/top already *are* the anchor point's coordinates once
+  // originX/Y is set to match it, so this is a direct set — no delta
+  // math needed.
+  function moveActiveObjectAnchorTo(axis, valueMm) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj) return;
     const targetPx = valueMm * PX_PER_MM;
-    const center = obj.getCenterPoint();
-    if (axis === 'x') obj.set({ left: obj.left + (targetPx - center.x) });
-    else obj.set({ top: obj.top + (targetPx - center.y) });
+    if (axis === 'x') obj.set({ left: targetPx });
+    else obj.set({ top: targetPx });
     obj.setCoords();
     fabricCanvas.requestRenderAll();
   }
   if (posXInput) {
     posXInput.addEventListener('input', () => {
       const val = parseFloat(posXInput.value);
-      if (!Number.isNaN(val)) moveActiveObjectCenterTo('x', val);
+      if (!Number.isNaN(val)) moveActiveObjectAnchorTo('x', val);
     });
   }
   if (posYInput) {
     posYInput.addEventListener('input', () => {
       const val = parseFloat(posYInput.value);
-      if (!Number.isNaN(val)) moveActiveObjectCenterTo('y', val);
+      if (!Number.isNaN(val)) moveActiveObjectAnchorTo('y', val);
     });
   }
 
