@@ -367,6 +367,17 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('selection:updated', handleSelection);
   fabricCanvas.on('selection:cleared', hideTextToolbar);
 
+  // Dragging a corner handle on a text object should change its font size,
+  // not stretch it — fold the scale into fontSize and reset scale back to
+  // 1 so the size field always reflects the text's true rendered size.
+  fabricCanvas.on('object:scaling', (opt) => {
+    const obj = opt.target;
+    if (!obj || obj.type !== 'i-text') return;
+    const newSize = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
+    obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
+    if (fontSizeInput) fontSizeInput.value = newSize;
+  });
+
   if (fontFamilySelect) {
     fontFamilySelect.addEventListener('change', () => {
       const obj = fabricCanvas.getActiveObject();
