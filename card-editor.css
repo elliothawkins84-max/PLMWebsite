@@ -78,7 +78,9 @@
 .editor-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 112px auto 1fr 340px;
+  /* Renderings column sized to the panel's own (resizable) width, not
+     hardcoded here — see .editor-renderings. */
+  grid-template-columns: 112px auto 1fr auto;
   grid-template-rows: 1fr auto;
   min-height: 0;
 }
@@ -235,24 +237,34 @@
 .editor-canvas-frame {
   display: grid;
   grid-template-columns: 34px 16px 774px;
-  grid-template-rows: 34px 16px 486px;
+  grid-template-rows: 18px 34px 16px 486px;
   width: fit-content;
+}
+.safe-zone-label {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: end;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ff3b3b;
 }
 .ruler-corner {
   grid-column: 1;
-  grid-row: 1;
+  grid-row: 2;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
 .ruler-top {
   grid-column: 3;
-  grid-row: 1;
+  grid-row: 2;
   position: relative;
   border-bottom: 1px solid var(--line);
 }
 .ruler-left {
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 4;
   position: relative;
   border-right: 1px solid var(--line);
 }
@@ -283,7 +295,7 @@
   transform: translateY(-50%);
 }
 
-.editor-canvas-wrap { grid-column: 3; grid-row: 3; width: 774px; height: 486px; }
+.editor-canvas-wrap { grid-column: 3; grid-row: 4; width: 774px; height: 486px; }
 .editor-card {
   position: relative;
   width: 100%;
@@ -304,13 +316,25 @@
 /* Safe zone — always visible, not tied to any toggle. 9px = 1mm at this
    editor's fixed 9px-per-mm scale (see PX_PER_MM in card-editor.js);
    since it lives inside the frame that CSS `zoom` scales as a whole,
-   this stays correctly aligned at any zoom level without extra math. */
+   this stays correctly aligned at any zoom level without extra math.
+   Four separate edges with a repeating-gradient dash pattern (same
+   technique as the guide lines below) rather than border-style:dashed,
+   for control over dash length — long dashes, few of them, rather than
+   a fine dashed line. */
 .editor-safe-zone {
   position: absolute;
   inset: 9px;
-  border: 1px dashed #ff3b3b;
   pointer-events: none;
 }
+.sz-edge { position: absolute; }
+.sz-top,
+.sz-bottom { left: 0; right: 0; height: 1px; background-image: repeating-linear-gradient(to right, #ff3b3b 0 20px, transparent 20px 32px); }
+.sz-left,
+.sz-right { top: 0; bottom: 0; width: 1px; background-image: repeating-linear-gradient(to bottom, #ff3b3b 0 20px, transparent 20px 32px); }
+.sz-top { top: 0; }
+.sz-bottom { bottom: 0; }
+.sz-left { left: 0; }
+.sz-right { right: 0; }
 
 /* Guides — toggled by the Guides button: a center crosshair (horizontal
    + vertical) for aligning design elements to the middle of the card.
@@ -409,11 +433,27 @@
 
 /* ---- Renderings panel ---- */
 .editor-renderings {
+  position: relative;
+  width: 340px;
+  min-width: 260px;
+  max-width: 640px;
   border-left: 1px solid var(--line);
   padding: 24px 20px;
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+/* Wide hit target straddling the left border, drag to resize. */
+.editor-renderings-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  transform: translateX(-3.5px);
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
 }
 .editor-renderings h2 {
   font-size: 1rem;
@@ -427,14 +467,18 @@
 .editor-renderings-body {
   flex: 1;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
+  align-content: center;
+  gap: 16px;
   min-height: 0;
 }
 .editor-renderings-empty {
   border: 1px dashed var(--line);
   aspect-ratio: 86 / 54;
-  width: 100%;
+  flex: 1 1 200px;
+  max-width: 100%;
 }
 
 /* ---- Desktop-only gate ---- */

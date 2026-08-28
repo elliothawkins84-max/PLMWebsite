@@ -105,6 +105,8 @@ if (sidesEl) {
   });
 }
 
+const renderingsBody = document.getElementById('renderings-body');
+
 if (addBackBtn) {
   addBackBtn.addEventListener('click', () => {
     const backThumb = document.createElement('button');
@@ -117,6 +119,15 @@ if (addBackBtn) {
     `;
     addBackBtn.replaceWith(backThumb);
     setActiveSide('back');
+
+    // A back side now exists, so the renderings panel should preview
+    // both sides — add a second card box alongside the front one.
+    if (renderingsBody && !renderingsBody.querySelector('[data-side="back"]')) {
+      const backPreview = document.createElement('div');
+      backPreview.className = 'editor-renderings-empty';
+      backPreview.dataset.side = 'back';
+      renderingsBody.appendChild(backPreview);
+    }
   });
 }
 
@@ -243,4 +254,39 @@ if (canvasScroll) {
       centerPanArea();
     });
   }
+}
+
+// ---- Renderings panel resize (drag the left edge) ----
+// The panel has its own explicit width (see card-editor.css); the panel
+// itself recentering its contents when resized comes for free from
+// .editor-renderings-body's flex centering — nothing extra needed here.
+const renderingsPanel = document.getElementById('renderings-panel');
+const renderingsResize = document.getElementById('renderings-resize');
+const editorMainEl = document.querySelector('.editor-main');
+if (renderingsPanel && renderingsResize && editorMainEl) {
+  const RENDERINGS_MIN = 260;
+  const RENDERINGS_MAX = 640;
+  let isResizingRenderings = false;
+
+  renderingsResize.addEventListener('pointerdown', (e) => {
+    isResizingRenderings = true;
+    renderingsResize.setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'col-resize';
+  });
+
+  renderingsResize.addEventListener('pointermove', (e) => {
+    if (!isResizingRenderings) return;
+    const mainRect = editorMainEl.getBoundingClientRect();
+    const newWidth = Math.max(RENDERINGS_MIN, Math.min(RENDERINGS_MAX, mainRect.right - e.clientX));
+    renderingsPanel.style.width = `${newWidth}px`;
+  });
+
+  const stopResizingRenderings = (e) => {
+    if (!isResizingRenderings) return;
+    isResizingRenderings = false;
+    document.body.style.cursor = '';
+    if (renderingsResize.hasPointerCapture(e.pointerId)) renderingsResize.releasePointerCapture(e.pointerId);
+  };
+  renderingsResize.addEventListener('pointerup', stopResizingRenderings);
+  renderingsResize.addEventListener('pointercancel', stopResizingRenderings);
 }
