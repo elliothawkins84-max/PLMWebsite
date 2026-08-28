@@ -117,14 +117,17 @@ if (zoomInBtn) {
   });
 }
 
-// A vertical mouse wheel / trackpad scroll zooms; a horizontal trackpad
-// swipe is left alone so it still pans the scroll container natively —
-// only preventDefault (and zoom) when the vertical component dominates,
-// otherwise a side-to-side swipe would get swallowed by the zoom handler.
+// A trackpad pinch gesture (or Ctrl/Cmd+scroll on a mouse) fires as a
+// wheel event with ctrlKey set — that's the standard, universal way
+// browsers signal "this is a zoom gesture," distinct from a plain
+// two-finger scroll. So: pinch/Ctrl+scroll zooms; everything else (a
+// plain two-finger trackpad pan, or a normal mouse wheel) is left alone
+// entirely so the browser's native scrolling pans the canvas — no manual
+// scrollLeft/scrollTop math needed for that case.
 const canvasScroll = document.querySelector('.editor-canvas-scroll');
 if (canvasScroll) {
   canvasScroll.addEventListener('wheel', (e) => {
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return; // horizontal swipe — let it pan
+    if (!e.ctrlKey && !e.metaKey) return; // plain scroll — let it pan natively
     e.preventDefault();
     zoomLevel = e.deltaY < 0
       ? Math.min(ZOOM_MAX, zoomLevel + ZOOM_STEP)
