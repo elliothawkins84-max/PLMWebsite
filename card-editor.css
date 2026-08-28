@@ -94,9 +94,11 @@
   background: transparent;
   border: none;
   color: var(--muted);
-  cursor: not-allowed;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
-.editor-tool.is-active { color: var(--bg); background: var(--fg); }
+.editor-tool:hover:not(.is-active) { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
+.editor-tool.is-active { color: var(--bg); background: var(--fg); cursor: default; }
 .editor-tool-icon { width: 20px; height: 20px; flex: none; }
 .editor-tool-label {
   font-family: var(--mono);
@@ -198,15 +200,15 @@
   background: var(--line);
 }
 .ruler-top .ruler-tick { bottom: 0; width: 1px; }
-.ruler-top .ruler-tick.major { height: 8px; background: var(--muted); }
-.ruler-top .ruler-tick.minor { height: 4px; }
+.ruler-top .ruler-tick.major { height: 13px; background: var(--muted); }
+.ruler-top .ruler-tick.minor { height: 6px; }
 .ruler-left .ruler-tick { right: 0; height: 1px; }
-.ruler-left .ruler-tick.major { width: 8px; background: var(--muted); }
-.ruler-left .ruler-tick.minor { width: 4px; }
+.ruler-left .ruler-tick.major { width: 13px; background: var(--muted); }
+.ruler-left .ruler-tick.minor { width: 6px; }
 .ruler-label {
   position: absolute;
   font-family: var(--mono);
-  font-size: 0.56rem;
+  font-size: 0.72rem;
   color: var(--muted);
 }
 .ruler-top .ruler-label { top: 2px; transform: translateX(-50%); }

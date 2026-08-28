@@ -1,8 +1,18 @@
 // Business card editor — framework-stage script. Draws the ruler tick
-// marks around the canvas and handles switching between the front and
-// back side thumbnails. No design/canvas functionality yet.
+// marks around the canvas, handles switching between the front and back
+// side thumbnails, and lets the toolbar buttons be selected. No design/
+// canvas functionality (what a selected tool actually does) yet.
 
 const PX_PER_MM = 6; // matches the fixed sizing in card-editor.css
+
+// ---- Toolbar tool selection ----
+const toolButtons = document.querySelectorAll('.editor-tool');
+toolButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    toolButtons.forEach((b) => b.classList.remove('is-active'));
+    btn.classList.add('is-active');
+  });
+});
 
 // ---- Rulers ----
 function buildRuler(el, lengthMm, isVertical) {
