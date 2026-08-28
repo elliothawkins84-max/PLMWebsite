@@ -117,12 +117,11 @@ if (zoomInBtn) {
   });
 }
 
-// Ctrl/Cmd + scroll wheel to zoom, same as most design tools — scoped to
-// the canvas area so it doesn't hijack normal page scrolling elsewhere.
+// Mouse wheel / trackpad scroll zooms directly (no modifier key needed).
+// Panning once zoomed in still works via the scrollbars themselves.
 const canvasScroll = document.querySelector('.editor-canvas-scroll');
 if (canvasScroll) {
   canvasScroll.addEventListener('wheel', (e) => {
-    if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
     zoomLevel = e.deltaY < 0
       ? Math.min(ZOOM_MAX, zoomLevel + ZOOM_STEP)
