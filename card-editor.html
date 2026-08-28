@@ -62,15 +62,11 @@
         <div class="editor-tool-divider"></div>
 
         <div class="editor-tool-group">
-          <button type="button" class="editor-tool">
-            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="17" y2="18"/></svg>
-            <span class="editor-tool-label">Align</span>
-          </button>
-          <button type="button" class="editor-tool">
+          <button type="button" class="editor-tool editor-panel-toggle" id="toggle-layers" data-panel="layers">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><polygon points="12,3 21,8 12,13 3,8"/><polyline points="3,14 12,19 21,14"/></svg>
             <span class="editor-tool-label">Layers</span>
           </button>
-          <button type="button" class="editor-tool">
+          <button type="button" class="editor-tool editor-panel-toggle" id="toggle-guides" data-panel="guides">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="22" stroke-dasharray="2 2.4"/><line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="2 2.4"/><circle cx="12" cy="12" r="3"/></svg>
             <span class="editor-tool-label">Guides</span>
           </button>
@@ -90,6 +86,19 @@
 
         <button type="button" class="editor-help-btn" disabled aria-label="Help">?</button>
       </nav>
+
+      <!-- Layers / Guides side panel — opened by the toolbar toggle
+           buttons above, closed by default. -->
+      <div class="editor-side-panel" id="side-panel">
+        <div class="editor-side-panel-section" data-panel-content="layers">
+          <h2>Layers</h2>
+          <p class="editor-side-panel-empty">No artwork uploaded yet — use the Upload tool to add images.</p>
+        </div>
+        <div class="editor-side-panel-section" data-panel-content="guides">
+          <h2>Guides</h2>
+          <p class="editor-side-panel-empty">Guide lines for aligning your design will appear here.</p>
+        </div>
+      </div>
 
       <!-- Canvas -->
       <section class="editor-canvas-area">

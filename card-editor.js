@@ -6,13 +6,41 @@
 const PX_PER_MM = 9; // matches the fixed sizing in card-editor.css
 
 // ---- Toolbar tool selection ----
-const toolButtons = document.querySelectorAll('.editor-tool');
+// Panel-toggle buttons (Layers/Guides) are excluded — they open a side
+// panel rather than selecting a drawing tool, so they're not part of
+// this mutually-exclusive group.
+const toolButtons = document.querySelectorAll('.editor-tool:not(.editor-panel-toggle)');
 toolButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     toolButtons.forEach((b) => b.classList.remove('is-active'));
     btn.classList.add('is-active');
   });
 });
+
+// ---- Layers / Guides side panel ----
+const sidePanel = document.getElementById('side-panel');
+const panelToggles = document.querySelectorAll('.editor-panel-toggle');
+if (sidePanel && panelToggles.length) {
+  panelToggles.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const panelName = btn.dataset.panel;
+      const alreadyOpen = btn.classList.contains('is-active');
+
+      panelToggles.forEach((b) => b.classList.remove('is-active'));
+      sidePanel.querySelectorAll('.editor-side-panel-section').forEach((s) => s.classList.remove('is-active'));
+
+      if (alreadyOpen) {
+        // Clicking the open panel's own button closes it.
+        sidePanel.classList.remove('is-open');
+        return;
+      }
+      btn.classList.add('is-active');
+      sidePanel.classList.add('is-open');
+      const section = sidePanel.querySelector(`[data-panel-content="${panelName}"]`);
+      if (section) section.classList.add('is-active');
+    });
+  });
+}
 
 // ---- Rulers ----
 function buildRuler(el, lengthMm, isVertical) {
