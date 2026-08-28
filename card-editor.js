@@ -133,9 +133,13 @@ if (canvasScroll) {
   }, { passive: false });
 }
 
-// Middle-mouse-button hold-and-drag panning ("hand tool"). The browser's
-// own middle-click autoscroll would otherwise kick in, so it's suppressed
-// via preventDefault on mousedown.
+// Middle-mouse-button hold-and-drag panning ("hand tool"). Uses Pointer
+// Events + setPointerCapture rather than plain mousedown/mousemove:
+// preventDefault on a plain mousedown doesn't reliably stop Chrome's own
+// middle-click autoscroll feature from also activating, which then
+// fights with a live drag-tracking approach (autoscroll is a "click
+// once, steer, click again" model, not "hold and drag"). Capturing the
+// pointer on the target element sidesteps that.
 if (canvasScroll) {
   let isPanning = false;
   let panStartX = 0;
@@ -143,7 +147,7 @@ if (canvasScroll) {
   let panStartScrollLeft = 0;
   let panStartScrollTop = 0;
 
-  canvasScroll.addEventListener('mousedown', (e) => {
+  canvasScroll.addEventListener('pointerdown', (e) => {
     if (e.button !== 1) return;
     e.preventDefault();
     isPanning = true;
@@ -152,17 +156,27 @@ if (canvasScroll) {
     panStartScrollLeft = canvasScroll.scrollLeft;
     panStartScrollTop = canvasScroll.scrollTop;
     canvasScroll.classList.add('is-panning');
+    canvasScroll.setPointerCapture(e.pointerId);
   });
 
-  window.addEventListener('mousemove', (e) => {
+  canvasScroll.addEventListener('pointermove', (e) => {
     if (!isPanning) return;
     canvasScroll.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
     canvasScroll.scrollTop = panStartScrollTop - (e.clientY - panStartY);
   });
 
-  window.addEventListener('mouseup', (e) => {
-    if (!isPanning || e.button !== 1) return;
+  const stopPanning = (e) => {
+    if (!isPanning) return;
     isPanning = false;
     canvasScroll.classList.remove('is-panning');
+    if (canvasScroll.hasPointerCapture(e.pointerId)) canvasScroll.releasePointerCapture(e.pointerId);
+  };
+  canvasScroll.addEventListener('pointerup', stopPanning);
+  canvasScroll.addEventListener('pointercancel', stopPanning);
+
+  // Belt-and-suspenders: explicitly block the middle-click auxclick
+  // default too, in case it fires after the drag.
+  canvasScroll.addEventListener('auxclick', (e) => {
+    if (e.button === 1) e.preventDefault();
   });
 }
