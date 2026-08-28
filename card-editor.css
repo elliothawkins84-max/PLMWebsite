@@ -1,0 +1,166 @@
+/* Business card editor — app-style shell, separate from the marketing
+   site's page styles since the layout (toolbar/canvas/panel) is a
+   different kind of UI. Reuses styles.css for color variables, the
+   monospace font, and .btn. Desktop only: below the breakpoint the whole
+   editor is hidden and a plain message shows instead. */
+
+.editor-body { height: 100vh; overflow: hidden; }
+
+.editor-mobile-block {
+  display: none;
+  height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  text-align: center;
+  padding: 40px;
+}
+.editor-mobile-block .logo img { height: 22px; }
+.editor-mobile-block p {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  max-width: 320px;
+}
+
+.editor-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ---- Top bar ---- */
+.editor-topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  height: 56px;
+  flex: none;
+  border-bottom: 1px solid var(--line);
+}
+.editor-back { display: flex; align-items: center; }
+.editor-back img { height: 22px; width: 22px; object-fit: contain; }
+.editor-title {
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+}
+.editor-topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.editor-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: not-allowed;
+}
+.editor-topbar-actions .btn { cursor: not-allowed; }
+
+/* ---- Main 3-column layout ---- */
+.editor-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 200px 1fr 300px;
+  min-height: 0;
+}
+
+/* ---- Left toolbar ---- */
+.editor-toolbar {
+  border-right: 1px solid var(--line);
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+.editor-tool {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: not-allowed;
+}
+.editor-tool.is-active { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
+.editor-tool-icon {
+  width: 18px;
+  flex: none;
+  text-align: center;
+  font-size: 0.9rem;
+}
+.editor-tool-divider { height: 1px; background: var(--line); margin: 8px 4px; }
+
+/* ---- Canvas ---- */
+.editor-canvas-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  overflow: auto;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.editor-canvas-wrap { width: 100%; max-width: 620px; }
+.editor-card {
+  position: relative;
+  width: 100%;
+  background: #0a0a0a;
+  border: 1.5px solid var(--line-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.editor-card-label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* ---- Renderings panel ---- */
+.editor-renderings {
+  border-left: 1px solid var(--line);
+  padding: 24px 20px;
+  overflow-y: auto;
+}
+.editor-renderings h2 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+.editor-renderings-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+.editor-renderings-empty {
+  border: 1px dashed var(--line);
+  aspect-ratio: 86 / 54;
+  width: 100%;
+}
+
+/* ---- Desktop-only gate ---- */
+@media (max-width: 900px) {
+  .editor-shell { display: none; }
+  .editor-mobile-block { display: flex; }
+}

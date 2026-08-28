@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- <title>Business Card Editor — [Business Name]</title> -->
+  <meta name="description" content="Design your own engraved business card." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="card-editor.css" />
+</head>
+<body class="editor-body">
+
+  <!-- Shown only below the desktop breakpoint; the editor itself is
+       hidden there via CSS (see card-editor.css). -->
+  <div class="editor-mobile-block">
+    <a href="products.html" class="logo logo-text"><img src="logo-text.png" alt="[Business Name]" /></a>
+    <p>The business card editor needs a larger screen.<br />Please switch to a desktop or laptop computer.</p>
+    <a href="products.html" class="btn btn-ghost">&larr; Back to Products</a>
+  </div>
+
+  <div class="editor-shell">
+    <!-- App-style top bar (distinct from the marketing site header) -->
+    <header class="editor-topbar">
+      <a href="products.html" class="editor-back" aria-label="Back to Products">
+        <img src="logo-mark.png" alt="[Business Name]" />
+      </a>
+      <span class="editor-title">Business Card Editor</span>
+      <div class="editor-topbar-actions">
+        <button type="button" class="editor-icon-btn" disabled aria-label="Undo">&#8630;</button>
+        <button type="button" class="editor-icon-btn" disabled aria-label="Redo">&#8631;</button>
+        <button type="button" class="btn btn-ghost btn-sm" disabled>Save</button>
+        <button type="button" class="btn btn-sm" disabled>Export / Submit Design</button>
+      </div>
+    </header>
+
+    <div class="editor-main">
+      <!-- Left toolbar -->
+      <nav class="editor-toolbar" aria-label="Editor tools">
+        <button type="button" class="editor-tool is-active" disabled>
+          <span class="editor-tool-icon">&#9992;</span>
+          <span>Select</span>
+        </button>
+        <button type="button" class="editor-tool" disabled>
+          <span class="editor-tool-icon">T</span>
+          <span>Text</span>
+        </button>
+        <button type="button" class="editor-tool" disabled>
+          <span class="editor-tool-icon">&#9723;</span>
+          <span>Shapes</span>
+        </button>
+        <button type="button" class="editor-tool" disabled>
+          <span class="editor-tool-icon">&#9635;</span>
+          <span>Images</span>
+        </button>
+        <button type="button" class="editor-tool" disabled>
+          <span class="editor-tool-icon">&#8593;</span>
+          <span>Upload</span>
+        </button>
+        <div class="editor-tool-divider"></div>
+        <button type="button" class="editor-tool" disabled>
+          <span class="editor-tool-icon">&#8676;</span>
+          <span>Align</span>
+        </button>
+        <button type="button" class="editor-tool" disabled>
+          <span class="editor-tool-icon">&#9776;</span>
+          <span>Layers</span>
+        </button>
+        <button type="button" class="editor-tool" disabled>
+          <span class="editor-tool-icon">&#8862;</span>
+          <span>Guides</span>
+        </button>
+      </nav>
+
+      <!-- Canvas -->
+      <section class="editor-canvas-area">
+        <div class="editor-canvas-wrap">
+          <div class="editor-card" style="aspect-ratio: 86 / 54;">
+            <span class="editor-card-label">Front — 86 &times; 54mm</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Renderings (blank for now) -->
+      <aside class="editor-renderings">
+        <h2>Renderings</h2>
+        <p class="editor-renderings-hint">See how each finish will look here.</p>
+        <div class="editor-renderings-empty"></div>
+      </aside>
+    </div>
+  </div>
+
+</body>
+</html>
