@@ -368,13 +368,24 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('selection:cleared', hideTextToolbar);
 
   // Dragging a corner handle on a text object should change its font size,
-  // not stretch it — fold the scale into fontSize and reset scale back to
-  // 1 so the size field always reflects the text's true rendered size.
+  // not stretch it. Folding scale into fontSize on every drag frame forces
+  // a full text re-layout each frame — laggy, and it fights with Fabric's
+  // own live transform controller (causing the box to clip/distort mid-
+  // drag). So: let Fabric's native scaling run smoothly while dragging
+  // (just keep the size field's readout live), and only convert scale
+  // into a real fontSize once, when the drag ends.
   fabricCanvas.on('object:scaling', (opt) => {
     const obj = opt.target;
     if (!obj || obj.type !== 'i-text') return;
+    if (fontSizeInput) fontSizeInput.value = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
+  });
+  fabricCanvas.on('object:modified', (opt) => {
+    const obj = opt.target;
+    if (!obj || obj.type !== 'i-text') return;
+    if (obj.scaleX === 1 && obj.scaleY === 1) return;
     const newSize = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
     obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
+    fabricCanvas.requestRenderAll();
     if (fontSizeInput) fontSizeInput.value = newSize;
   });
 
