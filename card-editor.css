@@ -162,12 +162,16 @@
   min-height: 0;
 }
 .editor-canvas-scroll {
+  /* Grid + place-items, not flex + align/justify-items: centering an
+     overflowing child in a scrollable *flex* container is a known
+     cross-browser bug where scrolling toward one side (sometimes both)
+     stops working entirely. Grid centering doesn't have that problem —
+     the scrollable area correctly extends in every direction. */
   flex: 1;
   overflow: auto;
   padding: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   background:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
