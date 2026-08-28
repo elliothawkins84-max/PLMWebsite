@@ -357,8 +357,17 @@ if (fabricCanvasEl && window.fabric) {
     if (fontSizeInput) fontSizeInput.value = Math.round(obj.fontSize || 24);
     alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (obj.textAlign || 'left')));
   }
+  // The toolbar should stay up for as long as the Text tool itself is
+  // selected, even once there's no text object to reflect (e.g. the
+  // selection was cleared, or the object got deleted) — falls back to
+  // showing the tool's defaults instead of hiding.
   function hideTextToolbar() {
-    if (textToolbar) textToolbar.classList.remove('is-visible');
+    if (!textToolbar) return;
+    if (isTextToolActive()) {
+      showTextToolbarFor({ fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
+      return;
+    }
+    textToolbar.classList.remove('is-visible');
   }
   function handleSelection(e) {
     const obj = (e.selected && e.selected[0]) || fabricCanvas.getActiveObject();
@@ -368,6 +377,16 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('selection:created', handleSelection);
   fabricCanvas.on('selection:updated', handleSelection);
   fabricCanvas.on('selection:cleared', hideTextToolbar);
+
+  // Clean up a text box left empty (placed, then clicked away from
+  // without typing anything) instead of leaving a stray empty object.
+  fabricCanvas.on('text:editing:exited', (opt) => {
+    const obj = opt.target;
+    if (obj && obj.type === 'i-text' && !obj.text.trim()) {
+      fabricCanvas.remove(obj);
+      fabricCanvas.requestRenderAll();
+    }
+  });
 
   // Dragging a corner handle on a text object should change its font size,
   // not stretch it. Folding scale into fontSize on every drag frame forces

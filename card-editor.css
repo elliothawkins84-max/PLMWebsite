@@ -198,17 +198,22 @@
      ever-growing track. */
   min-width: 0;
 }
-/* Contextual text-formatting toolbar — only shown while a text object is
-   selected/being edited (see card-editor.js). */
+/* Contextual text-formatting toolbar — only active while a text object is
+   selected/being edited (see card-editor.js). Always laid out (display:
+   flex, never `none`) and hidden via visibility instead, so its row keeps
+   reserving its height — the canvas below it doesn't shift when the
+   toolbar appears/disappears. */
 .editor-text-toolbar {
-  display: none;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
   align-items: center;
   gap: 10px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--line);
   flex: none;
 }
-.editor-text-toolbar.is-visible { display: flex; }
+.editor-text-toolbar.is-visible { visibility: visible; pointer-events: auto; }
 .editor-text-toolbar select,
 .editor-text-toolbar input {
   background: transparent;
