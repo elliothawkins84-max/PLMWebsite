@@ -400,7 +400,9 @@ if (fabricCanvasEl && window.fabric) {
   function makeBoxShape(type) {
     // Fill mode by default (fill set, no stroke) — matches the Fill/Stroke
     // toggle's default in the toolbar below.
-    const base = { originX: 'left', originY: 'top', centeredRotation: false, fill: '#ffffff', left: 0, top: 0 };
+    const base = {
+      originX: 'left', originY: 'top', centeredRotation: false, fill: '#ffffff', strokeWidth: 0, left: 0, top: 0,
+    };
     if (type === 'circle') return new fabric.Circle({ ...base, radius: 1 });
     if (type === 'triangle') return new fabric.Triangle({ ...base, width: 1, height: 1 });
     return new fabric.Rect({ ...base, width: 1, height: 1 });
@@ -637,6 +639,53 @@ if (fabricCanvasEl && window.fabric) {
     });
   });
 
+  // ---- Shape edge indicator ----
+  // A thin outline, in the same blue as Fabric's own selection border,
+  // traced exactly along a shape's true nominal path — the boundary the
+  // W/H fields measure. Needed because Fabric's own selection handles
+  // aren't a reliable stand-in for that anymore: they're sized off the
+  // object's actual strokeWidth, which for inside/outside placement is
+  // doubled internally (see applyStrokeRender above), so the handles no
+  // longer trace the real edge once a shape is in stroke mode. Shown
+  // only while a rect/circle/triangle is selected, gone as soon as
+  // selection moves elsewhere.
+  const EDGE_INDICATOR_COLOR = fabric.Object.prototype.borderColor;
+  let edgeIndicator = null;
+  function makeEdgeIndicatorFor(obj) {
+    const common = {
+      left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
+      angle: obj.angle, scaleX: obj.scaleX, scaleY: obj.scaleY,
+      fill: null, stroke: EDGE_INDICATOR_COLOR, strokeWidth: 1, strokeUniform: true,
+      selectable: false, evented: false, excludeFromExport: true, hoverCursor: 'default',
+    };
+    if (obj.type === 'circle') return new fabric.Circle({ ...common, radius: obj.radius });
+    if (obj.type === 'triangle') return new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
+    return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
+  }
+  function showEdgeIndicatorFor(obj) {
+    hideEdgeIndicator();
+    edgeIndicator = makeEdgeIndicatorFor(obj);
+    fabricCanvas.add(edgeIndicator);
+    fabricCanvas.requestRenderAll();
+  }
+  function hideEdgeIndicator() {
+    if (!edgeIndicator) return;
+    fabricCanvas.remove(edgeIndicator);
+    edgeIndicator = null;
+    fabricCanvas.requestRenderAll();
+  }
+  function syncEdgeIndicator(obj) {
+    if (!edgeIndicator) return;
+    const props = {
+      left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
+      angle: obj.angle, scaleX: obj.scaleX, scaleY: obj.scaleY,
+      width: obj.width, height: obj.height,
+    };
+    if (obj.type === 'circle') props.radius = obj.radius;
+    edgeIndicator.set(props);
+    edgeIndicator.setCoords();
+  }
+
   // Text defaults to uniform (its own checkbox, unchecked, means "keep it
   // uniform"); shapes default to free/non-uniform (their checkbox,
   // unchecked, means "don't lock it uniform") — same underlying idea,
@@ -706,6 +755,7 @@ if (fabricCanvasEl && window.fabric) {
     if (posYInput) posYInput.value = (obj.top / PX_PER_MM).toFixed(2);
     if (sizeWInput) sizeWInput.value = (displayWidthOf(obj) / PX_PER_MM).toFixed(2);
     if (sizeHInput) sizeHInput.value = (displayHeightOf(obj) / PX_PER_MM).toFixed(2);
+    syncEdgeIndicator(obj);
   }
   function clearTransformFields() {
     if (rotationInput) rotationInput.value = 0;
@@ -734,8 +784,11 @@ if (fabricCanvasEl && window.fabric) {
       shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.shape === obj.type));
       refreshFillModeUI(obj);
     }
-    if (typeof obj.getCenterPoint === 'function') refreshTransformFields(obj);
+    const isRealObject = typeof obj.getCenterPoint === 'function';
+    if (isRealObject) refreshTransformFields(obj);
     else clearTransformFields();
+    if (isRealObject && SHAPE_FILL_TYPES.includes(obj.type)) showEdgeIndicatorFor(obj);
+    else hideEdgeIndicator();
   }
   // The toolbar should stay up for as long as Text or Shapes is
   // selected, even once there's no object to reflect (e.g. the
@@ -752,6 +805,7 @@ if (fabricCanvasEl && window.fabric) {
       return;
     }
     textToolbar.classList.remove('is-visible');
+    hideEdgeIndicator();
   }
   function handleSelection(e) {
     const obj = (e.selected && e.selected[0]) || fabricCanvas.getActiveObject();
