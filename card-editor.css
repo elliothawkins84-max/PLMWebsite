@@ -361,6 +361,15 @@
   accent-color: var(--fg);
   cursor: pointer;
 }
+
+/* The toolbar serves both Text and Shapes — each mode's controls are
+   tagged and only one set shows at a time; the shared controls (align,
+   rotate, anchor, position, size) carry neither class and always show. */
+.editor-text-toolbar.mode-shape .editor-mode-text { display: none !important; }
+.editor-text-toolbar.mode-text .editor-mode-shape { display: none !important; }
+
+.editor-shape-type-group { display: flex; gap: 4px; flex: none; }
+.editor-shape-type-btn svg { width: 15px; height: 15px; }
 .editor-text-toolbar #text-rotation {
   width: 52px;
 }

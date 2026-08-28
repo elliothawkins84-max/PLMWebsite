@@ -45,7 +45,7 @@
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="5"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
             <span class="editor-tool-label">Text</span>
           </button>
-          <button type="button" class="editor-tool">
+          <button type="button" class="editor-tool" id="tool-shapes">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="8.5" width="10" height="10"/><circle cx="16" cy="8" r="4.5"/></svg>
             <span class="editor-tool-label">Shapes</span>
           </button>
@@ -96,8 +96,8 @@
       <section class="editor-canvas-area">
         <!-- Contextual text-formatting toolbar — hidden until a text
              object is selected/being edited. -->
-        <div class="editor-text-toolbar" id="text-toolbar">
-          <select id="text-font-family" aria-label="Font">
+        <div class="editor-text-toolbar mode-text" id="text-toolbar">
+          <select id="text-font-family" aria-label="Font" class="editor-mode-text">
             <option value="Arial">Arial</option>
             <option value="Helvetica">Helvetica</option>
             <option value="Georgia">Georgia</option>
@@ -105,15 +105,15 @@
             <option value="Courier New">Courier New</option>
             <option value="Verdana">Verdana</option>
           </select>
-          <button type="button" class="editor-align-btn" id="load-system-fonts-btn" aria-label="Load fonts installed on your computer" title="Load fonts installed on your computer (Chrome/Edge only)">
+          <button type="button" class="editor-align-btn editor-mode-text" id="load-system-fonts-btn" aria-label="Load fonts installed on your computer" title="Load fonts installed on your computer (Chrome/Edge only)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M4 19h16"/></svg>
           </button>
-          <input type="number" id="text-font-size" aria-label="Font size" min="6" max="120" value="24" />
+          <input type="number" id="text-font-size" aria-label="Font size" min="6" max="120" value="24" class="editor-mode-text" />
 
           <div class="editor-text-toolbar-divider"></div>
 
           <!-- Text align — how text sits within its own box. -->
-          <div class="editor-align-dropdown" id="text-align-dropdown">
+          <div class="editor-align-dropdown editor-mode-text" id="text-align-dropdown">
             <button type="button" class="editor-align-dropdown-btn" id="text-align-dropdown-btn" aria-haspopup="true" aria-expanded="false" aria-label="Text align" title="Text align">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="17" y2="18"/></svg>
               <svg class="editor-align-dropdown-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg>
@@ -132,6 +132,22 @@
                 </button>
               </div>
             </div>
+          </div>
+
+          <!-- Shape type — which shape the Shapes tool draws next. -->
+          <div class="editor-shape-type-group editor-mode-shape" id="shape-type-group">
+            <button type="button" class="editor-align-btn editor-shape-type-btn is-active" data-shape="line" aria-label="Line" title="Line">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+            </button>
+            <button type="button" class="editor-align-btn editor-shape-type-btn" data-shape="rect" aria-label="Rectangle" title="Rectangle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12"/></svg>
+            </button>
+            <button type="button" class="editor-align-btn editor-shape-type-btn" data-shape="circle" aria-label="Circle" title="Circle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/></svg>
+            </button>
+            <button type="button" class="editor-align-btn editor-shape-type-btn" data-shape="triangle" aria-label="Triangle" title="Triangle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><polygon points="12,4 20,20 4,20"/></svg>
+            </button>
           </div>
 
           <!-- Position on card — moves the selected object's bounding box
@@ -172,7 +188,7 @@
           <div class="editor-text-toolbar-divider"></div>
 
           <label class="editor-field" title="Rotation">
-            <svg class="editor-field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 1 3 6.7"/><polyline points="3,17 3,21 7,21"/></svg>
+            <svg class="editor-field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21,3 21,9 15,9"/></svg>
             <input type="number" id="text-rotation" aria-label="Rotation in degrees" value="0" step="1" />
             <span class="editor-field-unit">&deg;</span>
           </label>
@@ -239,9 +255,13 @@
 
           <div class="editor-text-toolbar-divider"></div>
 
-          <label class="editor-checkbox-field" title="Allow width and height to be scaled independently — off by default, which keeps corner-drag and W/H edits proportional">
+          <label class="editor-checkbox-field editor-mode-text" title="Allow width and height to be scaled independently — off by default, which keeps corner-drag and W/H edits proportional">
             <input type="checkbox" id="text-nonuniform-scale" aria-label="Non-uniform scaling" />
             <span>Non-uniform scale</span>
+          </label>
+          <label class="editor-checkbox-field editor-mode-shape" title="Lock width and height to scale together — off by default, so shapes can be stretched freely">
+            <input type="checkbox" id="shape-uniform-scale" aria-label="Uniform scaling" />
+            <span>Uniform scale</span>
           </label>
         </div>
 

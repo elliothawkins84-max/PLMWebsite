@@ -303,20 +303,34 @@ if (fabricCanvasEl && window.fabric) {
   });
 
   const textBtn = document.getElementById('tool-text');
+  const shapesBtn = document.getElementById('tool-shapes');
   const isTextToolActive = () => !!(textBtn && textBtn.classList.contains('is-active'));
+  const isShapesToolActive = () => !!(shapesBtn && shapesBtn.classList.contains('is-active'));
+
+  // ---- Shape type (which shape the Shapes tool draws next) ----
+  let currentShapeType = 'line';
+  const shapeTypeButtons = document.querySelectorAll('.editor-shape-type-btn');
+  shapeTypeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      currentShapeType = btn.dataset.shape;
+      shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
+    });
+  });
 
   // Update the canvas cursor whenever the active tool changes, and show
-  // the text formatting toolbar as soon as the Text tool is selected
-  // (reflecting the defaults new text will use), not only once a text
-  // object is actually selected. Switching to another tool hides it
-  // again, unless a text object is still selected.
+  // the object toolbar as soon as Text or Shapes is selected (reflecting
+  // the defaults a new object will use), not only once one is actually
+  // placed. Switching to another tool hides it again, unless an object
+  // is still selected.
   toolButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       fabricCanvas.defaultCursor = btn.id === 'tool-text' ? 'text' : 'default';
       if (btn.id === 'tool-text') {
-        showTextToolbarFor({ fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
+        showObjectToolbarFor({ type: 'i-text', fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
+      } else if (btn.id === 'tool-shapes') {
+        showObjectToolbarFor({ type: currentShapeType });
       } else if (!fabricCanvas.getActiveObject()) {
-        hideTextToolbar();
+        hideObjectToolbar();
       }
     });
   });
@@ -353,6 +367,38 @@ if (fabricCanvasEl && window.fabric) {
     fabricCanvas.requestRenderAll();
   });
 
+  // Clicking the canvas with the Shapes tool active places a shape of
+  // the currently-picked type, sized to a sensible default — resizing
+  // from there is via the handles or the W/H fields, same as text.
+  // Stays selected (not re-entering "placement mode") so its handles
+  // and the toolbar are immediately usable, and the Shapes tool stays
+  // active afterward so several shapes can be placed in a row.
+  function createShapeAt(type, x, y) {
+    const SIZE = 60; // px — about 6.7mm at PX_PER_MM=9
+    const base = { originX: 'left', originY: 'top', centeredRotation: false };
+    if (type === 'line') {
+      return new fabric.Line([x - SIZE / 2, y, x + SIZE / 2, y], { ...base, stroke: '#ffffff', strokeWidth: 2 });
+    }
+    if (type === 'circle') {
+      return new fabric.Circle({ ...base, left: x - SIZE / 2, top: y - SIZE / 2, radius: SIZE / 2, fill: '#ffffff' });
+    }
+    if (type === 'triangle') {
+      return new fabric.Triangle({ ...base, left: x - SIZE / 2, top: y - SIZE / 2, width: SIZE, height: SIZE, fill: '#ffffff' });
+    }
+    return new fabric.Rect({ ...base, left: x - SIZE / 2, top: y - SIZE / 2, width: SIZE, height: SIZE, fill: '#ffffff' });
+  }
+  fabricCanvas.on('mouse:down', (opt) => {
+    if (!isShapesToolActive() || opt.target) return;
+    const pointer = fabricCanvas.getPointer(opt.e);
+    const shape = createShapeAt(currentShapeType, pointer.x, pointer.y);
+    fabricCanvas.add(shape);
+    fabricCanvas.setActiveObject(shape);
+    setObjectAnchor(shape, 'c');
+    applyScalingControlsVisibility(shape);
+    fabricCanvas.requestRenderAll();
+    showObjectToolbarFor(shape);
+  });
+
   // ---- Text formatting toolbar: font, size, alignment ----
   const textToolbar = document.getElementById('text-toolbar');
   const fontFamilySelect = document.getElementById('text-font-family');
@@ -366,15 +412,26 @@ if (fabricCanvasEl && window.fabric) {
   const sizeWInput = document.getElementById('text-size-w');
   const sizeHInput = document.getElementById('text-size-h');
   const nonUniformCheckbox = document.getElementById('text-nonuniform-scale');
+  const shapeUniformCheckbox = document.getElementById('shape-uniform-scale');
+  const SHAPE_TYPES = ['line', 'rect', 'circle', 'triangle'];
 
-  // Off by default: corner-drag and W/H edits stay proportional (folded
-  // into fontSize, same as before). On: the object's own scaleX/scaleY
-  // are left alone instead of being reset, so width and height can be
-  // dragged independently — hiding the corner-only constraint by also
-  // exposing the edge-midpoint handles, which only ever move one axis.
+  // Text defaults to uniform (its own checkbox, unchecked, means "keep it
+  // uniform"); shapes default to free/non-uniform (their checkbox,
+  // unchecked, means "don't lock it uniform") — same underlying idea,
+  // opposite default, because that's the sensible default for each: text
+  // usually shouldn't distort, shapes commonly get stretched freely.
+  function isNonUniformAllowed(obj) {
+    if (!obj) return false;
+    if (obj.type === 'i-text') return !!(nonUniformCheckbox && nonUniformCheckbox.checked);
+    return !(shapeUniformCheckbox && shapeUniformCheckbox.checked);
+  }
+
+  // When non-uniform scaling isn't allowed, only corner handles are shown
+  // (locking to proportional resize); when it is, the edge-midpoint
+  // handles are exposed too, since those only ever move one axis.
   function applyScalingControlsVisibility(obj) {
-    if (!obj || obj.type !== 'i-text') return;
-    const nonUniform = !!(nonUniformCheckbox && nonUniformCheckbox.checked);
+    if (!obj) return;
+    const nonUniform = isNonUniformAllowed(obj);
     obj.setControlsVisibility({ ml: nonUniform, mt: nonUniform, mr: nonUniform, mb: nonUniform });
   }
 
@@ -437,39 +494,54 @@ if (fabricCanvasEl && window.fabric) {
     if (sizeHInput) sizeHInput.value = '';
   }
 
-  function showTextToolbarFor(obj) {
+  // The toolbar serves both Text and Shapes objects — shared controls
+  // (align, rotate, anchor, position, size, and now which scaling
+  // checkbox applies) always populate; font/text-align only for text,
+  // and the shape-type picker's active icon only for shapes.
+  function showObjectToolbarFor(obj) {
     if (!textToolbar) return;
     textToolbar.classList.add('is-visible');
-    if (fontFamilySelect) fontFamilySelect.value = obj.fontFamily || 'Arial';
-    if (fontSizeInput) fontSizeInput.value = Math.round(obj.fontSize || 24);
-    alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (obj.textAlign || 'left')));
+    const isText = obj.type === 'i-text';
+    textToolbar.classList.toggle('mode-text', isText);
+    textToolbar.classList.toggle('mode-shape', !isText);
+    if (isText) {
+      if (fontFamilySelect) fontFamilySelect.value = obj.fontFamily || 'Arial';
+      if (fontSizeInput) fontSizeInput.value = Math.round(obj.fontSize || 24);
+      alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (obj.textAlign || 'left')));
+    } else {
+      shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.shape === obj.type));
+    }
     if (typeof obj.getCenterPoint === 'function') refreshTransformFields(obj);
     else clearTransformFields();
   }
-  // The toolbar should stay up for as long as the Text tool itself is
-  // selected, even once there's no text object to reflect (e.g. the
+  // The toolbar should stay up for as long as Text or Shapes is
+  // selected, even once there's no object to reflect (e.g. the
   // selection was cleared, or the object got deleted) — falls back to
-  // showing the tool's defaults instead of hiding.
-  function hideTextToolbar() {
+  // showing that tool's defaults instead of hiding.
+  function hideObjectToolbar() {
     if (!textToolbar) return;
     if (isTextToolActive()) {
-      showTextToolbarFor({ fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
+      showObjectToolbarFor({ type: 'i-text', fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
+      return;
+    }
+    if (isShapesToolActive()) {
+      showObjectToolbarFor({ type: currentShapeType });
       return;
     }
     textToolbar.classList.remove('is-visible');
   }
   function handleSelection(e) {
     const obj = (e.selected && e.selected[0]) || fabricCanvas.getActiveObject();
-    if (obj && obj.type === 'i-text') {
-      showTextToolbarFor(obj);
+    if (obj && (obj.type === 'i-text' || SHAPE_TYPES.includes(obj.type))) {
+      showObjectToolbarFor(obj);
       applyScalingControlsVisibility(obj);
     } else {
-      hideTextToolbar();
+      hideObjectToolbar();
     }
   }
   fabricCanvas.on('selection:created', handleSelection);
   fabricCanvas.on('selection:updated', handleSelection);
-  fabricCanvas.on('selection:cleared', hideTextToolbar);
+  fabricCanvas.on('selection:cleared', hideObjectToolbar);
 
   // Clean up a text box left empty (placed, then clicked away from
   // without typing anything) instead of leaving a stray empty object.
@@ -504,21 +576,30 @@ if (fabricCanvasEl && window.fabric) {
   // into a real fontSize once, when the drag ends.
   fabricCanvas.on('object:scaling', (opt) => {
     const obj = opt.target;
-    if (!obj || obj.type !== 'i-text') return;
-    // In uniform mode, keep the font-size readout live during the drag
-    // (the actual fontSize/scale reset happens once, on object:modified).
-    // In non-uniform mode there's no fontSize equivalent to preview —
-    // scaleX/scaleY themselves are the result — so just leave it be.
-    if (!(nonUniformCheckbox && nonUniformCheckbox.checked)) {
-      if (fontSizeInput) fontSizeInput.value = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
+    if (!obj) return;
+    if (obj.type === 'i-text') {
+      // In uniform mode, keep the font-size readout live during the drag
+      // (the actual fontSize/scale reset happens once, on object:modified).
+      // In non-uniform mode there's no fontSize equivalent to preview —
+      // scaleX/scaleY themselves are the result — so just leave it be.
+      if (!isNonUniformAllowed(obj)) {
+        if (fontSizeInput) fontSizeInput.value = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
+      }
+    } else if (!isNonUniformAllowed(obj)) {
+      // Shapes: Fabric's own corner-drag already scales scaleX/scaleY
+      // independently by default (free stretch) — that's exactly the
+      // non-uniform default we want. Uniform mode instead needs an
+      // active constraint during the drag: mirror the larger axis onto
+      // the smaller one so the shape can't be dragged into a distortion.
+      const s = Math.max(Math.abs(obj.scaleX), Math.abs(obj.scaleY));
+      obj.set({ scaleX: s, scaleY: s });
     }
     refreshTransformFields(obj);
   });
   fabricCanvas.on('object:modified', (opt) => {
     const obj = opt.target;
     if (!obj) return;
-    const nonUniform = !!(nonUniformCheckbox && nonUniformCheckbox.checked);
-    if (obj.type === 'i-text' && !nonUniform && (obj.scaleX !== 1 || obj.scaleY !== 1)) {
+    if (obj.type === 'i-text' && !isNonUniformAllowed(obj) && (obj.scaleX !== 1 || obj.scaleY !== 1)) {
       // Uniform: fold scale into fontSize and reset scale to 1, same
       // anti-distortion approach as before.
       const newSize = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
@@ -526,8 +607,9 @@ if (fabricCanvasEl && window.fabric) {
       fabricCanvas.requestRenderAll();
       if (fontSizeInput) fontSizeInput.value = newSize;
     }
-    // Non-uniform: leave scaleX/scaleY exactly as dragged — that stretch
-    // *is* the result — nothing to fold back into fontSize.
+    // Non-uniform text: leave scaleX/scaleY exactly as dragged — that
+    // stretch *is* the result. Shapes: scaleX/scaleY themselves already
+    // *are* the shape's size in both modes — nothing to fold anywhere.
     refreshTransformFields(obj);
   });
   // Live readouts while dragging the move handle or the rotate handle.
@@ -702,24 +784,37 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(posYInput, (val) => moveActiveObjectAnchorTo('y', val));
 
   // ---- Size fields (width/height, mm) ----
-  // Uniform (default): folds into fontSize so both dimensions move
+  // Text, uniform (default): folds into fontSize so both dimensions move
   // together, same anti-distortion approach as corner-drag scaling.
-  // Non-uniform: only the edited axis's scale changes, stretching just
-  // that dimension.
+  // Text, non-uniform: only the edited axis's scale changes.
+  // Shapes: there's no fontSize equivalent, so it's always scaleX/scaleY
+  // directly — uniform mode scales both by the edited axis's ratio,
+  // non-uniform mode only touches the one axis.
   function applySizeMm(axis, valueMm) {
     const obj = fabricCanvas.getActiveObject();
-    if (!obj || obj.type !== 'i-text' || valueMm <= 0) return;
+    if (!obj || valueMm <= 0) return;
     const targetPx = valueMm * PX_PER_MM;
-    if (nonUniformCheckbox && nonUniformCheckbox.checked) {
+    const nonUniform = isNonUniformAllowed(obj);
+    if (obj.type === 'i-text') {
+      if (nonUniform) {
+        if (axis === 'w') obj.set({ scaleX: targetPx / obj.width });
+        else obj.set({ scaleY: targetPx / obj.height });
+      } else {
+        const current = axis === 'w' ? obj.getScaledWidth() : obj.getScaledHeight();
+        if (!current) return;
+        const ratio = targetPx / current;
+        const newSize = Math.max(1, Math.round(obj.fontSize * ratio));
+        obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
+        if (fontSizeInput) fontSizeInput.value = newSize;
+      }
+    } else if (nonUniform) {
       if (axis === 'w') obj.set({ scaleX: targetPx / obj.width });
       else obj.set({ scaleY: targetPx / obj.height });
     } else {
       const current = axis === 'w' ? obj.getScaledWidth() : obj.getScaledHeight();
       if (!current) return;
       const ratio = targetPx / current;
-      const newSize = Math.max(1, Math.round(obj.fontSize * ratio));
-      obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
-      if (fontSizeInput) fontSizeInput.value = newSize;
+      obj.set({ scaleX: obj.scaleX * ratio, scaleY: obj.scaleY * ratio });
     }
     obj.setCoords();
     fabricCanvas.requestRenderAll();
@@ -728,15 +823,18 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(sizeWInput, (val) => applySizeMm('w', val));
   commitOnEnterOrBlur(sizeHInput, (val) => applySizeMm('h', val));
 
-  // ---- Non-uniform scaling checkbox ----
-  if (nonUniformCheckbox) {
-    nonUniformCheckbox.addEventListener('change', () => {
+  // ---- Scaling checkboxes (text's "Non-uniform scale", shapes' "Uniform
+  // scale") — only ever one is visible at a time, but both just need to
+  // refresh the active object's handle visibility when toggled. ----
+  [nonUniformCheckbox, shapeUniformCheckbox].forEach((checkbox) => {
+    if (!checkbox) return;
+    checkbox.addEventListener('change', () => {
       const obj = fabricCanvas.getActiveObject();
       if (!obj) return;
       applyScalingControlsVisibility(obj);
       fabricCanvas.requestRenderAll();
     });
-  }
+  });
 
   // ---- Object-position aligns — move the selected object's bounding box
   // against the card's edges/center (distinct from the text-align buttons
@@ -796,6 +894,6 @@ if (fabricCanvasEl && window.fabric) {
     fabricCanvas.remove(obj);
     fabricCanvas.discardActiveObject();
     fabricCanvas.requestRenderAll();
-    hideTextToolbar();
+    hideObjectToolbar();
   });
 }
