@@ -364,10 +364,10 @@ if (fabricCanvasEl && window.fabric) {
   function refreshTransformFields(obj) {
     if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
     const center = obj.getCenterPoint();
-    if (posXInput) posXInput.value = (center.x / PX_PER_MM).toFixed(1);
-    if (posYInput) posYInput.value = (center.y / PX_PER_MM).toFixed(1);
-    if (sizeWInput) sizeWInput.value = (obj.getScaledWidth() / PX_PER_MM).toFixed(1);
-    if (sizeHInput) sizeHInput.value = (obj.getScaledHeight() / PX_PER_MM).toFixed(1);
+    if (posXInput) posXInput.value = (center.x / PX_PER_MM).toFixed(2);
+    if (posYInput) posYInput.value = (center.y / PX_PER_MM).toFixed(2);
+    if (sizeWInput) sizeWInput.value = (obj.getScaledWidth() / PX_PER_MM).toFixed(2);
+    if (sizeHInput) sizeHInput.value = (obj.getScaledHeight() / PX_PER_MM).toFixed(2);
   }
   function clearTransformFields() {
     if (rotationInput) rotationInput.value = 0;
