@@ -120,14 +120,15 @@ if (zoomInBtn) {
 // A trackpad pinch gesture (or Ctrl/Cmd+scroll on a mouse) fires as a
 // wheel event with ctrlKey set — that's the standard, universal way
 // browsers signal "this is a zoom gesture," distinct from a plain
-// two-finger scroll. So: pinch/Ctrl+scroll zooms; everything else (a
-// plain two-finger trackpad pan, or a normal mouse wheel) is left alone
-// entirely so the browser's native scrolling pans the canvas — no manual
-// scrollLeft/scrollTop math needed for that case.
+// two-finger scroll. Alt/Option+scroll is an additional manual shortcut
+// for the same thing. So: pinch/Ctrl+scroll/Alt+scroll zooms; everything
+// else (a plain two-finger trackpad pan, or a normal mouse wheel) is left
+// alone entirely so the browser's native scrolling pans the canvas — no
+// manual scrollLeft/scrollTop math needed for that case.
 const canvasScroll = document.querySelector('.editor-canvas-scroll');
 if (canvasScroll) {
   canvasScroll.addEventListener('wheel', (e) => {
-    if (!e.ctrlKey && !e.metaKey) return; // plain scroll — let it pan natively
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) return; // plain scroll — let it pan natively
     e.preventDefault();
     zoomLevel = e.deltaY < 0
       ? Math.min(ZOOM_MAX, zoomLevel + ZOOM_STEP)
