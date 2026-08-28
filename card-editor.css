@@ -240,6 +240,67 @@
 .editor-align-btn:hover:not(.is-active) { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
 .editor-align-btn.is-active { color: var(--bg); background: var(--fg); }
 
+/* Align dropdown — tucks the text-align + on-card-position align buttons
+   behind one button instead of showing all 10 inline. */
+.editor-align-dropdown { position: relative; flex: none; }
+.editor-align-dropdown-btn {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+}
+.editor-align-dropdown-btn:hover { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
+.editor-align-dropdown.is-open .editor-align-dropdown-btn { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
+.editor-align-dropdown-btn svg:first-child { width: 16px; height: 16px; }
+.editor-align-dropdown-caret { width: 12px; height: 12px; transition: transform .15s ease-out; }
+.editor-align-dropdown.is-open .editor-align-dropdown-caret { transform: rotate(180deg); }
+.editor-align-dropdown-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 10px;
+  width: max-content;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.editor-align-dropdown.is-open .editor-align-dropdown-panel { display: block; }
+.editor-align-dropdown-label {
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0 0 6px;
+}
+.editor-align-dropdown-row { display: flex; gap: 4px; }
+.editor-align-dropdown-row + .editor-align-dropdown-label { margin-top: 10px; }
+
+/* Rotation / position / size fields */
+.editor-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  color: var(--muted);
+}
+.editor-field-icon { width: 15px; height: 15px; flex: none; }
+.editor-field-label { font-size: 0.68rem; font-family: var(--mono); width: 9px; flex: none; }
+.editor-field-unit { font-size: 0.62rem; font-family: var(--mono); flex: none; }
+.editor-text-toolbar #text-rotation,
+.editor-text-toolbar #text-pos-x,
+.editor-text-toolbar #text-pos-y,
+.editor-text-toolbar #text-size-w,
+.editor-text-toolbar #text-size-h {
+  width: 52px;
+}
+
 .editor-canvas-scroll {
   flex: 1;
   min-width: 0;

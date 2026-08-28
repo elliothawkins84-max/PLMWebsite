@@ -349,6 +349,33 @@ if (fabricCanvasEl && window.fabric) {
   const fontFamilySelect = document.getElementById('text-font-family');
   const fontSizeInput = document.getElementById('text-font-size');
   const alignButtons = document.querySelectorAll('.editor-align-btn[data-align]');
+  const rotationInput = document.getElementById('text-rotation');
+  const posXInput = document.getElementById('text-pos-x');
+  const posYInput = document.getElementById('text-pos-y');
+  const sizeWInput = document.getElementById('text-size-w');
+  const sizeHInput = document.getElementById('text-size-h');
+
+  // Rotation reads straight off the object's angle. Position is the
+  // object's center point relative to the card's top-left corner (0,0),
+  // in mm to match the ruler — using the center (rather than a corner)
+  // means it doesn't jump around as the object rotates. Size is the
+  // object's own un-rotated width/height (not the rotated axis-aligned
+  // bounding box), so spinning an object doesn't make its W/H climb.
+  function refreshTransformFields(obj) {
+    if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
+    const center = obj.getCenterPoint();
+    if (posXInput) posXInput.value = (center.x / PX_PER_MM).toFixed(1);
+    if (posYInput) posYInput.value = (center.y / PX_PER_MM).toFixed(1);
+    if (sizeWInput) sizeWInput.value = (obj.getScaledWidth() / PX_PER_MM).toFixed(1);
+    if (sizeHInput) sizeHInput.value = (obj.getScaledHeight() / PX_PER_MM).toFixed(1);
+  }
+  function clearTransformFields() {
+    if (rotationInput) rotationInput.value = 0;
+    if (posXInput) posXInput.value = '';
+    if (posYInput) posYInput.value = '';
+    if (sizeWInput) sizeWInput.value = '';
+    if (sizeHInput) sizeHInput.value = '';
+  }
 
   function showTextToolbarFor(obj) {
     if (!textToolbar) return;
@@ -356,6 +383,8 @@ if (fabricCanvasEl && window.fabric) {
     if (fontFamilySelect) fontFamilySelect.value = obj.fontFamily || 'Arial';
     if (fontSizeInput) fontSizeInput.value = Math.round(obj.fontSize || 24);
     alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (obj.textAlign || 'left')));
+    if (typeof obj.getCenterPoint === 'function') refreshTransformFields(obj);
+    else clearTransformFields();
   }
   // The toolbar should stay up for as long as the Text tool itself is
   // selected, even once there's no text object to reflect (e.g. the
@@ -380,12 +409,19 @@ if (fabricCanvasEl && window.fabric) {
 
   // Clean up a text box left empty (placed, then clicked away from
   // without typing anything) instead of leaving a stray empty object.
+  // Otherwise, refresh the transform fields — Fabric only settles an
+  // IText's real width/height once editing ends, so a box created and
+  // immediately typed into needs a refresh here (the one taken at
+  // placement time was measured against the still-empty text).
   fabricCanvas.on('text:editing:exited', (opt) => {
     const obj = opt.target;
-    if (obj && obj.type === 'i-text' && !obj.text.trim()) {
+    if (!obj || obj.type !== 'i-text') return;
+    if (!obj.text.trim()) {
       fabricCanvas.remove(obj);
       fabricCanvas.requestRenderAll();
+      return;
     }
+    refreshTransformFields(obj);
   });
 
   // Dragging a corner handle on a text object should change its font size,
@@ -399,15 +435,25 @@ if (fabricCanvasEl && window.fabric) {
     const obj = opt.target;
     if (!obj || obj.type !== 'i-text') return;
     if (fontSizeInput) fontSizeInput.value = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
+    refreshTransformFields(obj);
   });
   fabricCanvas.on('object:modified', (opt) => {
     const obj = opt.target;
-    if (!obj || obj.type !== 'i-text') return;
-    if (obj.scaleX === 1 && obj.scaleY === 1) return;
-    const newSize = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
-    obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
-    fabricCanvas.requestRenderAll();
-    if (fontSizeInput) fontSizeInput.value = newSize;
+    if (!obj) return;
+    if (obj.type === 'i-text' && (obj.scaleX !== 1 || obj.scaleY !== 1)) {
+      const newSize = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
+      obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
+      fabricCanvas.requestRenderAll();
+      if (fontSizeInput) fontSizeInput.value = newSize;
+    }
+    refreshTransformFields(obj);
+  });
+  // Live readouts while dragging the move handle or the rotate handle.
+  fabricCanvas.on('object:moving', (opt) => {
+    if (opt.target) refreshTransformFields(opt.target);
+  });
+  fabricCanvas.on('object:rotating', (opt) => {
+    if (opt.target) refreshTransformFields(opt.target);
   });
 
   if (fontFamilySelect) {
@@ -426,6 +472,7 @@ if (fabricCanvasEl && window.fabric) {
       if (!Number.isNaN(size) && size > 0) {
         obj.set('fontSize', size);
         fabricCanvas.requestRenderAll();
+        refreshTransformFields(obj);
       }
     });
   }
@@ -438,6 +485,96 @@ if (fabricCanvasEl && window.fabric) {
       fabricCanvas.requestRenderAll();
     });
   });
+
+  // ---- Align dropdown: tucks the 10 align buttons behind one toggle ----
+  const alignDropdown = document.getElementById('align-dropdown');
+  const alignDropdownBtn = document.getElementById('align-dropdown-btn');
+  if (alignDropdown && alignDropdownBtn) {
+    alignDropdownBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = alignDropdown.classList.toggle('is-open');
+      alignDropdownBtn.setAttribute('aria-expanded', String(isOpen));
+    });
+    document.addEventListener('click', (e) => {
+      if (!alignDropdown.contains(e.target)) {
+        alignDropdown.classList.remove('is-open');
+        alignDropdownBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    // Close the panel once a choice is made, for a snappier feel.
+    alignDropdown.querySelectorAll('.editor-align-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        alignDropdown.classList.remove('is-open');
+        alignDropdownBtn.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
+  // ---- Rotation field ----
+  if (rotationInput) {
+    rotationInput.addEventListener('input', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj) return;
+      const angle = parseFloat(rotationInput.value);
+      if (Number.isNaN(angle)) return;
+      obj.set('angle', angle);
+      obj.setCoords();
+      fabricCanvas.requestRenderAll();
+    });
+  }
+
+  // ---- Position fields (object's center, mm from the card's top-left) ----
+  function moveActiveObjectCenterTo(axis, valueMm) {
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj) return;
+    const targetPx = valueMm * PX_PER_MM;
+    const center = obj.getCenterPoint();
+    if (axis === 'x') obj.set({ left: obj.left + (targetPx - center.x) });
+    else obj.set({ top: obj.top + (targetPx - center.y) });
+    obj.setCoords();
+    fabricCanvas.requestRenderAll();
+  }
+  if (posXInput) {
+    posXInput.addEventListener('input', () => {
+      const val = parseFloat(posXInput.value);
+      if (!Number.isNaN(val)) moveActiveObjectCenterTo('x', val);
+    });
+  }
+  if (posYInput) {
+    posYInput.addEventListener('input', () => {
+      const val = parseFloat(posYInput.value);
+      if (!Number.isNaN(val)) moveActiveObjectCenterTo('y', val);
+    });
+  }
+
+  // ---- Size fields (width/height, mm) — like corner-drag scaling, this
+  // folds into fontSize (uniformly) rather than stretching the text. ----
+  function applyUniformSizeMm(axis, valueMm) {
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj || obj.type !== 'i-text' || valueMm <= 0) return;
+    const targetPx = valueMm * PX_PER_MM;
+    const current = axis === 'w' ? obj.getScaledWidth() : obj.getScaledHeight();
+    if (!current) return;
+    const ratio = targetPx / current;
+    const newSize = Math.max(1, Math.round(obj.fontSize * ratio));
+    obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
+    obj.setCoords();
+    fabricCanvas.requestRenderAll();
+    if (fontSizeInput) fontSizeInput.value = newSize;
+    refreshTransformFields(obj);
+  }
+  if (sizeWInput) {
+    sizeWInput.addEventListener('input', () => {
+      const val = parseFloat(sizeWInput.value);
+      if (!Number.isNaN(val)) applyUniformSizeMm('w', val);
+    });
+  }
+  if (sizeHInput) {
+    sizeHInput.addEventListener('input', () => {
+      const val = parseFloat(sizeHInput.value);
+      if (!Number.isNaN(val)) applyUniformSizeMm('h', val);
+    });
+  }
 
   // ---- Object-position aligns — move the selected object's bounding box
   // against the card's edges/center (distinct from the text-align buttons
@@ -468,9 +605,19 @@ if (fabricCanvasEl && window.fabric) {
     obj.set({ left: obj.left + dx, top: obj.top + dy });
     obj.setCoords();
     fabricCanvas.requestRenderAll();
+    refreshTransformFields(obj);
   }
   objAlignButtons.forEach((btn) => {
     btn.addEventListener('click', () => alignActiveObject(btn.dataset.alignOp));
+  });
+
+  // ---- Escape exits text editing ----
+  // Fabric doesn't bind this itself (only clicking away or Enter does),
+  // but it's the expected shortcut, so wire it up explicitly.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const obj = fabricCanvas.getActiveObject();
+    if (obj && obj.isEditing) obj.exitEditing();
   });
 
   // ---- Delete the selected object ----
