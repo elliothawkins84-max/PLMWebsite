@@ -265,7 +265,6 @@ const renderingsResize = document.getElementById('renderings-resize');
 const editorMainEl = document.querySelector('.editor-main');
 if (renderingsPanel && renderingsResize && editorMainEl) {
   const RENDERINGS_MIN = 260;
-  const RENDERINGS_MAX = 640;
   let isResizingRenderings = false;
 
   renderingsResize.addEventListener('pointerdown', (e) => {
@@ -277,7 +276,8 @@ if (renderingsPanel && renderingsResize && editorMainEl) {
   renderingsResize.addEventListener('pointermove', (e) => {
     if (!isResizingRenderings) return;
     const mainRect = editorMainEl.getBoundingClientRect();
-    const newWidth = Math.max(RENDERINGS_MIN, Math.min(RENDERINGS_MAX, mainRect.right - e.clientX));
+    const maxWidth = window.innerWidth * (2 / 3); // matches the CSS max-width: 66.666vw cap
+    const newWidth = Math.max(RENDERINGS_MIN, Math.min(maxWidth, mainRect.right - e.clientX));
     renderingsPanel.style.width = `${newWidth}px`;
   });
 
