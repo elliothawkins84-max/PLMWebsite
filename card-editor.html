@@ -150,6 +150,23 @@
             </button>
           </div>
 
+          <!-- Fill vs stroke — not shown for Line, which is always a
+               stroke. Stroke mode draws an unfilled outline along the
+               shape's path instead of a solid fill. -->
+          <div class="editor-shape-type-group editor-mode-shape" id="shape-fill-mode-group">
+            <button type="button" class="editor-align-btn editor-shape-fill-btn is-active" data-fill-mode="fill" aria-label="Fill" title="Fill">
+              <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" fill="currentColor"/></svg>
+            </button>
+            <button type="button" class="editor-align-btn editor-shape-fill-btn" data-fill-mode="stroke" aria-label="Stroke" title="Stroke (outline only)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"/></svg>
+            </button>
+          </div>
+          <label class="editor-field editor-mode-shape" id="shape-stroke-width-field" title="Stroke width">
+            <span class="editor-field-label">Wt</span>
+            <input type="number" id="shape-stroke-width" aria-label="Stroke width" step="0.01" min="0.01" value="0.5" />
+            <span class="editor-field-unit">mm</span>
+          </label>
+
           <!-- Position on card — moves the selected object's bounding box
                against the card's edges/center. -->
           <div class="editor-align-dropdown" id="position-align-dropdown">

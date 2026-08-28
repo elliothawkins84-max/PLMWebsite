@@ -368,6 +368,12 @@
 .editor-text-toolbar.mode-shape .editor-mode-text { display: none !important; }
 .editor-text-toolbar.mode-text .editor-mode-shape { display: none !important; }
 
+/* Stroke width only makes sense in stroke mode (and never for Line,
+   which has no fill/stroke toggle at all). */
+#shape-stroke-width-field { display: none; }
+#shape-stroke-width-field.is-visible { display: flex; }
+#shape-fill-mode-group.is-hidden { display: none !important; }
+
 .editor-shape-type-group { display: flex; gap: 4px; flex: none; }
 .editor-shape-type-btn svg { width: 15px; height: 15px; }
 .editor-text-toolbar #text-rotation {
@@ -505,17 +511,7 @@
      outline draws outside the box without taking any of its space. */
   outline: 1.5px solid var(--line-strong);
 }
-/* The canvas is bigger than the card and centered over it (see
-   CARD_MARGIN_PX in card-editor.js) so something dragged off the card
-   stays visible instead of being clipped right at the edge. Fabric
-   wraps the actual <canvas> in its own .canvas-container div (inline
-   style: position:relative, no top/left) and sets the canvas element's
-   own position via inline style (left/top: 0), which would override a
-   rule targeting the canvas directly — so this offsets the wrapper
-   instead, whose inline style leaves top/left free for this to set. Its
-   inline position:relative (not absolute) still works fine for an
-   offset — layout size of .editor-card doesn't depend on this child. */
-.editor-card .canvas-container { top: -100px; left: -100px; }
+.editor-card canvas { position: absolute; top: 0; left: 0; }
 .editor-card-label {
   position: absolute;
   bottom: -20px;

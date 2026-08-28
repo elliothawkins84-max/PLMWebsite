@@ -4,13 +4,6 @@
 // canvas functionality (what a selected tool actually does) yet.
 
 const PX_PER_MM = 9; // matches the fixed sizing in card-editor.css
-// The fabric canvas is bigger than the card itself and extends this many
-// px past each edge (see card-editor.css, .editor-card canvas) — so
-// something dragged off the card stays visible instead of being clipped
-// right at the edge and potentially submitted unnoticed. All of a card
-// object's canvas-internal coordinates are offset by this from the
-// card's own true top-left corner.
-const CARD_MARGIN_PX = 100;
 
 // ---- Toolbar tool selection ----
 // Panel-toggle (Layers) and standalone-toggle (Guides) buttons are
@@ -303,32 +296,11 @@ const fabricCanvasEl = document.getElementById('fabric-canvas');
 let fabricCanvas = null;
 if (fabricCanvasEl && window.fabric) {
   fabricCanvas = new fabric.Canvas('fabric-canvas', {
-    width: 774 + CARD_MARGIN_PX * 2,
-    height: 486 + CARD_MARGIN_PX * 2,
-    // Off-card background — matches the surrounding canvas-area
-    // background so the margin reads as "outside the card" rather than
-    // looking like a rendering glitch; the card itself is marked out by
-    // a locked rect below, not by the canvas's own background.
-    backgroundColor: '#000000',
-    selection: true,
-  });
-
-  // A plain, non-interactive rect standing in for "the card" at its
-  // true position within the oversized canvas — never selectable,
-  // movable, or exported, just a visual boundary so on-card vs.
-  // off-card is obvious at a glance.
-  const cardBackground = new fabric.Rect({
-    left: CARD_MARGIN_PX,
-    top: CARD_MARGIN_PX,
     width: 774,
     height: 486,
-    fill: '#3a3a3a',
-    selectable: false,
-    evented: false,
-    excludeFromExport: true,
-    hoverCursor: 'default',
+    backgroundColor: '#3a3a3a',
+    selection: true,
   });
-  fabricCanvas.add(cardBackground);
 
   const textBtn = document.getElementById('tool-text');
   const shapesBtn = document.getElementById('tool-shapes');
@@ -342,6 +314,9 @@ if (fabricCanvasEl && window.fabric) {
     btn.addEventListener('click', () => {
       currentShapeType = btn.dataset.shape;
       shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
+      // Reflect the new shape's fill/stroke applicability (e.g. Line has
+      // no fill/stroke toggle) immediately, not just once one is placed.
+      if (!fabricCanvas.getActiveObject()) refreshFillModeUI({ type: currentShapeType });
     });
   });
 
@@ -423,6 +398,8 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
   function makeBoxShape(type) {
+    // Fill mode by default (fill set, no stroke) — matches the Fill/Stroke
+    // toggle's default in the toolbar below.
     const base = { originX: 'left', originY: 'top', centeredRotation: false, fill: '#ffffff', left: 0, top: 0 };
     if (type === 'circle') return new fabric.Circle({ ...base, radius: 1 });
     if (type === 'triangle') return new fabric.Triangle({ ...base, width: 1, height: 1 });
@@ -540,6 +517,57 @@ if (fabricCanvasEl && window.fabric) {
   const shapeUniformCheckbox = document.getElementById('shape-uniform-scale');
   const SHAPE_TYPES = ['line', 'rect', 'circle', 'triangle'];
 
+  // ---- Shape fill vs. stroke ----
+  // Line is always a stroke already (it has no fill concept), so the
+  // toggle only applies to rect/circle/triangle.
+  const SHAPE_FILL_TYPES = ['rect', 'circle', 'triangle'];
+  const fillModeGroup = document.getElementById('shape-fill-mode-group');
+  const fillModeButtons = document.querySelectorAll('.editor-shape-fill-btn');
+  const strokeWidthField = document.getElementById('shape-stroke-width-field');
+  const strokeWidthInput = document.getElementById('shape-stroke-width');
+  function shapeFillModeFor(obj) {
+    return obj.stroke && !obj.fill ? 'stroke' : 'fill';
+  }
+  // Stroke mode clears the fill entirely (not fill+stroke together) —
+  // "stroke" here means an outline only. NOTE for whenever SVG export is
+  // built: the laser software doesn't handle plain SVG strokes reliably
+  // (stroke width doesn't come through correctly), so export needs to
+  // convert a stroked shape's outline into its own filled path rather
+  // than emitting stroke/stroke-width attributes.
+  function setShapeFillMode(obj, mode) {
+    const color = obj.fill || obj.stroke || '#ffffff';
+    if (mode === 'stroke') {
+      const widthMm = strokeWidthInput ? parseFloat(strokeWidthInput.value) || 0.5 : 0.5;
+      obj.set({ fill: null, stroke: color, strokeWidth: widthMm * PX_PER_MM });
+    } else {
+      obj.set({ fill: color, stroke: null, strokeWidth: 0 });
+    }
+    obj.setCoords();
+  }
+  function refreshFillModeUI(obj) {
+    const applicable = SHAPE_FILL_TYPES.includes(obj.type);
+    if (fillModeGroup) fillModeGroup.classList.toggle('is-hidden', !applicable);
+    if (!applicable) {
+      if (strokeWidthField) strokeWidthField.classList.remove('is-visible');
+      return;
+    }
+    const mode = shapeFillModeFor(obj);
+    fillModeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.fillMode === mode));
+    if (strokeWidthField) strokeWidthField.classList.toggle('is-visible', mode === 'stroke');
+    if (mode === 'stroke' && strokeWidthInput && obj.strokeWidth) {
+      strokeWidthInput.value = (obj.strokeWidth / PX_PER_MM).toFixed(2);
+    }
+  }
+  fillModeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj || !SHAPE_FILL_TYPES.includes(obj.type)) return;
+      setShapeFillMode(obj, btn.dataset.fillMode);
+      refreshFillModeUI(obj);
+      fabricCanvas.requestRenderAll();
+    });
+  });
+
   // Text defaults to uniform (its own checkbox, unchecked, means "keep it
   // uniform"); shapes default to free/non-uniform (their checkbox,
   // unchecked, means "don't lock it uniform") — same underlying idea,
@@ -605,8 +633,8 @@ if (fabricCanvasEl && window.fabric) {
   function refreshTransformFields(obj) {
     if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
     updateAnchorIcon(anchorKeyFor(obj));
-    if (posXInput) posXInput.value = ((obj.left - CARD_MARGIN_PX) / PX_PER_MM).toFixed(2);
-    if (posYInput) posYInput.value = ((obj.top - CARD_MARGIN_PX) / PX_PER_MM).toFixed(2);
+    if (posXInput) posXInput.value = (obj.left / PX_PER_MM).toFixed(2);
+    if (posYInput) posYInput.value = (obj.top / PX_PER_MM).toFixed(2);
     if (sizeWInput) sizeWInput.value = (obj.getScaledWidth() / PX_PER_MM).toFixed(2);
     if (sizeHInput) sizeHInput.value = (obj.getScaledHeight() / PX_PER_MM).toFixed(2);
   }
@@ -635,6 +663,7 @@ if (fabricCanvasEl && window.fabric) {
       alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (obj.textAlign || 'left')));
     } else {
       shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.shape === obj.type));
+      refreshFillModeUI(obj);
     }
     if (typeof obj.getCenterPoint === 'function') refreshTransformFields(obj);
     else clearTransformFields();
@@ -898,7 +927,7 @@ if (fabricCanvasEl && window.fabric) {
   function moveActiveObjectAnchorTo(axis, valueMm) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj) return;
-    const targetPx = valueMm * PX_PER_MM + CARD_MARGIN_PX;
+    const targetPx = valueMm * PX_PER_MM;
     if (axis === 'x') obj.set({ left: targetPx });
     else obj.set({ top: targetPx });
     obj.setCoords();
@@ -948,6 +977,16 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(sizeWInput, (val) => applySizeMm('w', val));
   commitOnEnterOrBlur(sizeHInput, (val) => applySizeMm('h', val));
 
+  // ---- Stroke width (only meaningful while a shape is in stroke mode) ----
+  commitOnEnterOrBlur(strokeWidthInput, (val) => {
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj || shapeFillModeFor(obj) !== 'stroke') return;
+    obj.set({ strokeWidth: Math.max(0.01, val) * PX_PER_MM });
+    obj.setCoords();
+    fabricCanvas.requestRenderAll();
+    refreshTransformFields(obj);
+  });
+
   // ---- Scaling checkboxes (text's "Non-uniform scale", shapes' "Uniform
   // scale") — only ever one is visible at a time, but both just need to
   // refresh the active object's handle visibility when toggled. ----
@@ -970,27 +1009,22 @@ if (fabricCanvasEl && window.fabric) {
   function alignActiveObject(op) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj) return;
-    // Align against the card's own true bounds, not the oversized
-    // canvas's — the canvas extends CARD_MARGIN_PX past the card on
-    // every side so off-card content stays visible (see CARD_MARGIN_PX).
-    const cardLeft = CARD_MARGIN_PX;
-    const cardTop = CARD_MARGIN_PX;
-    const canvasW = 774;
-    const canvasH = 486;
+    const canvasW = fabricCanvas.getWidth();
+    const canvasH = fabricCanvas.getHeight();
     const rect = obj.getBoundingRect(true, true);
     let dx = 0;
     let dy = 0;
     if (op === 'left' || op === 'center' || op === 'center-h') {
-      const targetLeft = op === 'left' ? cardLeft : cardLeft + (canvasW - rect.width) / 2;
+      const targetLeft = op === 'left' ? 0 : (canvasW - rect.width) / 2;
       dx = targetLeft - rect.left;
     } else if (op === 'right') {
-      dx = cardLeft + canvasW - (rect.left + rect.width);
+      dx = canvasW - (rect.left + rect.width);
     }
     if (op === 'top' || op === 'center' || op === 'center-v') {
-      const targetTop = op === 'top' ? cardTop : cardTop + (canvasH - rect.height) / 2;
+      const targetTop = op === 'top' ? 0 : (canvasH - rect.height) / 2;
       dy = targetTop - rect.top;
     } else if (op === 'bottom') {
-      dy = cardTop + canvasH - (rect.top + rect.height);
+      dy = canvasH - (rect.top + rect.height);
     }
     obj.set({ left: obj.left + dx, top: obj.top + dy });
     obj.setCoords();
