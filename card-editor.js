@@ -348,6 +348,7 @@ if (fabricCanvasEl && window.fabric) {
     });
     fabricCanvas.add(text);
     fabricCanvas.setActiveObject(text);
+    applyScalingControlsVisibility(text);
     text.enterEditing();
     fabricCanvas.requestRenderAll();
   });
@@ -364,6 +365,18 @@ if (fabricCanvasEl && window.fabric) {
   const posYInput = document.getElementById('text-pos-y');
   const sizeWInput = document.getElementById('text-size-w');
   const sizeHInput = document.getElementById('text-size-h');
+  const nonUniformCheckbox = document.getElementById('text-nonuniform-scale');
+
+  // Off by default: corner-drag and W/H edits stay proportional (folded
+  // into fontSize, same as before). On: the object's own scaleX/scaleY
+  // are left alone instead of being reset, so width and height can be
+  // dragged independently — hiding the corner-only constraint by also
+  // exposing the edge-midpoint handles, which only ever move one axis.
+  function applyScalingControlsVisibility(obj) {
+    if (!obj || obj.type !== 'i-text') return;
+    const nonUniform = !!(nonUniformCheckbox && nonUniformCheckbox.checked);
+    obj.setControlsVisibility({ ml: nonUniform, mt: nonUniform, mr: nonUniform, mb: nonUniform });
+  }
 
   // The anchor point drives both where X/Y is measured from and where
   // rotation pivots — both are native Fabric concepts tied to an object's
@@ -417,7 +430,7 @@ if (fabricCanvasEl && window.fabric) {
   }
   function clearTransformFields() {
     if (rotationInput) rotationInput.value = 0;
-    updateAnchorIcon('tl');
+    updateAnchorIcon('c');
     if (posXInput) posXInput.value = '';
     if (posYInput) posYInput.value = '';
     if (sizeWInput) sizeWInput.value = '';
@@ -447,8 +460,12 @@ if (fabricCanvasEl && window.fabric) {
   }
   function handleSelection(e) {
     const obj = (e.selected && e.selected[0]) || fabricCanvas.getActiveObject();
-    if (obj && obj.type === 'i-text') showTextToolbarFor(obj);
-    else hideTextToolbar();
+    if (obj && obj.type === 'i-text') {
+      showTextToolbarFor(obj);
+      applyScalingControlsVisibility(obj);
+    } else {
+      hideTextToolbar();
+    }
   }
   fabricCanvas.on('selection:created', handleSelection);
   fabricCanvas.on('selection:updated', handleSelection);
@@ -468,6 +485,13 @@ if (fabricCanvasEl && window.fabric) {
       fabricCanvas.requestRenderAll();
       return;
     }
+    // New text is created with a top-left origin (so it grows naturally
+    // rightward/downward from the click point while typing), then once
+    // there's real content the anchor auto-aligns to center — the
+    // sensible default for a just-placed object, without disturbing the
+    // typing experience itself.
+    setObjectAnchor(obj, 'c');
+    fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
   });
 
@@ -481,18 +505,29 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('object:scaling', (opt) => {
     const obj = opt.target;
     if (!obj || obj.type !== 'i-text') return;
-    if (fontSizeInput) fontSizeInput.value = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
+    // In uniform mode, keep the font-size readout live during the drag
+    // (the actual fontSize/scale reset happens once, on object:modified).
+    // In non-uniform mode there's no fontSize equivalent to preview —
+    // scaleX/scaleY themselves are the result — so just leave it be.
+    if (!(nonUniformCheckbox && nonUniformCheckbox.checked)) {
+      if (fontSizeInput) fontSizeInput.value = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
+    }
     refreshTransformFields(obj);
   });
   fabricCanvas.on('object:modified', (opt) => {
     const obj = opt.target;
     if (!obj) return;
-    if (obj.type === 'i-text' && (obj.scaleX !== 1 || obj.scaleY !== 1)) {
+    const nonUniform = !!(nonUniformCheckbox && nonUniformCheckbox.checked);
+    if (obj.type === 'i-text' && !nonUniform && (obj.scaleX !== 1 || obj.scaleY !== 1)) {
+      // Uniform: fold scale into fontSize and reset scale to 1, same
+      // anti-distortion approach as before.
       const newSize = Math.max(1, Math.round(obj.fontSize * ((obj.scaleX + obj.scaleY) / 2)));
       obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
       fabricCanvas.requestRenderAll();
       if (fontSizeInput) fontSizeInput.value = newSize;
     }
+    // Non-uniform: leave scaleX/scaleY exactly as dragged — that stretch
+    // *is* the result — nothing to fold back into fontSize.
     refreshTransformFields(obj);
   });
   // Live readouts while dragging the move handle or the rotate handle.
@@ -629,24 +664,42 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(posXInput, (val) => moveActiveObjectAnchorTo('x', val));
   commitOnEnterOrBlur(posYInput, (val) => moveActiveObjectAnchorTo('y', val));
 
-  // ---- Size fields (width/height, mm) — like corner-drag scaling, this
-  // folds into fontSize (uniformly) rather than stretching the text. ----
-  function applyUniformSizeMm(axis, valueMm) {
+  // ---- Size fields (width/height, mm) ----
+  // Uniform (default): folds into fontSize so both dimensions move
+  // together, same anti-distortion approach as corner-drag scaling.
+  // Non-uniform: only the edited axis's scale changes, stretching just
+  // that dimension.
+  function applySizeMm(axis, valueMm) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj || obj.type !== 'i-text' || valueMm <= 0) return;
     const targetPx = valueMm * PX_PER_MM;
-    const current = axis === 'w' ? obj.getScaledWidth() : obj.getScaledHeight();
-    if (!current) return;
-    const ratio = targetPx / current;
-    const newSize = Math.max(1, Math.round(obj.fontSize * ratio));
-    obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
+    if (nonUniformCheckbox && nonUniformCheckbox.checked) {
+      if (axis === 'w') obj.set({ scaleX: targetPx / obj.width });
+      else obj.set({ scaleY: targetPx / obj.height });
+    } else {
+      const current = axis === 'w' ? obj.getScaledWidth() : obj.getScaledHeight();
+      if (!current) return;
+      const ratio = targetPx / current;
+      const newSize = Math.max(1, Math.round(obj.fontSize * ratio));
+      obj.set({ fontSize: newSize, scaleX: 1, scaleY: 1 });
+      if (fontSizeInput) fontSizeInput.value = newSize;
+    }
     obj.setCoords();
     fabricCanvas.requestRenderAll();
-    if (fontSizeInput) fontSizeInput.value = newSize;
     refreshTransformFields(obj);
   }
-  commitOnEnterOrBlur(sizeWInput, (val) => applyUniformSizeMm('w', val));
-  commitOnEnterOrBlur(sizeHInput, (val) => applyUniformSizeMm('h', val));
+  commitOnEnterOrBlur(sizeWInput, (val) => applySizeMm('w', val));
+  commitOnEnterOrBlur(sizeHInput, (val) => applySizeMm('h', val));
+
+  // ---- Non-uniform scaling checkbox ----
+  if (nonUniformCheckbox) {
+    nonUniformCheckbox.addEventListener('change', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj) return;
+      applyScalingControlsVisibility(obj);
+      fabricCanvas.requestRenderAll();
+    });
+  }
 
   // ---- Object-position aligns — move the selected object's bounding box
   // against the card's edges/center (distinct from the text-align buttons

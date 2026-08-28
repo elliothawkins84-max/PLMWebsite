@@ -326,6 +326,23 @@
 .editor-field-icon { width: 15px; height: 15px; flex: none; }
 .editor-field-label { font-size: 0.68rem; font-family: var(--mono); width: 9px; flex: none; }
 .editor-field-unit { font-size: 0.62rem; font-family: var(--mono); flex: none; }
+.editor-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+.editor-checkbox-field input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--fg);
+  cursor: pointer;
+}
 .editor-text-toolbar #text-rotation {
   width: 52px;
 }
