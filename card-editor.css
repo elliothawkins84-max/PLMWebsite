@@ -225,6 +225,16 @@
   padding: 6px 8px;
 }
 .editor-text-toolbar input[type="number"] { width: 56px; }
+/* Fixed width regardless of option list — without this, loading the
+   full system font list (some names much longer than the built-in six)
+   grows the select to fit its widest option and reflows the whole
+   toolbar. */
+#text-font-family {
+  width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .editor-text-toolbar-divider { width: 1px; height: 20px; background: var(--line); }
 .editor-align-btn {
   width: 28px;
