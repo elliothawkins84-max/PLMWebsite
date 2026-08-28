@@ -6,10 +6,10 @@
 const PX_PER_MM = 9; // matches the fixed sizing in card-editor.css
 
 // ---- Toolbar tool selection ----
-// Panel-toggle buttons (Layers/Guides) are excluded — they open a side
-// panel rather than selecting a drawing tool, so they're not part of
+// Panel-toggle (Layers) and standalone-toggle (Guides) buttons are
+// excluded — neither selects a drawing tool, so they're not part of
 // this mutually-exclusive group.
-const toolButtons = document.querySelectorAll('.editor-tool:not(.editor-panel-toggle)');
+const toolButtons = document.querySelectorAll('.editor-tool:not(.editor-panel-toggle):not(.editor-standalone-toggle)');
 toolButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     toolButtons.forEach((b) => b.classList.remove('is-active'));
@@ -17,7 +17,7 @@ toolButtons.forEach((btn) => {
   });
 });
 
-// ---- Layers / Guides side panel ----
+// ---- Layers side panel ----
 const sidePanel = document.getElementById('side-panel');
 const panelToggles = document.querySelectorAll('.editor-panel-toggle');
 if (sidePanel && panelToggles.length) {
@@ -39,6 +39,16 @@ if (sidePanel && panelToggles.length) {
       const section = sidePanel.querySelector(`[data-panel-content="${panelName}"]`);
       if (section) section.classList.add('is-active');
     });
+  });
+}
+
+// ---- Guides toggle — shows/hides the safe-zone overlay on the card ----
+const guidesBtn = document.getElementById('toggle-guides');
+const editorCardEl = document.getElementById('editor-card');
+if (guidesBtn && editorCardEl) {
+  guidesBtn.addEventListener('click', () => {
+    guidesBtn.classList.toggle('is-active');
+    editorCardEl.classList.toggle('show-safe-zone');
   });
 }
 

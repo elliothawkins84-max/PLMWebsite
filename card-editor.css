@@ -301,6 +301,18 @@
   color: var(--muted);
   text-transform: uppercase;
 }
+/* Safe zone — toggled by the Guides button. 9px = 1mm at this editor's
+   fixed 9px-per-mm scale (see PX_PER_MM in card-editor.js); since it
+   lives inside the frame that CSS `zoom` scales as a whole, this stays
+   correctly aligned at any zoom level without extra math. */
+.editor-safe-zone {
+  display: none;
+  position: absolute;
+  inset: 9px;
+  border: 1px dashed #ff3b3b;
+  pointer-events: none;
+}
+.editor-card.show-safe-zone .editor-safe-zone { display: block; }
 
 /* ---- Bottom bar: side switcher (left) + price (right) ---- */
 .editor-bottombar {
