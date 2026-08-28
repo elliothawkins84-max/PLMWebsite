@@ -323,6 +323,14 @@
   flex: none;
   color: var(--muted);
 }
+/* X/Y and W/H each stack vertically (rather than sitting side by side)
+   to keep the toolbar's horizontal footprint down. */
+.editor-field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: none;
+}
 .editor-field-icon { width: 15px; height: 15px; flex: none; }
 .editor-field-label { font-size: 0.68rem; font-family: var(--mono); width: 9px; flex: none; }
 .editor-field-unit { font-size: 0.62rem; font-family: var(--mono); flex: none; }
