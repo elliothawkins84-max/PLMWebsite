@@ -182,4 +182,13 @@ if (canvasScroll) {
   canvasScroll.addEventListener('auxclick', (e) => {
     if (e.button === 1) e.preventDefault();
   });
+
+  // The pan area is much bigger than the frame so there's always room to
+  // pan — start scrolled to its center so the frame is actually in view
+  // on load, instead of scrolled to the pan area's top-left corner.
+  const panArea = canvasScroll.querySelector('.editor-canvas-pan-area');
+  if (panArea) {
+    canvasScroll.scrollLeft = (panArea.offsetWidth - canvasScroll.clientWidth) / 2;
+    canvasScroll.scrollTop = (panArea.offsetHeight - canvasScroll.clientHeight) / 2;
+  }
 }
