@@ -546,6 +546,43 @@ if (fabricCanvasEl && window.fabric) {
       fabricCanvas.requestRenderAll();
     });
   }
+
+  // ---- Load system fonts ----
+  // The Local Font Access API (window.queryLocalFonts) lets a page list
+  // every font actually installed on the user's computer — but it's
+  // permission-gated (needs a user gesture, like this button click) and
+  // only supported in Chromium browsers (Chrome/Edge), not Firefox/
+  // Safari, so it's an opt-in enhancement over the small built-in list
+  // rather than something that can just run on page load.
+  const loadFontsBtn = document.getElementById('load-system-fonts-btn');
+  if (loadFontsBtn) {
+    if (!('queryLocalFonts' in window)) {
+      loadFontsBtn.disabled = true;
+      loadFontsBtn.title = 'Loading system fonts needs Chrome or Edge — not supported in this browser';
+    } else {
+      loadFontsBtn.addEventListener('click', async () => {
+        try {
+          const fonts = await window.queryLocalFonts();
+          const families = [...new Set(fonts.map((f) => f.family))].sort((a, b) => a.localeCompare(b));
+          if (!families.length || !fontFamilySelect) return;
+          const current = fontFamilySelect.value;
+          fontFamilySelect.innerHTML = '';
+          families.forEach((family) => {
+            const opt = document.createElement('option');
+            opt.value = family;
+            opt.textContent = family;
+            fontFamilySelect.appendChild(opt);
+          });
+          fontFamilySelect.value = families.includes(current) ? current : families[0];
+          fontFamilySelect.dispatchEvent(new Event('change'));
+        } catch (err) {
+          // User declined the permission prompt, or it's unavailable for
+          // some other reason — leave the existing font list as-is.
+          console.warn('Could not load system fonts:', err);
+        }
+      });
+    }
+  }
   if (fontSizeInput) {
     fontSizeInput.addEventListener('input', () => {
       const obj = fabricCanvas.getActiveObject();
