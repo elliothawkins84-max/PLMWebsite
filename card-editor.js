@@ -486,29 +486,41 @@ if (fabricCanvasEl && window.fabric) {
     });
   });
 
-  // ---- Align dropdown: tucks the 10 align buttons behind one toggle ----
-  const alignDropdown = document.getElementById('align-dropdown');
-  const alignDropdownBtn = document.getElementById('align-dropdown-btn');
-  if (alignDropdown && alignDropdownBtn) {
-    alignDropdownBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isOpen = alignDropdown.classList.toggle('is-open');
-      alignDropdownBtn.setAttribute('aria-expanded', String(isOpen));
+  // ---- Align dropdowns: text-align and position-on-card each get their
+  // own toggle (rather than one combined menu) so each stays a quick,
+  // single-purpose pick.
+  const allAlignDropdowns = document.querySelectorAll('.editor-align-dropdown');
+  function closeAlignDropdowns(except) {
+    allAlignDropdowns.forEach((d) => {
+      if (d === except) return;
+      d.classList.remove('is-open');
+      const btn = d.querySelector('.editor-align-dropdown-btn');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
     });
-    document.addEventListener('click', (e) => {
-      if (!alignDropdown.contains(e.target)) {
-        alignDropdown.classList.remove('is-open');
-        alignDropdownBtn.setAttribute('aria-expanded', 'false');
-      }
+  }
+  function setupAlignDropdown(dropdownId, btnId) {
+    const dropdown = document.getElementById(dropdownId);
+    const btn = document.getElementById(btnId);
+    if (!dropdown || !btn) return;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = dropdown.classList.toggle('is-open');
+      btn.setAttribute('aria-expanded', String(isOpen));
+      if (isOpen) closeAlignDropdowns(dropdown);
     });
     // Close the panel once a choice is made, for a snappier feel.
-    alignDropdown.querySelectorAll('.editor-align-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        alignDropdown.classList.remove('is-open');
-        alignDropdownBtn.setAttribute('aria-expanded', 'false');
+    dropdown.querySelectorAll('.editor-align-btn').forEach((alignBtn) => {
+      alignBtn.addEventListener('click', () => {
+        dropdown.classList.remove('is-open');
+        btn.setAttribute('aria-expanded', 'false');
       });
     });
   }
+  setupAlignDropdown('text-align-dropdown', 'text-align-dropdown-btn');
+  setupAlignDropdown('position-align-dropdown', 'position-align-dropdown-btn');
+  document.addEventListener('click', (e) => {
+    if (![...allAlignDropdowns].some((d) => d.contains(e.target))) closeAlignDropdowns();
+  });
 
   // ---- Rotation field ----
   if (rotationInput) {

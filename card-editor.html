@@ -109,14 +109,13 @@
 
           <div class="editor-text-toolbar-divider"></div>
 
-          <!-- All align controls (text-align + object-position aligns)
-               tucked behind one dropdown so they don't eat toolbar space. -->
-          <div class="editor-align-dropdown" id="align-dropdown">
-            <button type="button" class="editor-align-dropdown-btn" id="align-dropdown-btn" aria-haspopup="true" aria-expanded="false" aria-label="Align">
+          <!-- Text align — how text sits within its own box. -->
+          <div class="editor-align-dropdown" id="text-align-dropdown">
+            <button type="button" class="editor-align-dropdown-btn" id="text-align-dropdown-btn" aria-haspopup="true" aria-expanded="false" aria-label="Text align" title="Text align">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="17" y2="18"/></svg>
               <svg class="editor-align-dropdown-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg>
             </button>
-            <div class="editor-align-dropdown-panel" id="align-dropdown-panel">
+            <div class="editor-align-dropdown-panel" id="text-align-dropdown-panel">
               <p class="editor-align-dropdown-label">Text align</p>
               <div class="editor-align-dropdown-row">
                 <button type="button" class="editor-align-btn" data-align="left" aria-label="Align text left" title="Align text left">
@@ -129,7 +128,17 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="7" y1="18" x2="20" y2="18"/></svg>
                 </button>
               </div>
+            </div>
+          </div>
 
+          <!-- Position on card — moves the selected object's bounding box
+               against the card's edges/center. -->
+          <div class="editor-align-dropdown" id="position-align-dropdown">
+            <button type="button" class="editor-align-dropdown-btn" id="position-align-dropdown-btn" aria-haspopup="true" aria-expanded="false" aria-label="Align on card" title="Align on card">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="3" x2="12" y2="21" stroke-dasharray="2 2"/><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="2 2"/><rect x="8" y="8" width="8" height="8"/></svg>
+              <svg class="editor-align-dropdown-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg>
+            </button>
+            <div class="editor-align-dropdown-panel" id="position-align-dropdown-panel">
               <p class="editor-align-dropdown-label">Position on card</p>
               <div class="editor-align-dropdown-row">
                 <button type="button" class="editor-align-btn" data-align-op="left" aria-label="Align left" title="Align left">
