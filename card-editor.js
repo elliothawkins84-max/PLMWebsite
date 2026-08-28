@@ -570,18 +570,36 @@ if (fabricCanvasEl && window.fabric) {
     if (![...allAlignDropdowns].some((d) => d.contains(e.target))) closeAlignDropdowns();
   });
 
-  // ---- Rotation field ----
-  if (rotationInput) {
-    rotationInput.addEventListener('input', () => {
-      const obj = fabricCanvas.getActiveObject();
-      if (!obj) return;
-      const angle = parseFloat(rotationInput.value);
-      if (Number.isNaN(angle)) return;
-      obj.set('angle', angle);
-      obj.setCoords();
-      fabricCanvas.requestRenderAll();
+  // Transform fields (rotation, position, size) commit their value on
+  // Enter or on blur — NOT on every keystroke. Applying live on 'input'
+  // meant a field that also refreshes itself afterward (size, notably)
+  // rewrote its own value mid-typing, fighting the cursor and making it
+  // feel like you couldn't type or delete in it. Committing once, after
+  // the user is done, avoids that entirely.
+  function commitOnEnterOrBlur(input, applyFn) {
+    if (!input) return;
+    const commit = () => {
+      const val = parseFloat(input.value);
+      if (!Number.isNaN(val)) applyFn(val);
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      commit();
+      input.blur();
     });
+    input.addEventListener('blur', commit);
   }
+
+  // ---- Rotation field ----
+  commitOnEnterOrBlur(rotationInput, (angle) => {
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj) return;
+    obj.set('angle', angle);
+    obj.setCoords();
+    fabricCanvas.requestRenderAll();
+    refreshTransformFields(obj);
+  });
 
   // ---- Anchor picker: clicking a point in the dropdown grid sets it ----
   anchorPanelButtons.forEach((btn) => {
@@ -606,19 +624,10 @@ if (fabricCanvasEl && window.fabric) {
     else obj.set({ top: targetPx });
     obj.setCoords();
     fabricCanvas.requestRenderAll();
+    refreshTransformFields(obj);
   }
-  if (posXInput) {
-    posXInput.addEventListener('input', () => {
-      const val = parseFloat(posXInput.value);
-      if (!Number.isNaN(val)) moveActiveObjectAnchorTo('x', val);
-    });
-  }
-  if (posYInput) {
-    posYInput.addEventListener('input', () => {
-      const val = parseFloat(posYInput.value);
-      if (!Number.isNaN(val)) moveActiveObjectAnchorTo('y', val);
-    });
-  }
+  commitOnEnterOrBlur(posXInput, (val) => moveActiveObjectAnchorTo('x', val));
+  commitOnEnterOrBlur(posYInput, (val) => moveActiveObjectAnchorTo('y', val));
 
   // ---- Size fields (width/height, mm) — like corner-drag scaling, this
   // folds into fontSize (uniformly) rather than stretching the text. ----
@@ -636,18 +645,8 @@ if (fabricCanvasEl && window.fabric) {
     if (fontSizeInput) fontSizeInput.value = newSize;
     refreshTransformFields(obj);
   }
-  if (sizeWInput) {
-    sizeWInput.addEventListener('input', () => {
-      const val = parseFloat(sizeWInput.value);
-      if (!Number.isNaN(val)) applyUniformSizeMm('w', val);
-    });
-  }
-  if (sizeHInput) {
-    sizeHInput.addEventListener('input', () => {
-      const val = parseFloat(sizeHInput.value);
-      if (!Number.isNaN(val)) applyUniformSizeMm('h', val);
-    });
-  }
+  commitOnEnterOrBlur(sizeWInput, (val) => applyUniformSizeMm('w', val));
+  commitOnEnterOrBlur(sizeHInput, (val) => applyUniformSizeMm('h', val));
 
   // ---- Object-position aligns — move the selected object's bounding box
   // against the card's edges/center (distinct from the text-align buttons
