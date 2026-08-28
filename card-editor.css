@@ -63,8 +63,11 @@
   border: 1px solid var(--line);
   color: var(--muted);
   font-size: 1rem;
-  cursor: not-allowed;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
+.editor-icon-btn:hover:not(:disabled) { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
+.editor-icon-btn:disabled { cursor: not-allowed; opacity: 0.5; }
 /* .btn-sm carries a margin-top meant for spacing under a product-card
    caption elsewhere on the site — reset it here so these buttons center
    properly in the top bar instead of inheriting that offset. */
@@ -177,7 +180,7 @@
 .editor-canvas-frame {
   display: grid;
   grid-template-columns: 34px 16px 516px;
-  grid-template-rows: 28px 16px 324px;
+  grid-template-rows: 34px 16px 324px;
   width: fit-content;
 }
 .ruler-corner {
@@ -203,8 +206,8 @@
   background: var(--line);
 }
 .ruler-top .ruler-tick { bottom: 0; width: 1px; }
-.ruler-top .ruler-tick.major { height: 12px; background: var(--muted); }
-.ruler-top .ruler-tick.minor { height: 6px; }
+.ruler-top .ruler-tick.major { height: 10px; background: var(--muted); }
+.ruler-top .ruler-tick.minor { height: 5px; }
 .ruler-left .ruler-tick { right: 0; height: 1px; }
 .ruler-left .ruler-tick.major { width: 12px; background: var(--muted); }
 .ruler-left .ruler-tick.minor { width: 6px; }
@@ -215,7 +218,7 @@
   line-height: 1;
   color: var(--muted);
 }
-.ruler-top .ruler-label { top: 3px; transform: translateX(-50%); }
+.ruler-top .ruler-label { top: 0; transform: translateX(-50%); }
 /* Left ruler labels stay upright (not rotated) — simpler to center exactly
    on their tick via translateY, and more legible than rotated text. */
 .ruler-left .ruler-label {

@@ -80,3 +80,53 @@ if (addBackBtn) {
     setActiveSide('back');
   });
 }
+
+// ---- Zoom ----
+// Uses the CSS `zoom` property (not `transform: scale`) specifically
+// because it changes the frame's actual layout size, so the surrounding
+// .editor-canvas-scroll container has something real to scroll once the
+// zoomed frame no longer fits — transform doesn't affect layout size, so
+// scrolling wouldn't pick up the change.
+const ZOOM_MIN = 25;
+const ZOOM_MAX = 300;
+const ZOOM_STEP = 10;
+let zoomLevel = 100;
+
+const canvasFrame = document.querySelector('.editor-canvas-frame');
+const zoomValueEl = document.getElementById('zoom-value');
+const zoomOutBtn = document.getElementById('zoom-out');
+const zoomInBtn = document.getElementById('zoom-in');
+
+function applyZoom() {
+  if (canvasFrame) canvasFrame.style.zoom = zoomLevel / 100;
+  if (zoomValueEl) zoomValueEl.textContent = `${zoomLevel}%`;
+  if (zoomOutBtn) zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN;
+  if (zoomInBtn) zoomInBtn.disabled = zoomLevel >= ZOOM_MAX;
+}
+
+if (zoomOutBtn) {
+  zoomOutBtn.addEventListener('click', () => {
+    zoomLevel = Math.max(ZOOM_MIN, zoomLevel - ZOOM_STEP);
+    applyZoom();
+  });
+}
+if (zoomInBtn) {
+  zoomInBtn.addEventListener('click', () => {
+    zoomLevel = Math.min(ZOOM_MAX, zoomLevel + ZOOM_STEP);
+    applyZoom();
+  });
+}
+
+// Ctrl/Cmd + scroll wheel to zoom, same as most design tools — scoped to
+// the canvas area so it doesn't hijack normal page scrolling elsewhere.
+const canvasScroll = document.querySelector('.editor-canvas-scroll');
+if (canvasScroll) {
+  canvasScroll.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    zoomLevel = e.deltaY < 0
+      ? Math.min(ZOOM_MAX, zoomLevel + ZOOM_STEP)
+      : Math.max(ZOOM_MIN, zoomLevel - ZOOM_STEP);
+    applyZoom();
+  }, { passive: false });
+}
