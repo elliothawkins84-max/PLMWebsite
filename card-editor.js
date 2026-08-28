@@ -640,22 +640,27 @@ if (fabricCanvasEl && window.fabric) {
   });
 
   // ---- Shape edge indicator ----
-  // A thin outline, in the same blue as Fabric's own selection border,
-  // traced exactly along a shape's true nominal path — the boundary the
-  // W/H fields measure. Needed because Fabric's own selection handles
-  // aren't a reliable stand-in for that anymore: they're sized off the
-  // object's actual strokeWidth, which for inside/outside placement is
-  // doubled internally (see applyStrokeRender above), so the handles no
-  // longer trace the real edge once a shape is in stroke mode. Shown
-  // only while a rect/circle/triangle is selected, gone as soon as
-  // selection moves elsewhere.
-  const EDGE_INDICATOR_COLOR = fabric.Object.prototype.borderColor;
+  // A bright outline, in the same blue family as Fabric's own selection
+  // border (just bolder and more saturated, so it reads clearly against
+  // either a white shape or the dark canvas), traced exactly along a
+  // shape's true nominal path — the boundary the W/H fields measure.
+  // Needed because Fabric's own selection handles aren't a reliable
+  // stand-in for that anymore: they're sized off the object's actual
+  // strokeWidth, which for inside/outside placement is doubled internally
+  // (see applyStrokeRender above), so the handles no longer trace the
+  // real edge once a shape is in stroke mode. Shown only while a
+  // rect/circle/triangle is selected, gone as soon as selection moves
+  // elsewhere.
+  const EDGE_INDICATOR_COLOR = '#1e90ff';
   let edgeIndicator = null;
   function makeEdgeIndicatorFor(obj) {
     const common = {
       left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
       angle: obj.angle, scaleX: obj.scaleX, scaleY: obj.scaleY,
-      fill: null, stroke: EDGE_INDICATOR_COLOR, strokeWidth: 1, strokeUniform: true,
+      fill: null, stroke: EDGE_INDICATOR_COLOR, strokeWidth: 2, strokeUniform: true,
+      // A dark halo behind the line so it stays readable even when it
+      // crosses a white shape, not just the dark card background.
+      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.65)', blur: 3, offsetX: 0, offsetY: 0 }),
       selectable: false, evented: false, excludeFromExport: true, hoverCursor: 'default',
     };
     if (obj.type === 'circle') return new fabric.Circle({ ...common, radius: obj.radius });

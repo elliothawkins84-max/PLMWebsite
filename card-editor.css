@@ -385,12 +385,16 @@
 }
 /* Position/size fields: wide enough for a full value like "123.45", and
    no spin arrows — with 2-decimal-mm precision the up/down step is more
-   fiddly than useful, so typing is the only input method. */
+   fiddly than useful, so typing is the only input method. Stroke width
+   gets the same treatment for the same reason. */
 .editor-text-toolbar #text-pos-x,
 .editor-text-toolbar #text-pos-y,
 .editor-text-toolbar #text-size-w,
 .editor-text-toolbar #text-size-h {
   width: 72px;
+  -moz-appearance: textfield;
+}
+.editor-text-toolbar #shape-stroke-width {
   -moz-appearance: textfield;
 }
 .editor-text-toolbar #text-pos-x::-webkit-outer-spin-button,
@@ -400,7 +404,9 @@
 .editor-text-toolbar #text-size-w::-webkit-outer-spin-button,
 .editor-text-toolbar #text-size-w::-webkit-inner-spin-button,
 .editor-text-toolbar #text-size-h::-webkit-outer-spin-button,
-.editor-text-toolbar #text-size-h::-webkit-inner-spin-button {
+.editor-text-toolbar #text-size-h::-webkit-inner-spin-button,
+.editor-text-toolbar #shape-stroke-width::-webkit-outer-spin-button,
+.editor-text-toolbar #shape-stroke-width::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
