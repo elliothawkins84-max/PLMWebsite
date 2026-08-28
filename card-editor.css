@@ -301,18 +301,44 @@
   color: var(--muted);
   text-transform: uppercase;
 }
-/* Safe zone — toggled by the Guides button. 9px = 1mm at this editor's
-   fixed 9px-per-mm scale (see PX_PER_MM in card-editor.js); since it
-   lives inside the frame that CSS `zoom` scales as a whole, this stays
-   correctly aligned at any zoom level without extra math. */
+/* Safe zone — always visible, not tied to any toggle. 9px = 1mm at this
+   editor's fixed 9px-per-mm scale (see PX_PER_MM in card-editor.js);
+   since it lives inside the frame that CSS `zoom` scales as a whole,
+   this stays correctly aligned at any zoom level without extra math. */
 .editor-safe-zone {
-  display: none;
   position: absolute;
   inset: 9px;
   border: 1px dashed #ff3b3b;
   pointer-events: none;
 }
-.editor-card.show-safe-zone .editor-safe-zone { display: block; }
+
+/* Guides — toggled by the Guides button: a center crosshair (horizontal
+   + vertical) for aligning design elements to the middle of the card.
+   Uses a repeating-gradient dash pattern rather than border-style:dashed
+   so the dash/gap length is actually controllable (longer and sparser
+   than a typical thin native dashed line). */
+.editor-guide-h,
+.editor-guide-v {
+  display: none;
+  position: absolute;
+  pointer-events: none;
+}
+.editor-guide-h {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background-image: repeating-linear-gradient(to right, rgba(255, 255, 255, 0.65) 0 10px, transparent 10px 20px);
+}
+.editor-guide-v {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background-image: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.65) 0 10px, transparent 10px 20px);
+}
+.editor-card.show-guides .editor-guide-h,
+.editor-card.show-guides .editor-guide-v { display: block; }
 
 /* ---- Bottom bar: side switcher (left) + price (right) ---- */
 .editor-bottombar {

@@ -42,13 +42,14 @@ if (sidePanel && panelToggles.length) {
   });
 }
 
-// ---- Guides toggle — shows/hides the safe-zone overlay on the card ----
+// ---- Guides toggle — shows/hides the center-crosshair guide lines on
+// the card. (The safe zone is separate and always visible.) ----
 const guidesBtn = document.getElementById('toggle-guides');
 const editorCardEl = document.getElementById('editor-card');
 if (guidesBtn && editorCardEl) {
   guidesBtn.addEventListener('click', () => {
     guidesBtn.classList.toggle('is-active');
-    editorCardEl.classList.toggle('show-safe-zone');
+    editorCardEl.classList.toggle('show-guides');
   });
 }
 
