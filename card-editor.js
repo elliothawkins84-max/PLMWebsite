@@ -348,7 +348,7 @@ if (fabricCanvasEl && window.fabric) {
   const textToolbar = document.getElementById('text-toolbar');
   const fontFamilySelect = document.getElementById('text-font-family');
   const fontSizeInput = document.getElementById('text-font-size');
-  const alignButtons = document.querySelectorAll('.editor-align-btn');
+  const alignButtons = document.querySelectorAll('.editor-align-btn[data-align]');
 
   function showTextToolbarFor(obj) {
     if (!textToolbar) return;
@@ -437,6 +437,40 @@ if (fabricCanvasEl && window.fabric) {
       alignButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
       fabricCanvas.requestRenderAll();
     });
+  });
+
+  // ---- Object-position aligns — move the selected object's bounding box
+  // against the card's edges/center (distinct from the text-align buttons
+  // above, which align text within its own box). Works off each object's
+  // absolute bounding rect rather than its raw left/top, so it's correct
+  // regardless of the object's origin, scale, or rotation.
+  const objAlignButtons = document.querySelectorAll('.editor-align-btn[data-align-op]');
+  function alignActiveObject(op) {
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj) return;
+    const canvasW = fabricCanvas.getWidth();
+    const canvasH = fabricCanvas.getHeight();
+    const rect = obj.getBoundingRect(true, true);
+    let dx = 0;
+    let dy = 0;
+    if (op === 'left' || op === 'center' || op === 'center-h') {
+      const targetLeft = op === 'left' ? 0 : (canvasW - rect.width) / 2;
+      dx = targetLeft - rect.left;
+    } else if (op === 'right') {
+      dx = canvasW - (rect.left + rect.width);
+    }
+    if (op === 'top' || op === 'center' || op === 'center-v') {
+      const targetTop = op === 'top' ? 0 : (canvasH - rect.height) / 2;
+      dy = targetTop - rect.top;
+    } else if (op === 'bottom') {
+      dy = canvasH - (rect.top + rect.height);
+    }
+    obj.set({ left: obj.left + dx, top: obj.top + dy });
+    obj.setCoords();
+    fabricCanvas.requestRenderAll();
+  }
+  objAlignButtons.forEach((btn) => {
+    btn.addEventListener('click', () => alignActiveObject(btn.dataset.alignOp));
   });
 
   // ---- Delete the selected object ----

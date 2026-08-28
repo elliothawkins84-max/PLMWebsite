@@ -116,6 +116,33 @@
           <button type="button" class="editor-align-btn" data-align="right" aria-label="Align right">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="7" y1="18" x2="20" y2="18"/></svg>
           </button>
+
+          <div class="editor-text-toolbar-divider"></div>
+
+          <!-- Object-position aligns — move the selected object's bounding
+               box against the card's edges/center, distinct from the text-
+               align buttons above (those align text within its own box). -->
+          <button type="button" class="editor-align-btn" data-align-op="left" aria-label="Align left" title="Align left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="3" x2="4" y2="21"/><rect x="8" y="8" width="12" height="8"/></svg>
+          </button>
+          <button type="button" class="editor-align-btn" data-align-op="center-h" aria-label="Align center horizontally" title="Align center horizontally">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="3" x2="12" y2="21" stroke-dasharray="2 2"/><rect x="6" y="8" width="12" height="8"/></svg>
+          </button>
+          <button type="button" class="editor-align-btn" data-align-op="right" aria-label="Align right" title="Align right">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="20" y1="3" x2="20" y2="21"/><rect x="4" y="8" width="12" height="8"/></svg>
+          </button>
+          <button type="button" class="editor-align-btn" data-align-op="top" aria-label="Align top" title="Align top">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="4" x2="21" y2="4"/><rect x="8" y="8" width="8" height="12"/></svg>
+          </button>
+          <button type="button" class="editor-align-btn" data-align-op="center-v" aria-label="Align center vertically" title="Align center vertically">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="2 2"/><rect x="8" y="6" width="8" height="12"/></svg>
+          </button>
+          <button type="button" class="editor-align-btn" data-align-op="bottom" aria-label="Align bottom" title="Align bottom">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="20" x2="21" y2="20"/><rect x="8" y="4" width="8" height="12"/></svg>
+          </button>
+          <button type="button" class="editor-align-btn" data-align-op="center" aria-label="Align center of canvas" title="Align center of canvas">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="3" x2="12" y2="21" stroke-dasharray="2 2"/><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="2 2"/><rect x="8" y="8" width="8" height="8"/></svg>
+          </button>
         </div>
 
         <div class="editor-canvas-scroll" id="canvas-scroll">
