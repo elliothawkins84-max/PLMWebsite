@@ -173,6 +173,8 @@
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 24px 24px;
 }
+.editor-canvas-scroll.is-panning { cursor: grabbing; }
+.editor-canvas-scroll.is-panning * { cursor: grabbing; }
 
 /* Ruler + canvas grid — corner box, then a ruler across the top and one
    down the left, sized to match the card exactly so tick 0 lines up with
@@ -182,8 +184,8 @@
    the card butting flush against it. */
 .editor-canvas-frame {
   display: grid;
-  grid-template-columns: 34px 16px 516px;
-  grid-template-rows: 34px 16px 324px;
+  grid-template-columns: 34px 16px 774px;
+  grid-template-rows: 34px 16px 486px;
   width: fit-content;
 }
 .ruler-corner {
@@ -231,7 +233,7 @@
   transform: translateY(-50%);
 }
 
-.editor-canvas-wrap { grid-column: 3; grid-row: 3; width: 516px; height: 324px; }
+.editor-canvas-wrap { grid-column: 3; grid-row: 3; width: 774px; height: 486px; }
 .editor-card {
   position: relative;
   width: 100%;

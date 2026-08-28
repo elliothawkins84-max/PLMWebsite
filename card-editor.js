@@ -3,7 +3,7 @@
 // side thumbnails, and lets the toolbar buttons be selected. No design/
 // canvas functionality (what a selected tool actually does) yet.
 
-const PX_PER_MM = 6; // matches the fixed sizing in card-editor.css
+const PX_PER_MM = 9; // matches the fixed sizing in card-editor.css
 
 // ---- Toolbar tool selection ----
 const toolButtons = document.querySelectorAll('.editor-tool');
@@ -117,15 +117,52 @@ if (zoomInBtn) {
   });
 }
 
-// Mouse wheel / trackpad scroll zooms directly (no modifier key needed).
-// Panning once zoomed in still works via the scrollbars themselves.
+// A vertical mouse wheel / trackpad scroll zooms; a horizontal trackpad
+// swipe is left alone so it still pans the scroll container natively —
+// only preventDefault (and zoom) when the vertical component dominates,
+// otherwise a side-to-side swipe would get swallowed by the zoom handler.
 const canvasScroll = document.querySelector('.editor-canvas-scroll');
 if (canvasScroll) {
   canvasScroll.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return; // horizontal swipe — let it pan
     e.preventDefault();
     zoomLevel = e.deltaY < 0
       ? Math.min(ZOOM_MAX, zoomLevel + ZOOM_STEP)
       : Math.max(ZOOM_MIN, zoomLevel - ZOOM_STEP);
     applyZoom();
   }, { passive: false });
+}
+
+// Middle-mouse-button hold-and-drag panning ("hand tool"). The browser's
+// own middle-click autoscroll would otherwise kick in, so it's suppressed
+// via preventDefault on mousedown.
+if (canvasScroll) {
+  let isPanning = false;
+  let panStartX = 0;
+  let panStartY = 0;
+  let panStartScrollLeft = 0;
+  let panStartScrollTop = 0;
+
+  canvasScroll.addEventListener('mousedown', (e) => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    isPanning = true;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panStartScrollLeft = canvasScroll.scrollLeft;
+    panStartScrollTop = canvasScroll.scrollTop;
+    canvasScroll.classList.add('is-panning');
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    canvasScroll.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
+    canvasScroll.scrollTop = panStartScrollTop - (e.clientY - panStartY);
+  });
+
+  window.addEventListener('mouseup', (e) => {
+    if (!isPanning || e.button !== 1) return;
+    isPanning = false;
+    canvasScroll.classList.remove('is-panning');
+  });
 }
