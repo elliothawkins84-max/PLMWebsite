@@ -37,21 +37,17 @@
       <!-- Left toolbar -->
       <nav class="editor-toolbar" aria-label="Editor tools">
         <div class="editor-tool-group">
-          <button type="button" class="editor-tool is-active">
+          <button type="button" class="editor-tool is-active" id="tool-select">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M5 3l14 6-6 2-2 6-6-14z"/></svg>
             <span class="editor-tool-label">Select</span>
           </button>
-          <button type="button" class="editor-tool">
+          <button type="button" class="editor-tool" id="tool-text">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="5"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
             <span class="editor-tool-label">Text</span>
           </button>
           <button type="button" class="editor-tool">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="8.5" width="10" height="10"/><circle cx="16" cy="8" r="4.5"/></svg>
             <span class="editor-tool-label">Shapes</span>
-          </button>
-          <button type="button" class="editor-tool">
-            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4" width="18" height="16"/><circle cx="8.5" cy="9.5" r="1.4"/><path d="M21 16.5l-5.5-5.5L9 17"/></svg>
-            <span class="editor-tool-label">Images</span>
           </button>
           <button type="button" class="editor-tool">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
@@ -98,6 +94,30 @@
 
       <!-- Canvas -->
       <section class="editor-canvas-area">
+        <!-- Contextual text-formatting toolbar — hidden until a text
+             object is selected/being edited. -->
+        <div class="editor-text-toolbar" id="text-toolbar">
+          <select id="text-font-family" aria-label="Font">
+            <option value="Arial">Arial</option>
+            <option value="Helvetica">Helvetica</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Courier New">Courier New</option>
+            <option value="Verdana">Verdana</option>
+          </select>
+          <input type="number" id="text-font-size" aria-label="Font size" min="6" max="120" value="24" />
+          <div class="editor-text-toolbar-divider"></div>
+          <button type="button" class="editor-align-btn" data-align="left" aria-label="Align left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="17" y2="18"/></svg>
+          </button>
+          <button type="button" class="editor-align-btn" data-align="center" aria-label="Align center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="5" y1="18" x2="19" y2="18"/></svg>
+          </button>
+          <button type="button" class="editor-align-btn" data-align="right" aria-label="Align right">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="7" y1="18" x2="20" y2="18"/></svg>
+          </button>
+        </div>
+
         <div class="editor-canvas-scroll" id="canvas-scroll">
           <div class="editor-canvas-pan-area">
             <div class="editor-canvas-frame">
@@ -107,7 +127,8 @@
               <div class="ruler-left" id="ruler-left"></div>
               <div class="editor-canvas-wrap">
                 <div class="editor-card" id="editor-card">
-                  <span class="editor-card-label" id="editor-card-label">Front — 86 &times; 54mm</span>
+                  <canvas id="fabric-canvas"></canvas>
+                  <span class="editor-card-label" id="editor-card-label">Front</span>
                   <span class="editor-safe-zone" id="safe-zone" aria-hidden="true">
                     <span class="sz-edge sz-top"></span>
                     <span class="sz-edge sz-right"></span>
@@ -151,6 +172,7 @@
     </div>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
   <script src="card-editor.js"></script>
 </body>
 </html>

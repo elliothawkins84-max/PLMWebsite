@@ -290,3 +290,109 @@ if (renderingsPanel && renderingsResize && editorMainEl) {
   renderingsResize.addEventListener('pointerup', stopResizingRenderings);
   renderingsResize.addEventListener('pointercancel', stopResizingRenderings);
 }
+
+// ---- Fabric.js canvas — the first real (non-placeholder) tool: Text ----
+const fabricCanvasEl = document.getElementById('fabric-canvas');
+let fabricCanvas = null;
+if (fabricCanvasEl && window.fabric) {
+  fabricCanvas = new fabric.Canvas('fabric-canvas', {
+    width: 774,
+    height: 486,
+    backgroundColor: '#3a3a3a',
+    selection: true,
+  });
+
+  const selectBtn = document.getElementById('tool-select');
+  const textBtn = document.getElementById('tool-text');
+  const isTextToolActive = () => !!(textBtn && textBtn.classList.contains('is-active'));
+
+  // Update the canvas cursor whenever the active tool changes.
+  toolButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      fabricCanvas.defaultCursor = btn.id === 'tool-text' ? 'text' : 'default';
+    });
+  });
+
+  // Clicking the canvas with the Text tool active places a new editable
+  // text object right there (unless the click landed on an existing
+  // object — then leave it to Fabric's normal selection/editing).
+  // Fill is a plain placeholder white for now; real finish colors (the
+  // white/frosted/metallic/stroke/texture system from the editor plan)
+  // aren't wired up to actual object rendering yet.
+  fabricCanvas.on('mouse:down', (opt) => {
+    if (!isTextToolActive() || opt.target) return;
+    const pointer = fabricCanvas.getPointer(opt.e);
+    const text = new fabric.IText('', {
+      left: pointer.x,
+      top: pointer.y,
+      fontFamily: 'Arial',
+      fontSize: 24,
+      fill: '#ffffff',
+      textAlign: 'left',
+    });
+    fabricCanvas.add(text);
+    fabricCanvas.setActiveObject(text);
+    text.enterEditing();
+    fabricCanvas.requestRenderAll();
+
+    // One placement per Text-tool click, then back to Select — matches
+    // how most design tools behave (Figma, Illustrator's type tool).
+    if (textBtn) textBtn.classList.remove('is-active');
+    if (selectBtn) selectBtn.classList.add('is-active');
+    fabricCanvas.defaultCursor = 'default';
+  });
+
+  // ---- Text formatting toolbar: font, size, alignment ----
+  const textToolbar = document.getElementById('text-toolbar');
+  const fontFamilySelect = document.getElementById('text-font-family');
+  const fontSizeInput = document.getElementById('text-font-size');
+  const alignButtons = document.querySelectorAll('.editor-align-btn');
+
+  function showTextToolbarFor(obj) {
+    if (!textToolbar) return;
+    textToolbar.classList.add('is-visible');
+    if (fontFamilySelect) fontFamilySelect.value = obj.fontFamily || 'Arial';
+    if (fontSizeInput) fontSizeInput.value = Math.round(obj.fontSize || 24);
+    alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (obj.textAlign || 'left')));
+  }
+  function hideTextToolbar() {
+    if (textToolbar) textToolbar.classList.remove('is-visible');
+  }
+  function handleSelection(e) {
+    const obj = (e.selected && e.selected[0]) || fabricCanvas.getActiveObject();
+    if (obj && obj.type === 'i-text') showTextToolbarFor(obj);
+    else hideTextToolbar();
+  }
+  fabricCanvas.on('selection:created', handleSelection);
+  fabricCanvas.on('selection:updated', handleSelection);
+  fabricCanvas.on('selection:cleared', hideTextToolbar);
+
+  if (fontFamilySelect) {
+    fontFamilySelect.addEventListener('change', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj) return;
+      obj.set('fontFamily', fontFamilySelect.value);
+      fabricCanvas.requestRenderAll();
+    });
+  }
+  if (fontSizeInput) {
+    fontSizeInput.addEventListener('input', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj) return;
+      const size = parseInt(fontSizeInput.value, 10);
+      if (!Number.isNaN(size) && size > 0) {
+        obj.set('fontSize', size);
+        fabricCanvas.requestRenderAll();
+      }
+    });
+  }
+  alignButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj) return;
+      obj.set('textAlign', btn.dataset.align);
+      alignButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
+      fabricCanvas.requestRenderAll();
+    });
+  });
+}
