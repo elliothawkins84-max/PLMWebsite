@@ -150,19 +150,76 @@
 /* ---- Canvas ---- */
 .editor-canvas-area {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
+  flex-direction: column;
+  min-height: 0;
+}
+.editor-canvas-scroll {
+  flex: 1;
   overflow: auto;
+  padding: 32px;
   background:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 24px 24px;
 }
-.editor-canvas-wrap { width: 100%; max-width: 620px; }
+
+/* Ruler + canvas grid — corner box, then a ruler across the top and one
+   down the left, sized to match the card exactly so tick 0 lines up with
+   the card's own edge. Fixed px-per-mm (6px = 1mm) keeps the ruler math
+   simple rather than deriving it from a fluid/aspect-ratio size. */
+.editor-canvas-frame {
+  display: grid;
+  grid-template-columns: 22px 516px;
+  grid-template-rows: 22px 324px;
+  width: fit-content;
+}
+.ruler-corner {
+  grid-column: 1;
+  grid-row: 1;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.ruler-top {
+  grid-column: 2;
+  grid-row: 1;
+  position: relative;
+  border-bottom: 1px solid var(--line);
+}
+.ruler-left {
+  grid-column: 1;
+  grid-row: 2;
+  position: relative;
+  border-right: 1px solid var(--line);
+}
+.ruler-tick {
+  position: absolute;
+  background: var(--line);
+}
+.ruler-top .ruler-tick { bottom: 0; width: 1px; }
+.ruler-top .ruler-tick.major { height: 8px; background: var(--muted); }
+.ruler-top .ruler-tick.minor { height: 4px; }
+.ruler-left .ruler-tick { right: 0; height: 1px; }
+.ruler-left .ruler-tick.major { width: 8px; background: var(--muted); }
+.ruler-left .ruler-tick.minor { width: 4px; }
+.ruler-label {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 0.56rem;
+  color: var(--muted);
+}
+.ruler-top .ruler-label { top: 2px; transform: translateX(-50%); }
+.ruler-left .ruler-label {
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-90deg);
+  transform-origin: left center;
+}
+
+.editor-canvas-wrap { grid-column: 2; grid-row: 2; width: 516px; height: 324px; }
 .editor-card {
   position: relative;
   width: 100%;
+  height: 100%;
   background: #0a0a0a;
   border: 1.5px solid var(--line-strong);
   display: flex;
@@ -176,6 +233,53 @@
   color: var(--muted);
   text-transform: uppercase;
 }
+
+/* ---- Front/back side switcher ---- */
+.editor-sides {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 32px;
+  border-top: 1px solid var(--line);
+}
+.editor-side-thumb,
+.editor-side-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: not-allowed;
+}
+.editor-side-thumb-card {
+  width: 54px;
+  height: 34px;
+  background: #0a0a0a;
+  border: 1.5px solid var(--line);
+}
+.editor-side-thumb.is-active .editor-side-thumb-card { border-color: var(--fg); }
+.editor-side-thumb-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.editor-side-thumb.is-active .editor-side-thumb-label { color: var(--fg); }
+.editor-side-add-box {
+  width: 54px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--line);
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.editor-side-add:hover .editor-side-add-box { border-color: var(--fg); color: var(--fg); }
 
 /* ---- Renderings panel ---- */
 .editor-renderings {

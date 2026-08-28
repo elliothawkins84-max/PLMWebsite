@@ -90,10 +90,29 @@
 
       <!-- Canvas -->
       <section class="editor-canvas-area">
-        <div class="editor-canvas-wrap">
-          <div class="editor-card" style="aspect-ratio: 86 / 54;">
-            <span class="editor-card-label">Front — 86 &times; 54mm</span>
+        <div class="editor-canvas-scroll">
+          <div class="editor-canvas-frame">
+            <div class="ruler-corner"></div>
+            <div class="ruler-top" id="ruler-top"></div>
+            <div class="ruler-left" id="ruler-left"></div>
+            <div class="editor-canvas-wrap">
+              <div class="editor-card" id="editor-card">
+                <span class="editor-card-label" id="editor-card-label">Front — 86 &times; 54mm</span>
+              </div>
+            </div>
           </div>
+        </div>
+
+        <!-- Front/back side switcher -->
+        <div class="editor-sides" id="editor-sides">
+          <button type="button" class="editor-side-thumb is-active" data-side="front">
+            <span class="editor-side-thumb-card"></span>
+            <span class="editor-side-thumb-label">Front</span>
+          </button>
+          <button type="button" class="editor-side-add" id="add-back-side">
+            <span class="editor-side-add-box">+</span>
+            <span class="editor-side-thumb-label">Add Back Side</span>
+          </button>
         </div>
       </section>
 
@@ -106,5 +125,6 @@
     </div>
   </div>
 
+  <script src="card-editor.js"></script>
 </body>
 </html>
