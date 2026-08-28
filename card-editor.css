@@ -516,6 +516,23 @@
   color: var(--muted);
   text-transform: uppercase;
 }
+/* Live width/height readout shown next to a shape while it's being
+   drawn (click-drag with the Shapes tool) — positioned in JS to track
+   the drag, hidden the rest of the time. */
+.editor-shape-draw-label {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  padding: 3px 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.editor-shape-draw-label.is-visible { display: block; }
 /* Safe zone — always visible, not tied to any toggle. 9px = 1mm at this
    editor's fixed 9px-per-mm scale (see PX_PER_MM in card-editor.js);
    since it lives inside the frame that CSS `zoom` scales as a whole,

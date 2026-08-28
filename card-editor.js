@@ -325,6 +325,9 @@ if (fabricCanvasEl && window.fabric) {
   toolButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       fabricCanvas.defaultCursor = btn.id === 'tool-text' ? 'text' : 'default';
+      // Fabric's own click-drag-on-empty-canvas group-selection marquee
+      // would otherwise fight with the Shapes tool's click-drag-to-draw.
+      fabricCanvas.selection = btn.id !== 'tool-shapes';
       if (btn.id === 'tool-text') {
         showObjectToolbarFor({ type: 'i-text', fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
       } else if (btn.id === 'tool-shapes') {
@@ -367,36 +370,111 @@ if (fabricCanvasEl && window.fabric) {
     fabricCanvas.requestRenderAll();
   });
 
-  // Clicking the canvas with the Shapes tool active places a shape of
-  // the currently-picked type, sized to a sensible default — resizing
-  // from there is via the handles or the W/H fields, same as text.
-  // Stays selected (not re-entering "placement mode") so its handles
-  // and the toolbar are immediately usable, and the Shapes tool stays
-  // active afterward so several shapes can be placed in a row.
-  function createShapeAt(type, x, y) {
-    const SIZE = 60; // px — about 6.7mm at PX_PER_MM=9
-    const base = { originX: 'left', originY: 'top', centeredRotation: false };
-    if (type === 'line') {
-      return new fabric.Line([x - SIZE / 2, y, x + SIZE / 2, y], { ...base, stroke: '#ffffff', strokeWidth: 2 });
-    }
-    if (type === 'circle') {
-      return new fabric.Circle({ ...base, left: x - SIZE / 2, top: y - SIZE / 2, radius: SIZE / 2, fill: '#ffffff' });
-    }
-    if (type === 'triangle') {
-      return new fabric.Triangle({ ...base, left: x - SIZE / 2, top: y - SIZE / 2, width: SIZE, height: SIZE, fill: '#ffffff' });
-    }
-    return new fabric.Rect({ ...base, left: x - SIZE / 2, top: y - SIZE / 2, width: SIZE, height: SIZE, fill: '#ffffff' });
+  // Click-drag with the Shapes tool active draws a shape of the
+  // currently-picked type from the press point to wherever the pointer
+  // is now, with a live W/H readout tracking the pointer — releasing
+  // finalizes it (selected, ready to move on, same as text/a click-
+  // placed shape used to work). A drag too small to call a real drag
+  // (basically just a click) falls back to a sensible default size
+  // centered on the click point, so a quick click still works.
+  const shapeDrawLabel = document.getElementById('shape-draw-label');
+  function showShapeDrawLabel(nearX, nearY, wPx, hPx) {
+    if (!shapeDrawLabel) return;
+    shapeDrawLabel.textContent = `${(wPx / PX_PER_MM).toFixed(1)} × ${(hPx / PX_PER_MM).toFixed(1)} mm`;
+    shapeDrawLabel.style.left = `${nearX + 10}px`;
+    shapeDrawLabel.style.top = `${nearY + 10}px`;
+    shapeDrawLabel.classList.add('is-visible');
   }
-  fabricCanvas.on('mouse:down', (opt) => {
-    if (!isShapesToolActive() || opt.target) return;
-    const pointer = fabricCanvas.getPointer(opt.e);
-    const shape = createShapeAt(currentShapeType, pointer.x, pointer.y);
-    fabricCanvas.add(shape);
+  function hideShapeDrawLabel() {
+    if (shapeDrawLabel) shapeDrawLabel.classList.remove('is-visible');
+  }
+
+  function makeLine(x1, y1, x2, y2) {
+    return new fabric.Line([x1, y1, x2, y2], {
+      originX: 'left', originY: 'top', centeredRotation: false, stroke: '#ffffff', strokeWidth: 2,
+    });
+  }
+  function makeBoxShape(type) {
+    const base = { originX: 'left', originY: 'top', centeredRotation: false, fill: '#ffffff', left: 0, top: 0 };
+    if (type === 'circle') return new fabric.Circle({ ...base, radius: 1 });
+    if (type === 'triangle') return new fabric.Triangle({ ...base, width: 1, height: 1 });
+    return new fabric.Rect({ ...base, width: 1, height: 1 });
+  }
+  // Rect/triangle size directly via width/height; a circle drawn from a
+  // (possibly non-square) drag box becomes an ellipse — radius from the
+  // horizontal span, scaleY stretching it to match the vertical span.
+  function fitBoxShape(shape, type, x0, y0, x1, y1) {
+    const left = Math.min(x0, x1);
+    const top = Math.min(y0, y1);
+    const w = Math.max(1, Math.abs(x1 - x0));
+    const h = Math.max(1, Math.abs(y1 - y0));
+    if (type === 'circle') shape.set({ left, top, radius: w / 2, scaleX: 1, scaleY: h / w });
+    else shape.set({ left, top, width: w, height: h });
+    shape.setCoords();
+  }
+  function finalizeShape(shape) {
     fabricCanvas.setActiveObject(shape);
     setObjectAnchor(shape, 'c');
     applyScalingControlsVisibility(shape);
     fabricCanvas.requestRenderAll();
     showObjectToolbarFor(shape);
+  }
+
+  let shapeDraw = null; // { type, x0, y0, shape }
+
+  fabricCanvas.on('mouse:down', (opt) => {
+    if (!isShapesToolActive() || opt.target) return;
+    const pointer = fabricCanvas.getPointer(opt.e);
+    const type = currentShapeType;
+    const shape = type === 'line' ? makeLine(pointer.x, pointer.y, pointer.x, pointer.y) : makeBoxShape(type);
+    if (type !== 'line') fitBoxShape(shape, type, pointer.x, pointer.y, pointer.x, pointer.y);
+    fabricCanvas.add(shape);
+    fabricCanvas.requestRenderAll();
+    shapeDraw = { type, x0: pointer.x, y0: pointer.y, shape };
+    showShapeDrawLabel(pointer.x, pointer.y, 0, 0);
+  });
+
+  fabricCanvas.on('mouse:move', (opt) => {
+    if (!shapeDraw) return;
+    const pointer = fabricCanvas.getPointer(opt.e);
+    const { type, x0, y0 } = shapeDraw;
+    if (type === 'line') {
+      // A Line's width/height are baked in at construction, not
+      // recomputed from x1/y1/x2/y2 afterward — simplest correct way
+      // to redraw it live is a fresh object each frame.
+      fabricCanvas.remove(shapeDraw.shape);
+      shapeDraw.shape = makeLine(x0, y0, pointer.x, pointer.y);
+      fabricCanvas.add(shapeDraw.shape);
+    } else {
+      fitBoxShape(shapeDraw.shape, type, x0, y0, pointer.x, pointer.y);
+    }
+    fabricCanvas.requestRenderAll();
+    showShapeDrawLabel(Math.max(x0, pointer.x), Math.max(y0, pointer.y), Math.abs(pointer.x - x0), Math.abs(pointer.y - y0));
+  });
+
+  function finishShapeDraw() {
+    if (!shapeDraw) return;
+    const { shape, type, x0, y0 } = shapeDraw;
+    shapeDraw = null;
+    hideShapeDrawLabel();
+    const rect = shape.getBoundingRect(true, true);
+    if (rect.width < 4 && rect.height < 4) {
+      const SIZE = 60; // px — about 6.7mm at PX_PER_MM=9
+      if (type === 'line') {
+        fabricCanvas.remove(shape);
+        const line = makeLine(x0 - SIZE / 2, y0, x0 + SIZE / 2, y0);
+        fabricCanvas.add(line);
+        finalizeShape(line);
+        return;
+      }
+      fitBoxShape(shape, type, x0 - SIZE / 2, y0 - SIZE / 2, x0 + SIZE / 2, y0 + SIZE / 2);
+    }
+    finalizeShape(shape);
+  }
+  fabricCanvas.on('mouse:up', finishShapeDraw);
+  // In case the pointer is released outside the canvas element.
+  document.addEventListener('pointerup', () => {
+    if (shapeDraw) finishShapeDraw();
   });
 
   // ---- Text formatting toolbar: font, size, alignment ----
