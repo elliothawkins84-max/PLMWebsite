@@ -141,6 +141,8 @@
 }
 .editor-zoom-controls .editor-icon-btn { width: 22px; height: 22px; font-size: 0.85rem; }
 .editor-zoom-value { min-width: 34px; text-align: center; }
+.editor-recenter-btn { width: 22px; height: 22px; }
+.editor-recenter-btn svg { width: 14px; height: 14px; }
 .editor-help-btn {
   margin-top: 14px;
   width: 26px;
@@ -172,11 +174,13 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  scrollbar-width: none; /* Firefox */
   background:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 24px 24px;
 }
+.editor-canvas-scroll::-webkit-scrollbar { display: none; }
 /* A large fixed virtual canvas, not just "however big the frame is" —
    otherwise there's nothing to pan toward at 100% (or lower) zoom, since
    the frame alone fits entirely within the visible area. This gives

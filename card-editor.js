@@ -187,8 +187,19 @@ if (canvasScroll) {
   // pan — start scrolled to its center so the frame is actually in view
   // on load, instead of scrolled to the pan area's top-left corner.
   const panArea = canvasScroll.querySelector('.editor-canvas-pan-area');
-  if (panArea) {
+  function centerPanArea() {
+    if (!panArea) return;
     canvasScroll.scrollLeft = (panArea.offsetWidth - canvasScroll.clientWidth) / 2;
     canvasScroll.scrollTop = (panArea.offsetHeight - canvasScroll.clientHeight) / 2;
+  }
+  centerPanArea();
+
+  const recenterBtn = document.getElementById('recenter-view');
+  if (recenterBtn) {
+    recenterBtn.addEventListener('click', () => {
+      zoomLevel = 100;
+      applyZoom();
+      centerPanArea();
+    });
   }
 }
