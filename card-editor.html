@@ -107,18 +107,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Front/back side switcher -->
-        <div class="editor-sides" id="editor-sides">
-          <button type="button" class="editor-side-thumb is-active" data-side="front">
-            <span class="editor-side-thumb-card"></span>
-            <span class="editor-side-thumb-label">Front</span>
-          </button>
-          <button type="button" class="editor-side-add" id="add-back-side">
-            <span class="editor-side-add-box">+</span>
-            <span class="editor-side-thumb-label">Add Back Side</span>
-          </button>
-        </div>
       </section>
 
       <!-- Renderings (blank for now) -->
@@ -129,6 +117,22 @@
           <div class="editor-renderings-empty"></div>
         </div>
       </aside>
+
+      <!-- Bottom bar: front/back side switcher + price, spans under both
+           the canvas and renderings columns. -->
+      <div class="editor-bottombar">
+        <div class="editor-sides" id="editor-sides">
+          <button type="button" class="editor-side-thumb is-active" data-side="front">
+            <span class="editor-side-thumb-card"></span>
+            <span class="editor-side-thumb-label">Front</span>
+          </button>
+          <button type="button" class="editor-side-add" id="add-back-side">
+            <span class="editor-side-add-box">+</span>
+            <span class="editor-side-thumb-label">Add Back Side</span>
+          </button>
+        </div>
+        <div class="editor-price">Estimated Price: $1.90 ea.</div>
+      </div>
     </div>
   </div>
 

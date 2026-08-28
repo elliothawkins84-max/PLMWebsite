@@ -89,7 +89,8 @@ if (addBackBtn) {
 // scrolling wouldn't pick up the change.
 const ZOOM_MIN = 25;
 const ZOOM_MAX = 300;
-const ZOOM_STEP = 10;
+const ZOOM_STEP = 10; // per button click — a deliberate, discrete action
+const ZOOM_WHEEL_STEP = 2; // per wheel/trackpad tick — these fire many times per gesture, so a big step feels wildly oversensitive
 let zoomLevel = 100;
 
 const canvasFrame = document.querySelector('.editor-canvas-frame');
@@ -131,8 +132,8 @@ if (canvasScroll) {
     if (!e.ctrlKey && !e.metaKey && !e.altKey) return; // plain scroll — let it pan natively
     e.preventDefault();
     zoomLevel = e.deltaY < 0
-      ? Math.min(ZOOM_MAX, zoomLevel + ZOOM_STEP)
-      : Math.max(ZOOM_MIN, zoomLevel - ZOOM_STEP);
+      ? Math.min(ZOOM_MAX, zoomLevel + ZOOM_WHEEL_STEP)
+      : Math.max(ZOOM_MIN, zoomLevel - ZOOM_WHEEL_STEP);
     applyZoom();
   }, { passive: false });
 }
