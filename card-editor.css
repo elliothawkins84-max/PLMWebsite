@@ -368,11 +368,15 @@
 .editor-text-toolbar.mode-shape .editor-mode-text { display: none !important; }
 .editor-text-toolbar.mode-text .editor-mode-shape { display: none !important; }
 
-/* Stroke width only makes sense in stroke mode (and never for Line,
-   which has no fill/stroke toggle at all). */
-#shape-stroke-width-field { display: none; }
-#shape-stroke-width-field.is-visible { display: flex; }
+/* Stroke settings (width + placement) only make sense in stroke mode
+   (and never for Line, which has no fill/stroke toggle at all). */
+#stroke-settings-dropdown { display: none; }
+#stroke-settings-dropdown.is-visible { display: block; }
 #shape-fill-mode-group.is-hidden { display: none !important; }
+/* Wide enough for the spelled-out "Width" label, unlike the single-letter
+   X/Y/W/H labels' fixed 9px. */
+.editor-field-label--wide { width: auto; }
+.editor-stroke-align-btn svg { width: 15px; height: 15px; }
 
 .editor-shape-type-group { display: flex; gap: 4px; flex: none; }
 .editor-shape-type-btn svg { width: 15px; height: 15px; }

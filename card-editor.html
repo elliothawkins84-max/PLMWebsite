@@ -161,11 +161,38 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"/></svg>
             </button>
           </div>
-          <label class="editor-field editor-mode-shape" id="shape-stroke-width-field" title="Stroke width">
-            <span class="editor-field-label">Wt</span>
-            <input type="number" id="shape-stroke-width" aria-label="Stroke width" step="0.01" min="0.01" value="0.5" />
-            <span class="editor-field-unit">mm</span>
-          </label>
+
+          <!-- Stroke settings — width and inside/center/outside placement
+               along the shape's path. Only shown while in stroke mode;
+               tucked into a dropdown (like the align/anchor pickers) so
+               the toolbar doesn't get crowded, and there's room here to
+               spell "Width" out in full. -->
+          <div class="editor-align-dropdown editor-mode-shape" id="stroke-settings-dropdown">
+            <button type="button" class="editor-align-dropdown-btn" id="stroke-settings-dropdown-btn" aria-haspopup="true" aria-expanded="false" aria-label="Stroke settings" title="Stroke settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"/></svg>
+              <svg class="editor-align-dropdown-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg>
+            </button>
+            <div class="editor-align-dropdown-panel" id="stroke-settings-dropdown-panel">
+              <p class="editor-align-dropdown-label">Stroke width</p>
+              <label class="editor-field" title="Stroke width">
+                <span class="editor-field-label editor-field-label--wide">Width</span>
+                <input type="number" id="shape-stroke-width" aria-label="Stroke width" step="0.01" min="0.01" value="0.5" />
+                <span class="editor-field-unit">mm</span>
+              </label>
+              <p class="editor-align-dropdown-label">Stroke placement</p>
+              <div class="editor-align-dropdown-row">
+                <button type="button" class="editor-align-btn editor-stroke-align-btn" data-stroke-align="inside" aria-label="Inside" title="Inside — stroke drawn entirely inside the path">
+                  <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/><rect x="6.5" y="6.5" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+                </button>
+                <button type="button" class="editor-align-btn editor-stroke-align-btn is-active" data-stroke-align="center" aria-label="Center" title="Center — stroke straddles the path (default)">
+                  <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/><rect x="4" y="4" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+                </button>
+                <button type="button" class="editor-align-btn editor-stroke-align-btn" data-stroke-align="outside" aria-label="Outside" title="Outside — stroke drawn entirely outside the path">
+                  <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/><rect x="1.5" y="1.5" width="21" height="21" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
 
           <!-- Position on card — moves the selected object's bounding box
                against the card's edges/center. -->

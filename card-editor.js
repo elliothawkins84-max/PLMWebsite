@@ -516,31 +516,88 @@ if (fabricCanvasEl && window.fabric) {
   const nonUniformCheckbox = document.getElementById('text-nonuniform-scale');
   const shapeUniformCheckbox = document.getElementById('shape-uniform-scale');
   const SHAPE_TYPES = ['line', 'rect', 'circle', 'triangle'];
+  // Fabric's getScaledWidth()/Height() fold strokeWidth into the bounding
+  // box (assuming it's always centered on the path) — fine for text
+  // (never stroked) but wrong for a stroked shape, doubly so once
+  // inside/outside placement doubles the real strokeWidth internally
+  // (see applyStrokeRender below). Shapes' W/H fields instead reflect the
+  // path's own size, independent of stroke — same convention as
+  // Illustrator/Figma's size panel.
+  function displayWidthOf(obj) {
+    return SHAPE_TYPES.includes(obj.type) ? obj.width * obj.scaleX : obj.getScaledWidth();
+  }
+  function displayHeightOf(obj) {
+    return SHAPE_TYPES.includes(obj.type) ? obj.height * obj.scaleY : obj.getScaledHeight();
+  }
 
-  // ---- Shape fill vs. stroke ----
-  // Line is always a stroke already (it has no fill concept), so the
-  // toggle only applies to rect/circle/triangle.
+  // ---- Shape fill vs. stroke, and stroke placement ----
+  // Line is always a stroke already (it has no fill concept), so both the
+  // fill/stroke toggle and the stroke settings dropdown only apply to
+  // rect/circle/triangle.
   const SHAPE_FILL_TYPES = ['rect', 'circle', 'triangle'];
   const fillModeGroup = document.getElementById('shape-fill-mode-group');
   const fillModeButtons = document.querySelectorAll('.editor-shape-fill-btn');
-  const strokeWidthField = document.getElementById('shape-stroke-width-field');
+  const strokeSettingsDropdown = document.getElementById('stroke-settings-dropdown');
   const strokeWidthInput = document.getElementById('shape-stroke-width');
+  const strokeAlignButtons = document.querySelectorAll('.editor-stroke-align-btn');
   function shapeFillModeFor(obj) {
     return obj.stroke && !obj.fill ? 'stroke' : 'fill';
+  }
+  // Fabric always renders a stroke straddling the path, half in/half out
+  // (that's "center" placement, and needs no special handling). To fake
+  // "inside"/"outside" on top of that, the path's stroke is drawn at
+  // double the desired width, then a clipPath — a fresh copy of the same
+  // shape at its true (unstroked) size — cuts away the half that
+  // shouldn't be visible: normal clipping keeps only what's inside the
+  // path (leaving the inward half, i.e. "inside"), while `inverted` flips
+  // that to keep only what's outside (leaving the outward half). The
+  // clip's own geometry is unscaled/unpositioned (centered at the
+  // object's local origin) because Fabric applies the object's full
+  // transform (position, rotation, scale) to its clipPath automatically.
+  function makeStrokeClipShapeFor(obj) {
+    const common = { left: 0, top: 0, originX: 'center', originY: 'center' };
+    if (obj.type === 'circle') return new fabric.Circle({ ...common, radius: obj.radius });
+    if (obj.type === 'triangle') return new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
+    return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
+  }
+  // Applies obj._strokeWidthPx (the width the user actually asked for)
+  // and obj.strokeAlign to the object's real, renderable strokeWidth/
+  // clipPath. Called whenever either of those, or fill/stroke mode,
+  // changes — never needs re-running on a plain resize, since the clip
+  // shares the object's own transform and scales/rotates/moves with it
+  // automatically.
+  function applyStrokeRender(obj) {
+    if (shapeFillModeFor(obj) !== 'stroke') {
+      obj.set({ clipPath: null });
+      return;
+    }
+    const align = obj.strokeAlign || 'center';
+    const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
+    if (align === 'center') {
+      obj.set({ strokeWidth: desired, clipPath: null });
+    } else {
+      const clip = makeStrokeClipShapeFor(obj);
+      clip.set({ inverted: align === 'outside' });
+      obj.set({ strokeWidth: desired * 2, clipPath: clip });
+    }
+    obj.setCoords();
   }
   // Stroke mode clears the fill entirely (not fill+stroke together) —
   // "stroke" here means an outline only. NOTE for whenever SVG export is
   // built: the laser software doesn't handle plain SVG strokes reliably
   // (stroke width doesn't come through correctly), so export needs to
   // convert a stroked shape's outline into its own filled path rather
-  // than emitting stroke/stroke-width attributes.
+  // than emitting stroke/stroke-width attributes — including baking in
+  // whichever of inside/center/outside placement was chosen here.
   function setShapeFillMode(obj, mode) {
     const color = obj.fill || obj.stroke || '#ffffff';
     if (mode === 'stroke') {
       const widthMm = strokeWidthInput ? parseFloat(strokeWidthInput.value) || 0.5 : 0.5;
-      obj.set({ fill: null, stroke: color, strokeWidth: widthMm * PX_PER_MM });
+      obj._strokeWidthPx = widthMm * PX_PER_MM;
+      obj.set({ fill: null, stroke: color });
+      applyStrokeRender(obj);
     } else {
-      obj.set({ fill: color, stroke: null, strokeWidth: 0 });
+      obj.set({ fill: color, stroke: null, strokeWidth: 0, clipPath: null });
     }
     obj.setCoords();
   }
@@ -548,21 +605,33 @@ if (fabricCanvasEl && window.fabric) {
     const applicable = SHAPE_FILL_TYPES.includes(obj.type);
     if (fillModeGroup) fillModeGroup.classList.toggle('is-hidden', !applicable);
     if (!applicable) {
-      if (strokeWidthField) strokeWidthField.classList.remove('is-visible');
+      if (strokeSettingsDropdown) strokeSettingsDropdown.classList.remove('is-visible');
       return;
     }
     const mode = shapeFillModeFor(obj);
     fillModeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.fillMode === mode));
-    if (strokeWidthField) strokeWidthField.classList.toggle('is-visible', mode === 'stroke');
-    if (mode === 'stroke' && strokeWidthInput && obj.strokeWidth) {
-      strokeWidthInput.value = (obj.strokeWidth / PX_PER_MM).toFixed(2);
-    }
+    if (strokeSettingsDropdown) strokeSettingsDropdown.classList.toggle('is-visible', mode === 'stroke');
+    if (mode !== 'stroke') return;
+    const widthPx = obj._strokeWidthPx || obj.strokeWidth || 0.5 * PX_PER_MM;
+    if (strokeWidthInput) strokeWidthInput.value = (widthPx / PX_PER_MM).toFixed(2);
+    const align = obj.strokeAlign || 'center';
+    strokeAlignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.strokeAlign === align));
   }
   fillModeButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const obj = fabricCanvas.getActiveObject();
       if (!obj || !SHAPE_FILL_TYPES.includes(obj.type)) return;
       setShapeFillMode(obj, btn.dataset.fillMode);
+      refreshFillModeUI(obj);
+      fabricCanvas.requestRenderAll();
+    });
+  });
+  strokeAlignButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj || shapeFillModeFor(obj) !== 'stroke') return;
+      obj.strokeAlign = btn.dataset.strokeAlign;
+      applyStrokeRender(obj);
       refreshFillModeUI(obj);
       fabricCanvas.requestRenderAll();
     });
@@ -635,8 +704,8 @@ if (fabricCanvasEl && window.fabric) {
     updateAnchorIcon(anchorKeyFor(obj));
     if (posXInput) posXInput.value = (obj.left / PX_PER_MM).toFixed(2);
     if (posYInput) posYInput.value = (obj.top / PX_PER_MM).toFixed(2);
-    if (sizeWInput) sizeWInput.value = (obj.getScaledWidth() / PX_PER_MM).toFixed(2);
-    if (sizeHInput) sizeHInput.value = (obj.getScaledHeight() / PX_PER_MM).toFixed(2);
+    if (sizeWInput) sizeWInput.value = (displayWidthOf(obj) / PX_PER_MM).toFixed(2);
+    if (sizeHInput) sizeHInput.value = (displayHeightOf(obj) / PX_PER_MM).toFixed(2);
   }
   function clearTransformFields() {
     if (rotationInput) rotationInput.value = 0;
@@ -874,6 +943,7 @@ if (fabricCanvasEl && window.fabric) {
   setupAlignDropdown('text-align-dropdown', 'text-align-dropdown-btn');
   setupAlignDropdown('position-align-dropdown', 'position-align-dropdown-btn');
   setupAlignDropdown('anchor-dropdown', 'anchor-dropdown-btn');
+  setupAlignDropdown('stroke-settings-dropdown', 'stroke-settings-dropdown-btn');
   document.addEventListener('click', (e) => {
     if (![...allAlignDropdowns].some((d) => d.contains(e.target))) closeAlignDropdowns();
   });
@@ -965,7 +1035,7 @@ if (fabricCanvasEl && window.fabric) {
       if (axis === 'w') obj.set({ scaleX: targetPx / obj.width });
       else obj.set({ scaleY: targetPx / obj.height });
     } else {
-      const current = axis === 'w' ? obj.getScaledWidth() : obj.getScaledHeight();
+      const current = axis === 'w' ? displayWidthOf(obj) : displayHeightOf(obj);
       if (!current) return;
       const ratio = targetPx / current;
       obj.set({ scaleX: obj.scaleX * ratio, scaleY: obj.scaleY * ratio });
@@ -981,8 +1051,8 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(strokeWidthInput, (val) => {
     const obj = fabricCanvas.getActiveObject();
     if (!obj || shapeFillModeFor(obj) !== 'stroke') return;
-    obj.set({ strokeWidth: Math.max(0.01, val) * PX_PER_MM });
-    obj.setCoords();
+    obj._strokeWidthPx = Math.max(0.01, val) * PX_PER_MM;
+    applyStrokeRender(obj);
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
   });
