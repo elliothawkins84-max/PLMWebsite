@@ -412,6 +412,24 @@ if (fabricCanvasEl && window.fabric) {
     else shape.set({ left, top, width: w, height: h });
     shape.setCoords();
   }
+  // Holding Shift while drawing constrains the drag: a line snaps to the
+  // nearest horizontal/vertical (whichever the drag is closer to, i.e.
+  // effectively 0/90/180/270°); rect/circle/triangle get an equal
+  // width/height (a square, or a perfect circle) — same idea for both,
+  // just picking the larger of the two spans and applying it to both
+  // axes, sign-preserved so the shape still grows toward the pointer.
+  function constrainDragPoint(type, x0, y0, x1, y1, shiftKey) {
+    if (!shiftKey) return { x1, y1 };
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    if (type === 'line') {
+      if (Math.abs(dx) > Math.abs(dy)) return { x1: x0 + dx, y1: y0 };
+      return { x1: x0, y1: y0 + dy };
+    }
+    const size = Math.max(Math.abs(dx), Math.abs(dy));
+    return { x1: x0 + (dx < 0 ? -size : size), y1: y0 + (dy < 0 ? -size : size) };
+  }
+
   function finalizeShape(shape) {
     fabricCanvas.setActiveObject(shape);
     setObjectAnchor(shape, 'c');
@@ -436,20 +454,21 @@ if (fabricCanvasEl && window.fabric) {
 
   fabricCanvas.on('mouse:move', (opt) => {
     if (!shapeDraw) return;
-    const pointer = fabricCanvas.getPointer(opt.e);
+    const rawPointer = fabricCanvas.getPointer(opt.e);
     const { type, x0, y0 } = shapeDraw;
+    const { x1, y1 } = constrainDragPoint(type, x0, y0, rawPointer.x, rawPointer.y, opt.e.shiftKey);
     if (type === 'line') {
       // A Line's width/height are baked in at construction, not
       // recomputed from x1/y1/x2/y2 afterward — simplest correct way
       // to redraw it live is a fresh object each frame.
       fabricCanvas.remove(shapeDraw.shape);
-      shapeDraw.shape = makeLine(x0, y0, pointer.x, pointer.y);
+      shapeDraw.shape = makeLine(x0, y0, x1, y1);
       fabricCanvas.add(shapeDraw.shape);
     } else {
-      fitBoxShape(shapeDraw.shape, type, x0, y0, pointer.x, pointer.y);
+      fitBoxShape(shapeDraw.shape, type, x0, y0, x1, y1);
     }
     fabricCanvas.requestRenderAll();
-    showShapeDrawLabel(Math.max(x0, pointer.x), Math.max(y0, pointer.y), Math.abs(pointer.x - x0), Math.abs(pointer.y - y0));
+    showShapeDrawLabel(Math.max(x0, x1), Math.max(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
   });
 
   function finishShapeDraw() {
