@@ -710,6 +710,9 @@ if (fabricCanvasEl && window.fabric) {
         // rather than silently shrinking their import.
         const maxW = fabricCanvas.getWidth();
         const maxH = fabricCanvas.getHeight();
+        // A single ratio — the tighter of the two axes — applied through
+        // .scale() (which sets scaleX and scaleY to the same value), so
+        // the import always shrinks proportionally and never stretches.
         const overflowScale = Math.min(1, maxW / group.getScaledWidth(), maxH / group.getScaledHeight());
         if (overflowScale < 1) {
           confirmOversizeImport(() => {
