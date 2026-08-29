@@ -278,6 +278,15 @@ if (fabricCanvasEl && window.fabric) {
     height: 486,
     backgroundColor: '#3a3a3a',
     selection: true,
+    // Fabric's default (false) always draws the active object on top of
+    // everything else while it's selected, regardless of its real
+    // position in the stack — which was silently burying the edge
+    // indicator (added right after, and after every other object) under
+    // whatever shape it was supposed to outline the instant that shape
+    // became the selection. True makes objects render in their actual
+    // z-order always, active or not, so the indicator stays on top of
+    // the shape it belongs to like any other later-added object would.
+    preserveObjectStacking: true,
   });
 
   const textBtn = document.getElementById('tool-text');
@@ -1002,12 +1011,31 @@ if (fabricCanvasEl && window.fabric) {
       shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.65)', blur: 3, offsetX: 0, offsetY: 0 }),
       selectable: false, evented: false, excludeFromExport: true, hoverCursor: 'default',
     };
-    if (obj.type === 'circle') return new fabric.Circle({ ...common, radius: obj.radius });
-    if (obj.type === 'ellipse') return new fabric.Ellipse({ ...common, rx: obj.rx, ry: obj.ry });
-    if (obj.type === 'triangle') return new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
-    if (obj.type === 'polygon' || obj.type === 'polyline') return new fabric.Polygon(obj.points, { ...common });
-    if (obj.type === 'path') return new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
-    return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
+    let indicator;
+    if (obj.type === 'circle') indicator = new fabric.Circle({ ...common, radius: obj.radius });
+    else if (obj.type === 'ellipse') indicator = new fabric.Ellipse({ ...common, rx: obj.rx, ry: obj.ry });
+    else if (obj.type === 'triangle') indicator = new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
+    else if (obj.type === 'polygon' || obj.type === 'polyline') indicator = new fabric.Polygon(obj.points, { ...common });
+    else if (obj.type === 'path') indicator = new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
+    else indicator = new fabric.Rect({ ...common, width: obj.width, height: obj.height });
+    const shrink = edgeIndicatorShrinkFor(obj);
+    indicator.set({ scaleX: indicator.scaleX * shrink, scaleY: indicator.scaleY * shrink });
+    return indicator;
+  }
+  // When a shape spans the entire card, its true edge sits exactly on
+  // the canvas's own pixel boundary — half the indicator's stroke (and
+  // its shadow) would fall outside the canvas and get clipped there,
+  // leaving a sliver too thin to see (a single canvas pixel, often
+  // subpixel on screen at anything under 100% zoom). Shrinking the whole
+  // indicator slightly toward its own center — the same trick regardless
+  // of shape type, since it's just a uniform scale around a 'center'
+  // origin — keeps the full stroke safely inside the card's own bounds
+  // no matter where the shape sits, at an inset far too small to notice
+  // on any shape that wasn't already touching the edge.
+  const INDICATOR_INSET_PX = 1.5;
+  function edgeIndicatorShrinkFor(obj) {
+    const minDim = Math.max(1, Math.min(obj.getScaledWidth(), obj.getScaledHeight()));
+    return Math.max(0, (minDim - INDICATOR_INSET_PX * 2) / minDim);
   }
   function showEdgeIndicatorFor(obj) {
     hideEdgeIndicator();
@@ -1024,9 +1052,10 @@ if (fabricCanvasEl && window.fabric) {
   function syncEdgeIndicator(obj) {
     if (!edgeIndicator) return;
     const center = obj.getCenterPoint();
+    const shrink = edgeIndicatorShrinkFor(obj);
     const props = {
       left: center.x, top: center.y, originX: 'center', originY: 'center',
-      angle: obj.angle, scaleX: obj.scaleX, scaleY: obj.scaleY,
+      angle: obj.angle, scaleX: obj.scaleX * shrink, scaleY: obj.scaleY * shrink,
       width: obj.width, height: obj.height,
     };
     if (obj.type === 'circle') props.radius = obj.radius;
@@ -1663,7 +1692,7 @@ if (fabricCanvasEl && window.fabric) {
     const isRealObject = typeof obj.getCenterPoint === 'function';
     if (isRealObject) refreshTransformFields(obj);
     else clearTransformFields();
-    if (isRealObject && SHAPE_FILL_TYPES.includes(obj.type)) showEdgeIndicatorFor(obj);
+    if (isRealObject && (SHAPE_FILL_TYPES.includes(obj.type) || obj.type === 'group')) showEdgeIndicatorFor(obj);
     else hideEdgeIndicator();
   }
   // The toolbar should stay up for as long as Text or Shapes is
