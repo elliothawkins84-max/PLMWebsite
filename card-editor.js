@@ -517,7 +517,11 @@ if (fabricCanvasEl && window.fabric) {
   const sizeHInput = document.getElementById('text-size-h');
   const nonUniformCheckbox = document.getElementById('text-nonuniform-scale');
   const shapeUniformCheckbox = document.getElementById('shape-uniform-scale');
-  const SHAPE_TYPES = ['line', 'rect', 'circle', 'triangle'];
+  // 'path' covers the result of a Union/Subtract (see the boolean-ops
+  // section below); 'group' is a plain Fabric group from the Group
+  // context-menu action — both just need the shared transform toolbar
+  // (position/rotation/size), not the shape-type or fill/stroke controls.
+  const SHAPE_TYPES = ['line', 'rect', 'circle', 'triangle', 'path', 'group'];
   // Fabric's getScaledWidth()/Height() fold strokeWidth into the bounding
   // box (assuming it's always centered on the path) — fine for text
   // (never stroked) but wrong for a stroked shape, doubly so once
@@ -533,10 +537,11 @@ if (fabricCanvasEl && window.fabric) {
   }
 
   // ---- Shape fill vs. stroke, and stroke placement ----
-  // Line is always a stroke already (it has no fill concept), so both the
-  // fill/stroke toggle and the stroke settings dropdown only apply to
-  // rect/circle/triangle.
-  const SHAPE_FILL_TYPES = ['rect', 'circle', 'triangle'];
+  // Line is always a stroke already (it has no fill concept), and Group
+  // has no single path to fill/stroke, so both the fill/stroke toggle and
+  // the stroke settings dropdown only apply to rect/circle/triangle and
+  // the Path objects a Union/Subtract produces.
+  const SHAPE_FILL_TYPES = ['rect', 'circle', 'triangle', 'path'];
   const fillModeGroup = document.getElementById('shape-fill-mode-group');
   const fillModeButtons = document.querySelectorAll('.editor-shape-fill-btn');
   const strokeSettingsDropdown = document.getElementById('stroke-settings-dropdown');
@@ -556,10 +561,20 @@ if (fabricCanvasEl && window.fabric) {
   // clip's own geometry is unscaled/unpositioned (centered at the
   // object's local origin) because Fabric applies the object's full
   // transform (position, rotation, scale) to its clipPath automatically.
+  // Fabric's Path stores its parsed 'd' commands as an array (e.g.
+  // ['M', x, y]) on obj.path — turning that back into a 'd' string lets a
+  // fresh fabric.Path be built with the exact same geometry (it
+  // recomputes its own pathOffset from those commands, so centering it
+  // the same way as the other shape types below reproduces the original
+  // exactly).
+  function pathCommandsToString(commands) {
+    return commands.map((seg) => seg.join(' ')).join(' ');
+  }
   function makeStrokeClipShapeFor(obj) {
     const common = { left: 0, top: 0, originX: 'center', originY: 'center' };
     if (obj.type === 'circle') return new fabric.Circle({ ...common, radius: obj.radius });
     if (obj.type === 'triangle') return new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
+    if (obj.type === 'path') return new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
     return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
   }
   // Applies obj._strokeWidthPx (the width the user actually asked for)
@@ -676,6 +691,7 @@ if (fabricCanvasEl && window.fabric) {
     };
     if (obj.type === 'circle') return new fabric.Circle({ ...common, radius: obj.radius });
     if (obj.type === 'triangle') return new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
+    if (obj.type === 'path') return new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
     return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
   }
   function showEdgeIndicatorFor(obj) {
@@ -701,6 +717,178 @@ if (fabricCanvasEl && window.fabric) {
     if (obj.type === 'circle') props.radius = obj.radius;
     edgeIndicator.set(props);
     edgeIndicator.setCoords();
+  }
+
+  // ---- Grouping ----
+  function groupActiveSelection() {
+    const active = fabricCanvas.getActiveObject();
+    if (!active || active.type !== 'activeSelection') return;
+    hideEdgeIndicator();
+    const group = active.toGroup();
+    applyScalingControlsVisibility(group);
+    fabricCanvas.requestRenderAll();
+    showObjectToolbarFor(group);
+  }
+  function ungroupActiveObject() {
+    const active = fabricCanvas.getActiveObject();
+    if (!active || active.type !== 'group') return;
+    hideEdgeIndicator();
+    active.toActiveSelection();
+    fabricCanvas.requestRenderAll();
+    hideObjectToolbar();
+  }
+
+  // ---- Z-order ----
+  function bringActiveToFront() {
+    const active = fabricCanvas.getActiveObject();
+    if (!active) return;
+    fabricCanvas.bringToFront(active);
+    fabricCanvas.requestRenderAll();
+  }
+  function sendActiveToBack() {
+    const active = fabricCanvas.getActiveObject();
+    if (!active) return;
+    fabricCanvas.sendToBack(active);
+    fabricCanvas.requestRenderAll();
+  }
+  // Shared by the Delete keyboard shortcut and the context menu's Delete
+  // item — handles a single selected object or a whole multi-selection.
+  function deleteActiveObjects() {
+    const active = fabricCanvas.getActiveObject();
+    if (!active || active.isEditing) return;
+    hideEdgeIndicator();
+    const objects = active.type === 'activeSelection' ? active.getObjects() : [active];
+    fabricCanvas.discardActiveObject();
+    objects.forEach((o) => fabricCanvas.remove(o));
+    fabricCanvas.requestRenderAll();
+    hideObjectToolbar();
+  }
+
+  // ---- Boolean shape operations (Union / Subtract) ----
+  // Approximates each source object as a flat polygon in absolute canvas
+  // coordinates, runs it through PolyBool (loaded via CDN — see
+  // card-editor.html) and rebuilds the result as a single fabric.Path.
+  // Only rect/circle/triangle and a *previous* Union/Subtract's Path are
+  // supported: Line has no fillable area, text isn't converted to
+  // outlines, and a Group's children aren't flattened.
+  const BOOLEAN_ELIGIBLE_TYPES = ['rect', 'circle', 'triangle', 'path'];
+  const CIRCLE_APPROXIMATION_SEGMENTS = 90;
+  function localPolygonsFor(obj) {
+    if (obj.type === 'circle') {
+      const pts = [];
+      for (let i = 0; i < CIRCLE_APPROXIMATION_SEGMENTS; i++) {
+        const theta = (i / CIRCLE_APPROXIMATION_SEGMENTS) * Math.PI * 2;
+        pts.push([obj.radius * Math.cos(theta), obj.radius * Math.sin(theta)]);
+      }
+      return [pts];
+    }
+    if (obj.type === 'triangle') {
+      const w = obj.width / 2;
+      const h = obj.height / 2;
+      return [[[-w, h], [0, -h], [w, h]]];
+    }
+    if (obj.type === 'path') {
+      // A Path built by this same feature is straight-line-only (M/L/Z
+      // commands), so its coordinates can be read directly — no curve
+      // flattening needed. Fabric renders each point offset by
+      // -pathOffset, i.e. pathOffset is where local (0,0) falls in the
+      // raw command coordinates, so subtracting it recovers local space.
+      const offsetX = obj.pathOffset.x;
+      const offsetY = obj.pathOffset.y;
+      const rings = [];
+      let current = null;
+      obj.path.forEach((cmd) => {
+        if (cmd[0] === 'M') {
+          current = [];
+          rings.push(current);
+        }
+        if (current && (cmd[0] === 'M' || cmd[0] === 'L')) {
+          current.push([cmd[1] - offsetX, cmd[2] - offsetY]);
+        }
+      });
+      return rings;
+    }
+    // rect (default)
+    const w = obj.width / 2;
+    const h = obj.height / 2;
+    return [[[-w, -h], [w, -h], [w, h], [-w, h]]];
+  }
+  function absolutePolygonsFor(obj) {
+    const matrix = obj.calcTransformMatrix();
+    return localPolygonsFor(obj).map((ring) => ring.map(([x, y]) => {
+      const p = fabric.util.transformPoint({ x, y }, matrix);
+      return [p.x, p.y];
+    }));
+  }
+  function polyBoolInputFor(obj) {
+    return { regions: absolutePolygonsFor(obj), inverted: false };
+  }
+  function pathDataFromRegions(regions) {
+    return regions.map((ring) => {
+      if (!ring.length) return '';
+      const [first, ...rest] = ring;
+      return `M ${first[0]} ${first[1]} ${rest.map((p) => `L ${p[0]} ${p[1]}`).join(' ')} Z`;
+    }).join(' ');
+  }
+  // Replaces the given source objects with one new Path tracing the given
+  // regions, carrying over the style (fill/stroke/placement) of
+  // styleSource so the result keeps working with the fill/stroke toolbar
+  // like any other shape. Takes the lowest source object's z-position so
+  // the result doesn't jump to the front of unrelated objects.
+  function replaceWithBooleanResult(sourceObjects, regions, styleSource) {
+    const canvasObjects = fabricCanvas.getObjects();
+    const insertIndex = Math.min(...sourceObjects.map((o) => canvasObjects.indexOf(o)));
+    const path = new fabric.Path(pathDataFromRegions(regions), {
+      fill: styleSource.fill,
+      stroke: styleSource.stroke,
+      strokeWidth: styleSource.strokeWidth,
+      fillRule: 'evenodd',
+    });
+    path.strokeAlign = styleSource.strokeAlign;
+    path._strokeWidthPx = styleSource._strokeWidthPx;
+    fabricCanvas.discardActiveObject();
+    sourceObjects.forEach((o) => fabricCanvas.remove(o));
+    fabricCanvas.add(path);
+    fabricCanvas.moveTo(path, Math.min(insertIndex, fabricCanvas.getObjects().length - 1));
+    applyStrokeRender(path);
+    finalizeShape(path);
+  }
+  // Union folds left-to-right through the whole selection (2+ objects),
+  // so it isn't limited to exactly two — the resulting appearance is the
+  // front-most source object's.
+  function runUnion() {
+    const active = fabricCanvas.getActiveObject();
+    if (!active) return;
+    const selected = active.type === 'activeSelection' ? active.getObjects() : [active];
+    const ordered = fabricCanvas.getObjects().filter((o) => selected.includes(o) && BOOLEAN_ELIGIBLE_TYPES.includes(o.type));
+    if (ordered.length < 2) return;
+    let result = polyBoolInputFor(ordered[0]);
+    for (let i = 1; i < ordered.length; i++) {
+      result = PolyBool.union(result, polyBoolInputFor(ordered[i]));
+    }
+    if (!result.regions.length) return;
+    replaceWithBooleanResult(ordered, result.regions, ordered[ordered.length - 1]);
+  }
+  // Subtract needs exactly two objects: the front (top) one's overlap is
+  // removed from the back (bottom) one, which is what's left afterward
+  // (keeping the bottom object's appearance).
+  function runSubtract() {
+    const active = fabricCanvas.getActiveObject();
+    if (!active || active.type !== 'activeSelection') return;
+    const selected = active.getObjects();
+    const ordered = fabricCanvas.getObjects().filter((o) => selected.includes(o) && BOOLEAN_ELIGIBLE_TYPES.includes(o.type));
+    if (ordered.length !== 2) return;
+    const [bottom, top] = ordered;
+    const result = PolyBool.difference(polyBoolInputFor(bottom), polyBoolInputFor(top));
+    if (!result.regions.length) {
+      // The top shape fully covered the bottom one — nothing left of it.
+      fabricCanvas.discardActiveObject();
+      ordered.forEach((o) => fabricCanvas.remove(o));
+      fabricCanvas.requestRenderAll();
+      hideObjectToolbar();
+      return;
+    }
+    replaceWithBooleanResult(ordered, result.regions, bottom);
   }
 
   // Text defaults to uniform (its own checkbox, unchecked, means "keep it
@@ -1185,7 +1373,7 @@ if (fabricCanvasEl && window.fabric) {
     if (obj && obj.isEditing) obj.exitEditing();
   });
 
-  // ---- Delete the selected object ----
+  // ---- Delete the selected object(s) ----
   // Skip it while a text object is actively being edited (Backspace/Delete
   // there should just edit the text, which Fabric already handles) and
   // while focus is in one of the toolbar's own inputs.
@@ -1193,12 +1381,85 @@ if (fabricCanvasEl && window.fabric) {
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    const obj = fabricCanvas.getActiveObject();
-    if (!obj || obj.isEditing) return;
+    const active = fabricCanvas.getActiveObject();
+    if (!active || active.isEditing) return;
     e.preventDefault();
-    fabricCanvas.remove(obj);
-    fabricCanvas.discardActiveObject();
-    fabricCanvas.requestRenderAll();
-    hideObjectToolbar();
+    deleteActiveObjects();
   });
+
+  // ---- Right-click context menu ----
+  // Reflects whatever is selected at the moment it's opened: right-
+  // clicking an object that isn't already part of the current selection
+  // selects it first (so the menu always acts on what you just clicked,
+  // matching how this works in most other apps), while right-clicking
+  // within an existing multi-selection leaves it alone so Group/Union/
+  // Subtract can still see the whole thing.
+  const contextMenu = document.getElementById('context-menu');
+  if (contextMenu) {
+    const menuActions = {
+      'bring-front': bringActiveToFront,
+      'send-back': sendActiveToBack,
+      group: groupActiveSelection,
+      ungroup: ungroupActiveObject,
+      union: runUnion,
+      subtract: runSubtract,
+      delete: deleteActiveObjects,
+    };
+    function closeContextMenu() {
+      contextMenu.classList.remove('is-open');
+    }
+    function openContextMenuAt(clientX, clientY) {
+      const active = fabricCanvas.getActiveObject();
+      const selected = active ? (active.type === 'activeSelection' ? active.getObjects() : [active]) : [];
+      const eligible = selected.filter((o) => BOOLEAN_ELIGIBLE_TYPES.includes(o.type));
+      const enabled = {
+        'bring-front': !!active,
+        'send-back': !!active,
+        group: !!active && active.type === 'activeSelection',
+        ungroup: !!active && active.type === 'group',
+        union: eligible.length >= 2,
+        subtract: eligible.length === 2,
+        delete: !!active,
+      };
+      contextMenu.querySelectorAll('.editor-context-menu-item').forEach((btn) => {
+        btn.disabled = !enabled[btn.dataset.action];
+      });
+      contextMenu.classList.add('is-open');
+      // Clamp so the menu never renders partly off-screen.
+      const rect = contextMenu.getBoundingClientRect();
+      const left = Math.min(clientX, window.innerWidth - rect.width - 4);
+      const top = Math.min(clientY, window.innerHeight - rect.height - 4);
+      contextMenu.style.left = `${Math.max(4, left)}px`;
+      contextMenu.style.top = `${Math.max(4, top)}px`;
+    }
+    fabricCanvas.upperCanvasEl.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const target = fabricCanvas.findTarget(e, false);
+      const active = fabricCanvas.getActiveObject();
+      const alreadySelected = active && (active === target || (active.type === 'activeSelection' && active.getObjects().includes(target)));
+      if (target && !alreadySelected) {
+        fabricCanvas.setActiveObject(target);
+        handleSelection({ selected: [target] });
+      } else if (!target) {
+        fabricCanvas.discardActiveObject();
+        hideObjectToolbar();
+      }
+      fabricCanvas.requestRenderAll();
+      openContextMenuAt(e.clientX, e.clientY);
+    });
+    contextMenu.addEventListener('click', (e) => {
+      const btn = e.target.closest('.editor-context-menu-item');
+      if (!btn || btn.disabled) return;
+      closeContextMenu();
+      const action = menuActions[btn.dataset.action];
+      if (action) action();
+    });
+    document.addEventListener('click', (e) => {
+      if (!contextMenu.contains(e.target)) closeContextMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeContextMenu();
+    });
+    fabricCanvas.on('mouse:down', closeContextMenu);
+  }
 }

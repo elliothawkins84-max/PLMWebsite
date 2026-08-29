@@ -364,7 +364,24 @@
     </div>
   </div>
 
+  <!-- Right-click context menu for objects on the canvas. Positioned via
+       JS (left/top set inline) and shown/hidden with .is-open; which
+       items are enabled depends on what's currently selected. -->
+  <div class="editor-context-menu" id="context-menu">
+    <button type="button" class="editor-context-menu-item" data-action="bring-front">Bring to Front</button>
+    <button type="button" class="editor-context-menu-item" data-action="send-back">Send to Back</button>
+    <div class="editor-context-menu-divider"></div>
+    <button type="button" class="editor-context-menu-item" data-action="group">Group</button>
+    <button type="button" class="editor-context-menu-item" data-action="ungroup">Ungroup</button>
+    <div class="editor-context-menu-divider"></div>
+    <button type="button" class="editor-context-menu-item" data-action="union">Union</button>
+    <button type="button" class="editor-context-menu-item" data-action="subtract">Subtract</button>
+    <div class="editor-context-menu-divider"></div>
+    <button type="button" class="editor-context-menu-item editor-context-menu-item--danger" data-action="delete">Delete</button>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+  <script src="https://unpkg.com/polybooljs@1.2.2/dist/polybool.js"></script>
   <script src="card-editor.js"></script>
 </body>
 </html>
