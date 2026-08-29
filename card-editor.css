@@ -186,6 +186,27 @@
   line-height: 1.6;
 }
 
+/* Layers list — front-most object first, matching the visual stacking
+   order (same convention as Illustrator/Figma's layers panel). */
+.editor-layers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.editor-layer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.editor-layer-item:hover { background: rgba(255, 255, 255, 0.06); color: var(--fg); }
+.editor-layer-item.is-active { background: rgba(255, 255, 255, 0.1); color: var(--fg); }
+.editor-layer-item-icon { width: 16px; height: 16px; flex: none; }
+.editor-layer-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- Canvas ---- */
 .editor-canvas-area {
   display: flex;
@@ -734,7 +755,9 @@
 }
 .editor-context-menu.is-open { display: block; }
 .editor-context-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   text-align: left;
   padding: 7px 10px;
@@ -747,6 +770,7 @@
 }
 .editor-context-menu-item:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
 .editor-context-menu-item:disabled { color: var(--muted); cursor: default; opacity: 0.5; }
+.editor-context-menu-icon { width: 14px; height: 14px; flex: none; }
 .editor-context-menu-item--danger:hover:not(:disabled) { background: rgba(255, 80, 80, 0.15); color: #ff6b6b; }
 .editor-context-menu-divider { height: 1px; background: var(--line); margin: 4px 2px; }
 

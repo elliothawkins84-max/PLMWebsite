@@ -88,7 +88,8 @@
       <div class="editor-side-panel" id="side-panel">
         <div class="editor-side-panel-section is-active" data-panel-content="layers">
           <h2>Layers</h2>
-          <p class="editor-side-panel-empty">No artwork uploaded yet — use the Upload tool to add images.</p>
+          <p class="editor-side-panel-empty" id="layers-empty">Nothing on the card yet — use Text or Shapes to add something.</p>
+          <ul class="editor-layers-list" id="layers-list"></ul>
         </div>
       </div>
 
@@ -374,8 +375,14 @@
     <button type="button" class="editor-context-menu-item" data-action="group">Group</button>
     <button type="button" class="editor-context-menu-item" data-action="ungroup">Ungroup</button>
     <div class="editor-context-menu-divider"></div>
-    <button type="button" class="editor-context-menu-item" data-action="union">Union</button>
-    <button type="button" class="editor-context-menu-item" data-action="subtract">Subtract</button>
+    <button type="button" class="editor-context-menu-item" data-action="union">
+      <svg class="editor-context-menu-icon" viewBox="0 0 24 24"><circle cx="9" cy="12" r="7" fill="currentColor"/><circle cx="15" cy="12" r="7" fill="currentColor"/></svg>
+      Union
+    </button>
+    <button type="button" class="editor-context-menu-item" data-action="subtract">
+      <svg class="editor-context-menu-icon" viewBox="0 0 24 24"><circle cx="9" cy="12" r="7" fill="currentColor"/><circle cx="15" cy="12" r="7" fill="var(--bg)"/><circle cx="15" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+      Subtract
+    </button>
     <div class="editor-context-menu-divider"></div>
     <button type="button" class="editor-context-menu-item editor-context-menu-item--danger" data-action="delete">Delete</button>
   </div>

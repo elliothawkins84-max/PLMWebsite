@@ -739,17 +739,22 @@ if (fabricCanvasEl && window.fabric) {
   }
 
   // ---- Z-order ----
+  // Z-order changes don't add or remove any object, so (unlike everything
+  // else that touches the layers list) these need their own explicit
+  // refresh call.
   function bringActiveToFront() {
     const active = fabricCanvas.getActiveObject();
     if (!active) return;
     fabricCanvas.bringToFront(active);
     fabricCanvas.requestRenderAll();
+    refreshLayersList();
   }
   function sendActiveToBack() {
     const active = fabricCanvas.getActiveObject();
     if (!active) return;
     fabricCanvas.sendToBack(active);
     fabricCanvas.requestRenderAll();
+    refreshLayersList();
   }
   // Shared by the Delete keyboard shortcut and the context menu's Delete
   // item — handles a single selected object or a whole multi-selection.
@@ -1047,7 +1052,11 @@ if (fabricCanvasEl && window.fabric) {
     setObjectAnchor(obj, 'c');
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
+    refreshLayersList();
   });
+  // Keeps a text layer's row showing its actual content live while typing,
+  // not just once editing ends.
+  fabricCanvas.on('text:changed', refreshLayersList);
 
   // Dragging a corner handle on a text object should change its font size,
   // not stretch it. Folding scale into fontSize on every drag frame forces
@@ -1462,4 +1471,53 @@ if (fabricCanvasEl && window.fabric) {
     });
     fabricCanvas.on('mouse:down', closeContextMenu);
   }
+
+  // ---- Layers panel — a live, z-ordered list of everything on the card ----
+  // Internal helper objects (just the edge indicator) are evented:false,
+  // unlike every piece of real content, so that's what filters them out
+  // here rather than checking against a type list.
+  const layersList = document.getElementById('layers-list');
+  const layersEmpty = document.getElementById('layers-empty');
+  const LAYER_ICONS = {
+    line: '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="20" x2="20" y2="4"/></svg>',
+    rect: '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12"/></svg>',
+    circle: '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/></svg>',
+    triangle: '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><polygon points="12,4 20,20 4,20"/></svg>',
+    path: '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 18 Q4 6 12 6 T20 10"/><circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none"/><circle cx="20" cy="10" r="1.4" fill="currentColor" stroke="none"/></svg>',
+    'i-text': '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 6h14"/><path d="M12 6v12"/><path d="M9 18h6"/></svg>',
+    group: '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="12" height="12"/><rect x="9" y="9" width="12" height="12"/></svg>',
+  };
+  function layerLabelFor(obj) {
+    if (obj.type === 'i-text') return (obj.text && obj.text.trim()) || 'Text';
+    const names = { rect: 'Rectangle', circle: 'Circle', triangle: 'Triangle', line: 'Line', path: 'Path', group: 'Group' };
+    return names[obj.type] || obj.type.charAt(0).toUpperCase() + obj.type.slice(1);
+  }
+  function refreshLayersList() {
+    if (!layersList) return;
+    const active = fabricCanvas.getActiveObject();
+    const activeMembers = active ? (active.type === 'activeSelection' ? active.getObjects() : [active]) : [];
+    const objects = fabricCanvas.getObjects().filter((o) => o.evented !== false);
+    if (layersEmpty) layersEmpty.style.display = objects.length ? 'none' : '';
+    layersList.innerHTML = '';
+    // Front-most (top of the visual stack) listed first.
+    objects.slice().reverse().forEach((obj) => {
+      const li = document.createElement('li');
+      li.className = 'editor-layer-item';
+      if (activeMembers.includes(obj)) li.classList.add('is-active');
+      li.innerHTML = `${LAYER_ICONS[obj.type] || ''}<span class="editor-layer-item-label"></span>`;
+      li.querySelector('.editor-layer-item-label').textContent = layerLabelFor(obj);
+      li.addEventListener('click', () => {
+        fabricCanvas.setActiveObject(obj);
+        handleSelection({ selected: [obj] });
+        fabricCanvas.requestRenderAll();
+      });
+      layersList.appendChild(li);
+    });
+  }
+  fabricCanvas.on('object:added', refreshLayersList);
+  fabricCanvas.on('object:removed', refreshLayersList);
+  fabricCanvas.on('selection:created', refreshLayersList);
+  fabricCanvas.on('selection:updated', refreshLayersList);
+  fabricCanvas.on('selection:cleared', refreshLayersList);
+  refreshLayersList();
 }
