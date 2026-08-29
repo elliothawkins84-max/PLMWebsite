@@ -647,7 +647,7 @@ if (fabricCanvasEl && window.fabric) {
   // section below); 'group' is a plain Fabric group from the Group
   // context-menu action — both just need the shared transform toolbar
   // (position/rotation/size), not the shape-type or fill/stroke controls.
-  const SHAPE_TYPES = ['line', 'rect', 'circle', 'triangle', 'path', 'group'];
+  const SHAPE_TYPES = ['line', 'rect', 'circle', 'ellipse', 'triangle', 'path', 'polygon', 'polyline', 'group'];
   // Fabric's getScaledWidth()/Height() fold strokeWidth into the bounding
   // box (assuming it's always centered on the path) — fine for text
   // (never stroked) but wrong for a stroked shape, doubly so once
@@ -698,18 +698,43 @@ if (fabricCanvasEl && window.fabric) {
   });
 
   // ---- Shape fill vs. stroke, and stroke placement ----
-  // Line is always a stroke already (it has no fill concept), and Group
-  // has no single path to fill/stroke, so both the fill/stroke toggle and
-  // the stroke settings dropdown only apply to rect/circle/triangle and
-  // the Path objects a Union/Subtract produces.
-  const SHAPE_FILL_TYPES = ['rect', 'circle', 'triangle', 'path'];
+  // Line is always a stroke already (it has no fill concept). A Group
+  // (manual, or an imported SVG) has no single path of its own, but its
+  // fill/stroke toggle still applies — recursively — to every fillable
+  // shape nested inside it, so an imported design can be switched to
+  // outline-only as a whole.
+  const SHAPE_FILL_TYPES = ['rect', 'circle', 'ellipse', 'triangle', 'path', 'polygon', 'polyline'];
   const fillModeGroup = document.getElementById('shape-fill-mode-group');
   const fillModeButtons = document.querySelectorAll('.editor-shape-fill-btn');
   const strokeSettingsDropdown = document.getElementById('stroke-settings-dropdown');
   const strokeWidthInput = document.getElementById('shape-stroke-width');
   const strokeAlignButtons = document.querySelectorAll('.editor-stroke-align-btn');
+  function fillEligible(obj) {
+    return SHAPE_FILL_TYPES.includes(obj.type) || obj.type === 'group';
+  }
+  // First fillable shape found inside obj (obj itself, if it's already
+  // one) — used as the representative whose fill/stroke/width/align the
+  // toolbar reads and writes when a whole group is selected.
+  function firstFillableDescendant(obj) {
+    if (SHAPE_FILL_TYPES.includes(obj.type)) return obj;
+    if (obj.type === 'group') {
+      for (const child of obj.getObjects()) {
+        const found = firstFillableDescendant(child);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  function eachFillableDescendant(obj, fn) {
+    if (SHAPE_FILL_TYPES.includes(obj.type)) {
+      fn(obj);
+    } else if (obj.type === 'group') {
+      obj.getObjects().forEach((child) => eachFillableDescendant(child, fn));
+    }
+  }
   function shapeFillModeFor(obj) {
-    return obj.stroke && !obj.fill ? 'stroke' : 'fill';
+    const rep = firstFillableDescendant(obj) || obj;
+    return rep.stroke && !rep.fill ? 'stroke' : 'fill';
   }
   // Fabric always renders a stroke straddling the path, half in/half out
   // (that's "center" placement, and needs no special handling). To fake
@@ -734,7 +759,9 @@ if (fabricCanvasEl && window.fabric) {
   function makeStrokeClipShapeFor(obj) {
     const common = { left: 0, top: 0, originX: 'center', originY: 'center' };
     if (obj.type === 'circle') return new fabric.Circle({ ...common, radius: obj.radius });
+    if (obj.type === 'ellipse') return new fabric.Ellipse({ ...common, rx: obj.rx, ry: obj.ry });
     if (obj.type === 'triangle') return new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
+    if (obj.type === 'polygon' || obj.type === 'polyline') return new fabric.Polygon(obj.points, { ...common });
     if (obj.type === 'path') return new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
     return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
   }
@@ -745,6 +772,10 @@ if (fabricCanvasEl && window.fabric) {
   // shares the object's own transform and scales/rotates/moves with it
   // automatically.
   function applyStrokeRender(obj) {
+    if (obj.type === 'group') {
+      eachFillableDescendant(obj, applyStrokeRender);
+      return;
+    }
     if (shapeFillModeFor(obj) !== 'stroke') {
       obj.set({ clipPath: null });
       return;
@@ -768,6 +799,13 @@ if (fabricCanvasEl && window.fabric) {
   // than emitting stroke/stroke-width attributes — including baking in
   // whichever of inside/center/outside placement was chosen here.
   function setShapeFillMode(obj, mode) {
+    if (obj.type === 'group') {
+      // Each nested shape keeps its own original color as its outline
+      // color (there's no single color to apply across a whole imported
+      // design), just switching every one of them between fill/stroke.
+      eachFillableDescendant(obj, (child) => setShapeFillMode(child, mode));
+      return;
+    }
     const color = obj.fill || obj.stroke || '#ffffff';
     if (mode === 'stroke') {
       const widthMm = strokeWidthInput ? parseFloat(strokeWidthInput.value) || 0.5 : 0.5;
@@ -780,7 +818,8 @@ if (fabricCanvasEl && window.fabric) {
     obj.setCoords();
   }
   function refreshFillModeUI(obj) {
-    const applicable = SHAPE_FILL_TYPES.includes(obj.type);
+    const rep = firstFillableDescendant(obj);
+    const applicable = !!rep;
     if (fillModeGroup) fillModeGroup.classList.toggle('is-hidden', !applicable);
     if (!applicable) {
       if (strokeSettingsDropdown) strokeSettingsDropdown.classList.remove('is-visible');
@@ -790,15 +829,15 @@ if (fabricCanvasEl && window.fabric) {
     fillModeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.fillMode === mode));
     if (strokeSettingsDropdown) strokeSettingsDropdown.classList.toggle('is-visible', mode === 'stroke');
     if (mode !== 'stroke') return;
-    const widthPx = obj._strokeWidthPx || obj.strokeWidth || 0.5 * PX_PER_MM;
+    const widthPx = rep._strokeWidthPx || rep.strokeWidth || 0.5 * PX_PER_MM;
     if (strokeWidthInput) strokeWidthInput.value = (widthPx / PX_PER_MM).toFixed(2);
-    const align = obj.strokeAlign || 'center';
+    const align = rep.strokeAlign || 'center';
     strokeAlignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.strokeAlign === align));
   }
   fillModeButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const obj = fabricCanvas.getActiveObject();
-      if (!obj || !SHAPE_FILL_TYPES.includes(obj.type)) return;
+      if (!obj || !fillEligible(obj)) return;
       setShapeFillMode(obj, btn.dataset.fillMode);
       refreshFillModeUI(obj);
       fabricCanvas.requestRenderAll();
@@ -809,7 +848,11 @@ if (fabricCanvasEl && window.fabric) {
     btn.addEventListener('click', () => {
       const obj = fabricCanvas.getActiveObject();
       if (!obj || shapeFillModeFor(obj) !== 'stroke') return;
-      obj.strokeAlign = btn.dataset.strokeAlign;
+      if (obj.type === 'group') {
+        eachFillableDescendant(obj, (child) => { child.strokeAlign = btn.dataset.strokeAlign; });
+      } else {
+        obj.strokeAlign = btn.dataset.strokeAlign;
+      }
       applyStrokeRender(obj);
       refreshFillModeUI(obj);
       fabricCanvas.requestRenderAll();
@@ -853,7 +896,9 @@ if (fabricCanvasEl && window.fabric) {
       selectable: false, evented: false, excludeFromExport: true, hoverCursor: 'default',
     };
     if (obj.type === 'circle') return new fabric.Circle({ ...common, radius: obj.radius });
+    if (obj.type === 'ellipse') return new fabric.Ellipse({ ...common, rx: obj.rx, ry: obj.ry });
     if (obj.type === 'triangle') return new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
+    if (obj.type === 'polygon' || obj.type === 'polyline') return new fabric.Polygon(obj.points, { ...common });
     if (obj.type === 'path') return new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
     return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
   }
@@ -878,6 +923,10 @@ if (fabricCanvasEl && window.fabric) {
       width: obj.width, height: obj.height,
     };
     if (obj.type === 'circle') props.radius = obj.radius;
+    if (obj.type === 'ellipse') {
+      props.rx = obj.rx;
+      props.ry = obj.ry;
+    }
     edgeIndicator.set(props);
     edgeIndicator.setCoords();
   }
@@ -1053,15 +1102,46 @@ if (fabricCanvasEl && window.fabric) {
   pushHistory();
 
   // ---- Boolean shape operations (Union / Subtract) ----
+  // PolyBool's default epsilon (1e-10) assumes near-integer input; ours is
+  // built from trig and Bezier-flattening arithmetic on canvas-pixel-scale
+  // coordinates (hundreds of units), where that's tighter than floating
+  // point rounding itself — enough near-but-not-quite-identical points
+  // trip its "zero-length segment" guard on any real, curve-heavy SVG
+  // import. A looser epsilon, still far below anything visually
+  // meaningful, avoids that without affecting simple shapes.
+  if (typeof PolyBool !== 'undefined' && PolyBool.epsilon) PolyBool.epsilon(1e-4);
   // Approximates each source object as a flat polygon in absolute canvas
   // coordinates, runs it through PolyBool (loaded via CDN — see
   // card-editor.html) and rebuilds the result as a single fabric.Path.
   // Line has no fillable area of its own, so it's represented as the thin
-  // rectangle its stroke actually renders as. Text isn't converted to
-  // outlines and a Group's children aren't flattened, so neither is
-  // eligible.
-  const BOOLEAN_ELIGIBLE_TYPES = ['rect', 'circle', 'triangle', 'path', 'line'];
+  // rectangle its stroke actually renders as. A Group (manual, or an
+  // imported SVG) is eligible too — its children are flattened into one
+  // combined set of regions, recursively, so an imported design can be
+  // unioned/subtracted as a whole. Text isn't converted to outlines, so
+  // that's the only common shape left out.
+  const BOOLEAN_ELIGIBLE_TYPES = ['rect', 'circle', 'ellipse', 'triangle', 'path', 'polygon', 'polyline', 'line', 'group'];
   const CIRCLE_APPROXIMATION_SEGMENTS = 90;
+  const CURVE_APPROXIMATION_SEGMENTS = 16;
+  function pushCubicBezier(out, p0, p1, p2, p3) {
+    for (let i = 1; i <= CURVE_APPROXIMATION_SEGMENTS; i++) {
+      const t = i / CURVE_APPROXIMATION_SEGMENTS;
+      const mt = 1 - t;
+      out.push([
+        mt * mt * mt * p0[0] + 3 * mt * mt * t * p1[0] + 3 * mt * t * t * p2[0] + t * t * t * p3[0],
+        mt * mt * mt * p0[1] + 3 * mt * mt * t * p1[1] + 3 * mt * t * t * p2[1] + t * t * t * p3[1],
+      ]);
+    }
+  }
+  function pushQuadraticBezier(out, p0, p1, p2) {
+    for (let i = 1; i <= CURVE_APPROXIMATION_SEGMENTS; i++) {
+      const t = i / CURVE_APPROXIMATION_SEGMENTS;
+      const mt = 1 - t;
+      out.push([
+        mt * mt * p0[0] + 2 * mt * t * p1[0] + t * t * p2[0],
+        mt * mt * p0[1] + 2 * mt * t * p1[1] + t * t * p2[1],
+      ]);
+    }
+  }
   function localPolygonsFor(obj) {
     if (obj.type === 'circle') {
       const pts = [];
@@ -1071,28 +1151,62 @@ if (fabricCanvasEl && window.fabric) {
       }
       return [pts];
     }
+    if (obj.type === 'ellipse') {
+      const pts = [];
+      for (let i = 0; i < CIRCLE_APPROXIMATION_SEGMENTS; i++) {
+        const theta = (i / CIRCLE_APPROXIMATION_SEGMENTS) * Math.PI * 2;
+        pts.push([obj.rx * Math.cos(theta), obj.ry * Math.sin(theta)]);
+      }
+      return [pts];
+    }
     if (obj.type === 'triangle') {
       const w = obj.width / 2;
       const h = obj.height / 2;
       return [[[-w, h], [0, -h], [w, h]]];
     }
+    if (obj.type === 'polygon' || obj.type === 'polyline') {
+      // Same pathOffset convention as Path below — Fabric centers a
+      // Polygon/Polyline's own local origin the same way.
+      const offsetX = obj.pathOffset.x;
+      const offsetY = obj.pathOffset.y;
+      return [obj.points.map((p) => [p.x - offsetX, p.y - offsetY])];
+    }
     if (obj.type === 'path') {
       // A Path built by this same feature is straight-line-only (M/L/Z
-      // commands), so its coordinates can be read directly — no curve
-      // flattening needed. Fabric renders each point offset by
-      // -pathOffset, i.e. pathOffset is where local (0,0) falls in the
-      // raw command coordinates, so subtracting it recovers local space.
+      // commands), but an imported SVG's paths commonly have curves too —
+      // both are handled here by flattening any C/Q segment into short
+      // line segments. Fabric renders each point offset by -pathOffset,
+      // i.e. pathOffset is where local (0,0) falls in the raw command
+      // coordinates, so subtracting it recovers local space.
       const offsetX = obj.pathOffset.x;
       const offsetY = obj.pathOffset.y;
       const rings = [];
       let current = null;
+      let cx = 0;
+      let cy = 0;
       obj.path.forEach((cmd) => {
-        if (cmd[0] === 'M') {
+        const type = cmd[0];
+        if (type === 'M') {
           current = [];
           rings.push(current);
-        }
-        if (current && (cmd[0] === 'M' || cmd[0] === 'L')) {
-          current.push([cmd[1] - offsetX, cmd[2] - offsetY]);
+          cx = cmd[1] - offsetX;
+          cy = cmd[2] - offsetY;
+          current.push([cx, cy]);
+        } else if (type === 'L' && current) {
+          cx = cmd[1] - offsetX;
+          cy = cmd[2] - offsetY;
+          current.push([cx, cy]);
+        } else if (type === 'C' && current) {
+          const p1 = [cmd[1] - offsetX, cmd[2] - offsetY];
+          const p2 = [cmd[3] - offsetX, cmd[4] - offsetY];
+          const p3 = [cmd[5] - offsetX, cmd[6] - offsetY];
+          pushCubicBezier(current, [cx, cy], p1, p2, p3);
+          [cx, cy] = p3;
+        } else if (type === 'Q' && current) {
+          const p1 = [cmd[1] - offsetX, cmd[2] - offsetY];
+          const p2 = [cmd[3] - offsetX, cmd[4] - offsetY];
+          pushQuadraticBezier(current, [cx, cy], p1, p2);
+          [cx, cy] = p2;
         }
       });
       return rings;
@@ -1119,12 +1233,40 @@ if (fabricCanvasEl && window.fabric) {
     const h = obj.height / 2;
     return [[[-w, -h], [w, -h], [w, h], [-w, h]]];
   }
+  // Real-world SVGs (especially text outlines) often carry degenerate
+  // sub-paths — a moveto with no segments after it, or a curve flattened
+  // into coincident points — which PolyBool rejects outright as a
+  // zero-length segment. Drop points that don't move, and any ring left
+  // too short to bound an area.
+  function sanitizeRing(ring) {
+    const out = [];
+    ring.forEach((p) => {
+      const last = out[out.length - 1];
+      if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 1e-6) out.push(p);
+    });
+    if (out.length > 1) {
+      const first = out[0];
+      const last = out[out.length - 1];
+      if (Math.hypot(first[0] - last[0], first[1] - last[1]) < 1e-6) out.pop();
+    }
+    return out;
+  }
+  // A Group's children carry their own transform matrix already composed
+  // with their parent's (Fabric bakes that in via calcTransformMatrix), so
+  // each child's absolute polygons can be computed independently and just
+  // concatenated — recursing naturally handles nested groups too.
   function absolutePolygonsFor(obj) {
+    if (obj.type === 'group') {
+      return obj.getObjects().flatMap((child) => absolutePolygonsFor(child));
+    }
     const matrix = obj.calcTransformMatrix();
-    return localPolygonsFor(obj).map((ring) => ring.map(([x, y]) => {
-      const p = fabric.util.transformPoint({ x, y }, matrix);
-      return [p.x, p.y];
-    }));
+    return localPolygonsFor(obj)
+      .map(sanitizeRing)
+      .filter((ring) => ring.length >= 3)
+      .map((ring) => ring.map(([x, y]) => {
+        const p = fabric.util.transformPoint({ x, y }, matrix);
+        return [p.x, p.y];
+      }));
   }
   function polyBoolInputFor(obj) {
     return { regions: absolutePolygonsFor(obj), inverted: false };
@@ -1149,9 +1291,15 @@ if (fabricCanvasEl && window.fabric) {
     // into a filled ribbon polygon, that inert default would suddenly
     // render as solid black. Use its stroke color as the result's fill
     // instead, with no extra stroke on top of the already-outlined shape.
-    const style = styleSource.type === 'line'
-      ? { fill: styleSource.stroke, stroke: null, strokeWidth: 0 }
-      : styleSource;
+    // A Group has no fill/stroke of its own either — borrow whichever of
+    // its nested shapes the fill/stroke toolbar would already treat as
+    // the representative one.
+    let style = styleSource;
+    if (styleSource.type === 'line') {
+      style = { fill: styleSource.stroke, stroke: null, strokeWidth: 0 };
+    } else if (styleSource.type === 'group') {
+      style = firstFillableDescendant(styleSource) || { fill: '#000000', stroke: null, strokeWidth: 0 };
+    }
     const path = new fabric.Path(pathDataFromRegions(regions), {
       fill: style.fill,
       stroke: style.stroke,
@@ -1172,15 +1320,27 @@ if (fabricCanvasEl && window.fabric) {
   // Union folds left-to-right through the whole selection (2+ objects),
   // so it isn't limited to exactly two — the resulting appearance is the
   // front-most source object's.
+  // A very complex import (dozens of nested/overlapping sub-paths, as
+  // real-world logos with text outlines often are) can trip PolyBool's
+  // own sweep-line algorithm regardless of epsilon tuning — nothing to
+  // recover from geometrically, so just fail loudly instead of silently
+  // (a console-only throw) or leaving the canvas half-changed. Nothing
+  // has been mutated yet at the point this can throw in either function.
   function runUnion() {
     const active = fabricCanvas.getActiveObject();
     if (!active) return;
     const selected = active.type === 'activeSelection' ? active.getObjects() : [active];
     const ordered = fabricCanvas.getObjects().filter((o) => selected.includes(o) && BOOLEAN_ELIGIBLE_TYPES.includes(o.type));
     if (ordered.length < 2) return;
-    let result = polyBoolInputFor(ordered[0]);
-    for (let i = 1; i < ordered.length; i++) {
-      result = PolyBool.union(result, polyBoolInputFor(ordered[i]));
+    let result;
+    try {
+      result = polyBoolInputFor(ordered[0]);
+      for (let i = 1; i < ordered.length; i++) {
+        result = PolyBool.union(result, polyBoolInputFor(ordered[i]));
+      }
+    } catch (e) {
+      alert('Could not combine these shapes — the artwork is too complex for Union to resolve.');
+      return;
     }
     if (!result.regions.length) return;
     replaceWithBooleanResult(ordered, result.regions, ordered[ordered.length - 1]);
@@ -1195,7 +1355,13 @@ if (fabricCanvasEl && window.fabric) {
     const ordered = fabricCanvas.getObjects().filter((o) => selected.includes(o) && BOOLEAN_ELIGIBLE_TYPES.includes(o.type));
     if (ordered.length !== 2) return;
     const [bottom, top] = ordered;
-    const result = PolyBool.difference(polyBoolInputFor(bottom), polyBoolInputFor(top));
+    let result;
+    try {
+      result = PolyBool.difference(polyBoolInputFor(bottom), polyBoolInputFor(top));
+    } catch (e) {
+      alert('Could not subtract these shapes — the artwork is too complex for Subtract to resolve.');
+      return;
+    }
     if (!result.regions.length) {
       // The top shape fully covered the bottom one — nothing left of it.
       fabricCanvas.discardActiveObject();
@@ -1731,7 +1897,12 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(strokeWidthInput, (val) => {
     const obj = fabricCanvas.getActiveObject();
     if (!obj || shapeFillModeFor(obj) !== 'stroke') return;
-    obj._strokeWidthPx = Math.max(0.01, val) * PX_PER_MM;
+    const px = Math.max(0.01, val) * PX_PER_MM;
+    if (obj.type === 'group') {
+      eachFillableDescendant(obj, (child) => { child._strokeWidthPx = px; });
+    } else {
+      obj._strokeWidthPx = px;
+    }
     applyStrokeRender(obj);
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
