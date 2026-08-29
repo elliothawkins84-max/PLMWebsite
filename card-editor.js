@@ -104,6 +104,11 @@ if (sidesEl) {
     if (thumb) setActiveSide(thumb.dataset.side);
   });
 }
+// The card label starts as plain static text in the HTML ("Front", no
+// dimensions) — run the same update used when switching sides once at
+// load so it matches from the start instead of only after the first
+// front/back click.
+setActiveSide('front');
 
 const renderingsBody = document.getElementById('renderings-body');
 
