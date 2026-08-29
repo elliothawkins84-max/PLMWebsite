@@ -606,6 +606,58 @@ if (fabricCanvasEl && window.fabric) {
     const unit = (match[2] || 'px').toLowerCase();
     return value * MM_PER_UNIT[unit];
   }
+  // Centers the imported group on the card and finishes the import —
+  // shared by both the fits-fine path and the confirmed-oversize path.
+  function placeImportedGroup(group) {
+    group.set({
+      left: (fabricCanvas.getWidth() - group.getScaledWidth()) / 2,
+      top: (fabricCanvas.getHeight() - group.getScaledHeight()) / 2,
+    });
+    fabricCanvas.add(group);
+    finalizeShape(group);
+  }
+  // Confirms before scaling down an import that's larger than the card,
+  // rather than doing it silently — Cancel just drops the import (the
+  // group was only ever built in memory, never added to the canvas, so
+  // there's nothing to undo), Yes runs onConfirm to scale and place it.
+  const svgOversizeModal = document.getElementById('svg-oversize-modal');
+  const svgOversizeModalCancel = document.getElementById('svg-oversize-modal-cancel');
+  const svgOversizeModalYes = document.getElementById('svg-oversize-modal-yes');
+  let pendingOversizeConfirm = null;
+  function confirmOversizeImport(onConfirm) {
+    if (!svgOversizeModal) {
+      // No modal in the DOM (shouldn't happen) — fall back to importing
+      // scaled, same as before this feature existed.
+      onConfirm();
+      return;
+    }
+    pendingOversizeConfirm = onConfirm;
+    svgOversizeModal.classList.add('is-open');
+    svgOversizeModal.setAttribute('aria-hidden', 'false');
+  }
+  function closeOversizeModal() {
+    if (!svgOversizeModal) return;
+    svgOversizeModal.classList.remove('is-open');
+    svgOversizeModal.setAttribute('aria-hidden', 'true');
+    pendingOversizeConfirm = null;
+  }
+  if (svgOversizeModalCancel) svgOversizeModalCancel.addEventListener('click', closeOversizeModal);
+  if (svgOversizeModalYes) {
+    svgOversizeModalYes.addEventListener('click', () => {
+      const onConfirm = pendingOversizeConfirm;
+      closeOversizeModal();
+      if (onConfirm) onConfirm();
+    });
+  }
+  if (svgOversizeModal) {
+    svgOversizeModal.addEventListener('mousedown', (e) => {
+      if (e.target === svgOversizeModal) closeOversizeModal();
+    });
+  }
+  function isOversizeModalOpen() {
+    return !!(svgOversizeModal && svgOversizeModal.classList.contains('is-open'));
+  }
+
   function importSvgFile(file) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -654,18 +706,19 @@ if (fabricCanvasEl && window.fabric) {
 
         // Only shrink further if the (now true-to-life) import doesn't
         // actually fit on the card — never scale up, and don't touch the
-        // size otherwise.
+        // size otherwise. If it doesn't fit, confirm with the user first
+        // rather than silently shrinking their import.
         const maxW = fabricCanvas.getWidth();
         const maxH = fabricCanvas.getHeight();
         const overflowScale = Math.min(1, maxW / group.getScaledWidth(), maxH / group.getScaledHeight());
-        if (overflowScale < 1) group.scale(group.scaleX * overflowScale);
-
-        group.set({
-          left: (fabricCanvas.getWidth() - group.getScaledWidth()) / 2,
-          top: (fabricCanvas.getHeight() - group.getScaledHeight()) / 2,
-        });
-        fabricCanvas.add(group);
-        finalizeShape(group);
+        if (overflowScale < 1) {
+          confirmOversizeImport(() => {
+            group.scale(group.scaleX * overflowScale);
+            placeImportedGroup(group);
+          });
+        } else {
+          placeImportedGroup(group);
+        }
       });
     };
     reader.onerror = () => alert('Could not read that file.');
@@ -2116,6 +2169,10 @@ if (fabricCanvasEl && window.fabric) {
     if (e.key !== 'Escape') return;
     if (isShapeSizeModalOpen()) {
       cancelShapeSizeModal();
+      return;
+    }
+    if (isOversizeModalOpen()) {
+      closeOversizeModal();
       return;
     }
     const obj = fabricCanvas.getActiveObject();

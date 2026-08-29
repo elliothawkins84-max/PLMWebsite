@@ -906,6 +906,13 @@
   justify-content: flex-end;
   gap: 8px;
 }
+.editor-modal-message {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+#svg-oversize-modal .editor-modal { width: 280px; }
 
 /* ---- Desktop-only gate ---- */
 @media (max-width: 900px) {
