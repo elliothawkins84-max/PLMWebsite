@@ -83,59 +83,6 @@ const rulerLeft = document.getElementById('ruler-left');
 if (rulerTop) buildRuler(rulerTop, 86, false);
 if (rulerLeft) buildRuler(rulerLeft, 54, true);
 
-// ---- Front/back side switcher ----
-const sidesEl = document.getElementById('editor-sides');
-const addBackBtn = document.getElementById('add-back-side');
-const cardLabel = document.getElementById('editor-card-label');
-
-function setActiveSide(sideName) {
-  sidesEl.querySelectorAll('.editor-side-thumb').forEach((thumb) => {
-    thumb.classList.toggle('is-active', thumb.dataset.side === sideName);
-  });
-  if (cardLabel) {
-    const name = sideName === 'front' ? 'Front' : 'Back';
-    cardLabel.textContent = `${name} — 86 × 54mm`;
-  }
-}
-
-if (sidesEl) {
-  sidesEl.addEventListener('click', (e) => {
-    const thumb = e.target.closest('.editor-side-thumb');
-    if (thumb) setActiveSide(thumb.dataset.side);
-  });
-}
-// The card label starts as plain static text in the HTML ("Front", no
-// dimensions) — run the same update used when switching sides once at
-// load so it matches from the start instead of only after the first
-// front/back click.
-setActiveSide('front');
-
-const renderingsBody = document.getElementById('renderings-body');
-
-if (addBackBtn) {
-  addBackBtn.addEventListener('click', () => {
-    const backThumb = document.createElement('button');
-    backThumb.type = 'button';
-    backThumb.className = 'editor-side-thumb';
-    backThumb.dataset.side = 'back';
-    backThumb.innerHTML = `
-      <span class="editor-side-thumb-card"></span>
-      <span class="editor-side-thumb-label">Back</span>
-    `;
-    addBackBtn.replaceWith(backThumb);
-    setActiveSide('back');
-
-    // A back side now exists, so the renderings panel should preview
-    // both sides — add a second card box alongside the front one.
-    if (renderingsBody && !renderingsBody.querySelector('[data-side="back"]')) {
-      const backPreview = document.createElement('div');
-      backPreview.className = 'editor-renderings-empty';
-      backPreview.dataset.side = 'back';
-      renderingsBody.appendChild(backPreview);
-    }
-  });
-}
-
 // ---- Zoom ----
 // Uses the CSS `zoom` property (not `transform: scale`) specifically
 // because it changes the frame's actual layout size, so the surrounding
@@ -1204,6 +1151,85 @@ if (fabricCanvasEl && window.fabric) {
   // Baseline snapshot so undo from the very first edit returns to a
   // truly empty card, instead of having nothing before it to land on.
   pushHistory();
+  // Captured now, before anything real can have been drawn — reused
+  // below as the starting content for a side the first time it's ever
+  // switched to, since a plain fabricCanvas.clear() wouldn't restore any
+  // of Fabric's own baseline canvas state the way loadFromJSON does.
+  const blankCanvasSnapshot = JSON.stringify(fabricCanvas.toJSON(HISTORY_PROPS));
+
+  // ---- Front/back side switcher ----
+  // Each side is its own design — switching sides swaps in that side's
+  // own canvas content (blank the first time) and its own undo/redo
+  // history, so an edit made on one side, or an undo, never bleeds into
+  // the other. Reuses the exact same whole-canvas-JSON approach as
+  // undo/redo above: undoStack/redoStack are the *current* side's
+  // history, and switching sides just saves them under the outgoing
+  // side's key and swaps in the incoming side's (or a fresh blank one).
+  const sidesEl = document.getElementById('editor-sides');
+  const addBackBtn = document.getElementById('add-back-side');
+  const cardLabel = document.getElementById('editor-card-label');
+  const renderingsBody = document.getElementById('renderings-body');
+  let currentSide = 'front';
+  const sideHistories = {};
+
+  function setActiveSideUI(sideName) {
+    if (sidesEl) {
+      sidesEl.querySelectorAll('.editor-side-thumb').forEach((thumb) => {
+        thumb.classList.toggle('is-active', thumb.dataset.side === sideName);
+      });
+    }
+    if (cardLabel) {
+      const name = sideName === 'front' ? 'Front' : 'Back';
+      cardLabel.textContent = `${name} — 86 × 54mm`;
+    }
+  }
+
+  function switchToSide(sideName) {
+    if (sideName === currentSide) return;
+    sideHistories[currentSide] = { undo: undoStack, redo: redoStack };
+    currentSide = sideName;
+    const stored = sideHistories[sideName];
+    undoStack = stored ? stored.undo : [blankCanvasSnapshot];
+    redoStack = stored ? stored.redo : [];
+    setActiveSideUI(sideName);
+    restoreHistorySnapshot(undoStack[undoStack.length - 1]);
+  }
+
+  if (sidesEl) {
+    sidesEl.addEventListener('click', (e) => {
+      const thumb = e.target.closest('.editor-side-thumb');
+      if (thumb) switchToSide(thumb.dataset.side);
+    });
+  }
+  // The card label starts as plain static text in the HTML ("Front", no
+  // dimensions) — run the same update used when switching sides once at
+  // load so it matches from the start instead of only after the first
+  // front/back click.
+  setActiveSideUI('front');
+
+  if (addBackBtn) {
+    addBackBtn.addEventListener('click', () => {
+      const backThumb = document.createElement('button');
+      backThumb.type = 'button';
+      backThumb.className = 'editor-side-thumb';
+      backThumb.dataset.side = 'back';
+      backThumb.innerHTML = `
+        <span class="editor-side-thumb-card"></span>
+        <span class="editor-side-thumb-label">Back</span>
+      `;
+      addBackBtn.replaceWith(backThumb);
+      switchToSide('back');
+
+      // A back side now exists, so the renderings panel should preview
+      // both sides — add a second card box alongside the front one.
+      if (renderingsBody && !renderingsBody.querySelector('[data-side="back"]')) {
+        const backPreview = document.createElement('div');
+        backPreview.className = 'editor-renderings-empty';
+        backPreview.dataset.side = 'back';
+        renderingsBody.appendChild(backPreview);
+      }
+    });
+  }
 
   // ---- Boolean shape operations (Union / Subtract) ----
   // PolyBool's default epsilon (1e-10) assumes near-integer input; ours is
