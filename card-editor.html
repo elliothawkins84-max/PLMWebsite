@@ -49,10 +49,11 @@
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="8.5" width="10" height="10"/><circle cx="16" cy="8" r="4.5"/></svg>
             <span class="editor-tool-label">Shapes</span>
           </button>
-          <button type="button" class="editor-tool">
+          <button type="button" class="editor-tool editor-file-trigger" id="tool-upload" title="Import an SVG file">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
             <span class="editor-tool-label">Upload</span>
           </button>
+          <input type="file" id="import-file-input" accept=".svg,image/svg+xml" hidden />
         </div>
 
         <div class="editor-tool-divider"></div>

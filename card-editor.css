@@ -206,6 +206,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A group's own members, nested underneath it — shown for visibility
+   into what's inside, not as independently selectable rows (Ungroup
+   first to work with one directly). */
+.editor-layer-item.is-child { cursor: default; }
+.editor-layer-item.is-child:hover { background: none; color: var(--muted); }
+.editor-layer-toggle {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.editor-layer-toggle:hover { color: var(--fg); }
+.editor-layer-toggle-spacer { width: 14px; flex: none; }
 
 /* ---- Canvas ---- */
 .editor-canvas-area {

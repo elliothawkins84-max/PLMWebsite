@@ -9,7 +9,7 @@ const PX_PER_MM = 9; // matches the fixed sizing in card-editor.css
 // Panel-toggle (Layers) and standalone-toggle (Guides) buttons are
 // excluded — neither selects a drawing tool, so they're not part of
 // this mutually-exclusive group.
-const toolButtons = document.querySelectorAll('.editor-tool:not(.editor-panel-toggle):not(.editor-standalone-toggle)');
+const toolButtons = document.querySelectorAll('.editor-tool:not(.editor-panel-toggle):not(.editor-standalone-toggle):not(.editor-file-trigger)');
 toolButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     toolButtons.forEach((b) => b.classList.remove('is-active'));
@@ -533,6 +533,51 @@ if (fabricCanvasEl && window.fabric) {
     if (shapeDraw) finishShapeDraw();
   });
 
+  // ---- SVG import ----
+  // Fabric's own SVG parser handles the file; every imported piece is
+  // wrapped in a fabric.Group — even a single-shape SVG — so imported
+  // artwork always shows up as one unit with its pieces nested under it
+  // in the Layers panel, rather than sometimes being a group and
+  // sometimes a bare shape depending on what was in the file.
+  const uploadBtn = document.getElementById('tool-upload');
+  const importFileInput = document.getElementById('import-file-input');
+  function importSvgFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      fabric.loadSVGFromString(String(reader.result), (objects) => {
+        const valid = (objects || []).filter(Boolean);
+        if (!valid.length) {
+          alert('Could not import that file — no supported shapes were found in it.');
+          return;
+        }
+        const group = new fabric.Group(valid, { originX: 'left', originY: 'top', centeredRotation: false });
+        // Imported artwork can be any size — scale it down (never up, so
+        // a tiny icon doesn't get blown up) to fit comfortably within the
+        // card, then center it.
+        const maxW = fabricCanvas.getWidth() * 0.7;
+        const maxH = fabricCanvas.getHeight() * 0.7;
+        const scale = Math.min(1, maxW / group.width, maxH / group.height);
+        if (scale < 1) group.scale(scale);
+        group.set({
+          left: (fabricCanvas.getWidth() - group.getScaledWidth()) / 2,
+          top: (fabricCanvas.getHeight() - group.getScaledHeight()) / 2,
+        });
+        fabricCanvas.add(group);
+        finalizeShape(group);
+      });
+    };
+    reader.onerror = () => alert('Could not read that file.');
+    reader.readAsText(file);
+  }
+  if (uploadBtn && importFileInput) {
+    uploadBtn.addEventListener('click', () => importFileInput.click());
+    importFileInput.addEventListener('change', () => {
+      const file = importFileInput.files[0];
+      importFileInput.value = ''; // allow re-importing the same file later
+      if (file) importSvgFile(file);
+    });
+  }
+
   // ---- Text formatting toolbar: font, size, alignment ----
   const textToolbar = document.getElementById('text-toolbar');
   const fontFamilySelect = document.getElementById('text-font-family');
@@ -791,7 +836,9 @@ if (fabricCanvasEl && window.fabric) {
     const active = fabricCanvas.getActiveObject();
     if (!active || active.type !== 'activeSelection') return;
     hideEdgeIndicator();
+    suppressHistoryEvents = true;
     const group = active.toGroup();
+    suppressHistoryEvents = false;
     applyScalingControlsVisibility(group);
     fabricCanvas.requestRenderAll();
     showObjectToolbarFor(group);
@@ -801,7 +848,9 @@ if (fabricCanvasEl && window.fabric) {
     const active = fabricCanvas.getActiveObject();
     if (!active || active.type !== 'group') return;
     hideEdgeIndicator();
+    suppressHistoryEvents = true;
     active.toActiveSelection();
+    suppressHistoryEvents = false;
     fabricCanvas.requestRenderAll();
     hideObjectToolbar();
     pushHistory();
@@ -835,7 +884,9 @@ if (fabricCanvasEl && window.fabric) {
     hideEdgeIndicator();
     const objects = active.type === 'activeSelection' ? active.getObjects() : [active];
     fabricCanvas.discardActiveObject();
+    suppressHistoryEvents = true;
     objects.forEach((o) => fabricCanvas.remove(o));
+    suppressHistoryEvents = false;
     fabricCanvas.requestRenderAll();
     hideObjectToolbar();
     pushHistory();
@@ -859,6 +910,15 @@ if (fabricCanvasEl && window.fabric) {
   let undoStack = [];
   let redoStack = [];
   let isRestoringHistory = false;
+  // Some single "logical" edits do their work as several separate
+  // canvas.add()/remove() calls under the hood (toGroup/toActiveSelection,
+  // and this file's own boolean-op/delete helpers removing multiple
+  // objects) — each of those fires its own object:added/removed event.
+  // Left unguarded, that records a run of broken intermediate snapshots
+  // instead of one clean before/after step; the functions that do this
+  // set this flag for the duration and call pushHistory() themselves once
+  // finished instead.
+  let suppressHistoryEvents = false;
   function updateUndoRedoButtons() {
     if (undoBtn) undoBtn.disabled = undoStack.length < 2;
     if (redoBtn) redoBtn.disabled = redoStack.length === 0;
@@ -921,6 +981,7 @@ if (fabricCanvasEl && window.fabric) {
   // ends) plus most add/remove — but not helper overlays, and not the
   // rapid-fire add/remove of a live drag's snap guide lines.
   function isHistoryWorthy(target) {
+    if (suppressHistoryEvents) return false;
     return !target || target.evented !== false;
   }
   fabricCanvas.on('object:modified', (opt) => {
@@ -1049,8 +1110,10 @@ if (fabricCanvasEl && window.fabric) {
     path.strokeAlign = style.strokeAlign;
     path._strokeWidthPx = style._strokeWidthPx;
     fabricCanvas.discardActiveObject();
+    suppressHistoryEvents = true;
     sourceObjects.forEach((o) => fabricCanvas.remove(o));
     fabricCanvas.add(path);
+    suppressHistoryEvents = false;
     fabricCanvas.moveTo(path, Math.min(insertIndex, fabricCanvas.getObjects().length - 1));
     applyStrokeRender(path);
     finalizeShape(path);
@@ -1085,9 +1148,12 @@ if (fabricCanvasEl && window.fabric) {
     if (!result.regions.length) {
       // The top shape fully covered the bottom one — nothing left of it.
       fabricCanvas.discardActiveObject();
+      suppressHistoryEvents = true;
       ordered.forEach((o) => fabricCanvas.remove(o));
+      suppressHistoryEvents = false;
       fabricCanvas.requestRenderAll();
       hideObjectToolbar();
+      pushHistory();
       return;
     }
     replaceWithBooleanResult(ordered, result.regions, bottom);
@@ -1803,10 +1869,18 @@ if (fabricCanvasEl && window.fabric) {
     group: '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="12" height="12"/><rect x="9" y="9" width="12" height="12"/></svg>',
   };
   function layerLabelFor(obj) {
-    if (obj.type === 'i-text') return (obj.text && obj.text.trim()) || 'Text';
-    const names = { rect: 'Rectangle', circle: 'Circle', triangle: 'Triangle', line: 'Line', path: 'Path', group: 'Group' };
+    if (obj.type === 'i-text' || obj.type === 'text') return (obj.text && obj.text.trim()) || 'Text';
+    const names = {
+      rect: 'Rectangle', circle: 'Circle', triangle: 'Triangle', line: 'Line', path: 'Path', group: 'Group',
+      ellipse: 'Ellipse', polygon: 'Polygon', polyline: 'Polyline', image: 'Image',
+    };
     return names[obj.type] || obj.type.charAt(0).toUpperCase() + obj.type.slice(1);
   }
+  // Groups (from the context menu's Group action, or an imported SVG —
+  // see importSvgFile below) default to expanded, showing their own
+  // members nested underneath; collapsed state is remembered here across
+  // rebuilds since the list itself is rebuilt from scratch every time.
+  const collapsedGroups = new Set();
   function refreshLayersList() {
     if (!layersList) return;
     const active = fabricCanvas.getActiveObject();
@@ -1814,20 +1888,49 @@ if (fabricCanvasEl && window.fabric) {
     const objects = fabricCanvas.getObjects().filter((o) => o.evented !== false);
     if (layersEmpty) layersEmpty.style.display = objects.length ? 'none' : '';
     layersList.innerHTML = '';
-    // Front-most (top of the visual stack) listed first.
-    objects.slice().reverse().forEach((obj) => {
+    function renderRow(obj, depth) {
       const li = document.createElement('li');
       li.className = 'editor-layer-item';
-      if (activeMembers.includes(obj)) li.classList.add('is-active');
-      li.innerHTML = `${LAYER_ICONS[obj.type] || ''}<span class="editor-layer-item-label"></span>`;
+      li.style.paddingLeft = `${8 + depth * 16}px`;
+      const isGroup = obj.type === 'group';
+      const children = isGroup ? obj.getObjects() : [];
+      const collapsed = collapsedGroups.has(obj);
+      if (depth === 0 && activeMembers.includes(obj)) li.classList.add('is-active');
+      if (depth > 0) {
+        // Nested members are shown for visibility into the group's
+        // contents, not as independently selectable/editable objects —
+        // Ungroup first to work with one directly.
+        li.classList.add('is-child');
+      }
+      const toggle = isGroup && children.length
+        ? `<button type="button" class="editor-layer-toggle" aria-label="${collapsed ? 'Expand' : 'Collapse'}" aria-expanded="${!collapsed}">${collapsed ? '▸' : '▾'}</button>`
+        : '<span class="editor-layer-toggle-spacer"></span>';
+      li.innerHTML = `${toggle}${LAYER_ICONS[obj.type] || ''}<span class="editor-layer-item-label"></span>`;
       li.querySelector('.editor-layer-item-label').textContent = layerLabelFor(obj);
-      li.addEventListener('click', () => {
-        fabricCanvas.setActiveObject(obj);
-        handleSelection({ selected: [obj] });
-        fabricCanvas.requestRenderAll();
-      });
+      if (depth === 0) {
+        li.addEventListener('click', (e) => {
+          if (e.target.closest('.editor-layer-toggle')) return;
+          fabricCanvas.setActiveObject(obj);
+          handleSelection({ selected: [obj] });
+          fabricCanvas.requestRenderAll();
+        });
+      }
       layersList.appendChild(li);
-    });
+      const toggleBtn = li.querySelector('.editor-layer-toggle');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (collapsed) collapsedGroups.delete(obj);
+          else collapsedGroups.add(obj);
+          refreshLayersList();
+        });
+      }
+      if (isGroup && children.length && !collapsed) {
+        children.slice().reverse().forEach((child) => renderRow(child, depth + 1));
+      }
+    }
+    // Front-most (top of the visual stack) listed first.
+    objects.slice().reverse().forEach((obj) => renderRow(obj, 0));
   }
   // Helper overlays (the edge indicator, snap guide lines) are
   // evented:false and never shown in the list anyway, so skip the
