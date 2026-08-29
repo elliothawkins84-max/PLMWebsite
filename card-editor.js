@@ -267,6 +267,19 @@ if (canvasScroll) {
       centerPanArea();
     });
   }
+
+  // Clicking anywhere in this viewport that isn't the fabric canvas
+  // itself — the rulers, or the black margin around the card — deselects
+  // whatever's currently selected. A click on the canvas but off any
+  // object is already handled by Fabric's own selection logic; this just
+  // covers everywhere else in view that Fabric never sees.
+  canvasScroll.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.tagName === 'CANVAS' || !fabricCanvas) return;
+    if (fabricCanvas.getActiveObject()) {
+      fabricCanvas.discardActiveObject();
+      fabricCanvas.requestRenderAll();
+    }
+  });
 }
 
 // Match the initial zoom (and its label/button states) to the same
@@ -1976,13 +1989,22 @@ if (fabricCanvasEl && window.fabric) {
     btn.addEventListener('click', () => alignActiveObject(btn.dataset.alignOp));
   });
 
-  // ---- Escape exits text editing ----
-  // Fabric doesn't bind this itself (only clicking away or Enter does),
-  // but it's the expected shortcut, so wire it up explicitly.
+  // ---- Escape exits text editing, or deselects ----
+  // Fabric doesn't bind either itself (only clicking away or Enter exits
+  // editing), but both are the expected shortcut, so wire them up
+  // explicitly. Editing takes priority — the first Escape just leaves
+  // edit mode, matching how Enter/click-away already behave; a selected-
+  // but-not-editing object is deselected outright.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     const obj = fabricCanvas.getActiveObject();
-    if (obj && obj.isEditing) obj.exitEditing();
+    if (!obj) return;
+    if (obj.isEditing) {
+      obj.exitEditing();
+      return;
+    }
+    fabricCanvas.discardActiveObject();
+    fabricCanvas.requestRenderAll();
   });
 
   // ---- Delete the selected object(s) ----
