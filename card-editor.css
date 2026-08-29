@@ -234,8 +234,20 @@
   padding: 8px 16px;
   border-bottom: 1px solid var(--line);
   flex: none;
+  /* Slides/fades into frame rather than just snapping into view. Visibility
+     switches instantly when appearing but only after the fade-out finishes
+     when hiding, so it doesn't just vanish mid-animation. */
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.16s ease-out, transform 0.16s ease-out, visibility 0s linear 0.16s;
 }
-.editor-text-toolbar.is-visible { visibility: visible; pointer-events: auto; }
+.editor-text-toolbar.is-visible {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.16s ease-out, transform 0.16s ease-out;
+}
 .editor-text-toolbar select,
 .editor-text-toolbar input {
   background: transparent;
