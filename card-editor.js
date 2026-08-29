@@ -1562,11 +1562,10 @@ if (fabricCanvasEl && window.fabric) {
     replaceWithBooleanResult(ordered, result.regions, bottom);
   }
 
-  // Text defaults to uniform (its own checkbox, unchecked, means "keep it
-  // uniform"); shapes default to free/non-uniform (their checkbox,
-  // unchecked, means "don't lock it uniform") — same underlying idea,
-  // opposite default, because that's the sensible default for each: text
-  // usually shouldn't distort, shapes commonly get stretched freely.
+  // Both default to uniform scaling — text's own checkbox, unchecked,
+  // means "keep it uniform"; shapes' checkbox is checked by default for
+  // the same effect (locked uniform), so either has to be deliberately
+  // opted into non-uniform/free stretching.
   function isNonUniformAllowed(obj) {
     if (!obj) return false;
     if (obj.type === 'i-text') return !!(nonUniformCheckbox && nonUniformCheckbox.checked);
