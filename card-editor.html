@@ -151,6 +151,20 @@
             </button>
           </div>
 
+          <!-- Line dash style — solid/dashed/dotted. Only shown for Line;
+               the other shape types don't have a line-like path to dash. -->
+          <div class="editor-shape-type-group editor-mode-shape" id="line-style-group">
+            <button type="button" class="editor-align-btn editor-line-style-btn is-active" data-line-style="solid" aria-label="Solid" title="Solid">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"/></svg>
+            </button>
+            <button type="button" class="editor-align-btn editor-line-style-btn" data-line-style="dashed" aria-label="Dashed" title="Dashed">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 4"><line x1="3" y1="12" x2="21" y2="12"/></svg>
+            </button>
+            <button type="button" class="editor-align-btn editor-line-style-btn" data-line-style="dotted" aria-label="Dotted" title="Dotted">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="0.1 4"><line x1="3" y1="12" x2="21" y2="12"/></svg>
+            </button>
+          </div>
+
           <!-- Fill vs stroke — not shown for Line, which is always a
                stroke. Stroke mode draws an unfilled outline along the
                shape's path instead of a solid fill. -->

@@ -394,6 +394,9 @@
 #stroke-settings-dropdown { display: none; }
 #stroke-settings-dropdown.is-visible { display: block; }
 #shape-fill-mode-group.is-hidden { display: none !important; }
+/* Dash style only applies to Line — every other shape type hides it. */
+#line-style-group.is-hidden { display: none !important; }
+.editor-line-style-btn svg { width: 18px; height: 12px; }
 /* Wide enough for the spelled-out "Width" label, unlike the single-letter
    X/Y/W/H labels' fixed 9px. */
 .editor-field-label--wide { width: auto; }

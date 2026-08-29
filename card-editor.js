@@ -334,7 +334,10 @@ if (fabricCanvasEl && window.fabric) {
       shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
       // Reflect the new shape's fill/stroke applicability (e.g. Line has
       // no fill/stroke toggle) immediately, not just once one is placed.
-      if (!fabricCanvas.getActiveObject()) refreshFillModeUI({ type: currentShapeType });
+      if (!fabricCanvas.getActiveObject()) {
+        refreshFillModeUI({ type: currentShapeType });
+        refreshLineStyleUI({ type: currentShapeType });
+      }
     });
   });
 
@@ -553,6 +556,40 @@ if (fabricCanvasEl && window.fabric) {
   function displayHeightOf(obj) {
     return SHAPE_TYPES.includes(obj.type) ? obj.height * obj.scaleY : obj.getScaledHeight();
   }
+
+  // ---- Line dash style (solid/dashed/dotted) ----
+  // Dash/gap lengths scale off the line's own strokeWidth so the pattern
+  // stays proportionally correct regardless of thickness. Dotted uses a
+  // near-zero dash with a round cap — the standard canvas/SVG trick for
+  // actual round dots rather than tiny rectangles.
+  const lineStyleGroup = document.getElementById('line-style-group');
+  const lineStyleButtons = document.querySelectorAll('.editor-line-style-btn');
+  function lineDashPropsFor(style, strokeWidth) {
+    const w = strokeWidth || 2;
+    if (style === 'dashed') return { strokeDashArray: [w * 3, w * 2], strokeLineCap: 'butt' };
+    if (style === 'dotted') return { strokeDashArray: [0.001, w * 2], strokeLineCap: 'round' };
+    return { strokeDashArray: null, strokeLineCap: 'butt' };
+  }
+  function setLineDashStyle(obj, style) {
+    obj.lineDashStyle = style;
+    obj.set(lineDashPropsFor(style, obj.strokeWidth));
+  }
+  function refreshLineStyleUI(obj) {
+    const applicable = obj.type === 'line';
+    if (lineStyleGroup) lineStyleGroup.classList.toggle('is-hidden', !applicable);
+    if (!applicable) return;
+    const style = obj.lineDashStyle || 'solid';
+    lineStyleButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.lineStyle === style));
+  }
+  lineStyleButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj || obj.type !== 'line') return;
+      setLineDashStyle(obj, btn.dataset.lineStyle);
+      refreshLineStyleUI(obj);
+      fabricCanvas.requestRenderAll();
+    });
+  });
 
   // ---- Shape fill vs. stroke, and stroke placement ----
   // Line is always a stroke already (it has no fill concept), and Group
@@ -791,10 +828,11 @@ if (fabricCanvasEl && window.fabric) {
   // Approximates each source object as a flat polygon in absolute canvas
   // coordinates, runs it through PolyBool (loaded via CDN — see
   // card-editor.html) and rebuilds the result as a single fabric.Path.
-  // Only rect/circle/triangle and a *previous* Union/Subtract's Path are
-  // supported: Line has no fillable area, text isn't converted to
-  // outlines, and a Group's children aren't flattened.
-  const BOOLEAN_ELIGIBLE_TYPES = ['rect', 'circle', 'triangle', 'path'];
+  // Line has no fillable area of its own, so it's represented as the thin
+  // rectangle its stroke actually renders as. Text isn't converted to
+  // outlines and a Group's children aren't flattened, so neither is
+  // eligible.
+  const BOOLEAN_ELIGIBLE_TYPES = ['rect', 'circle', 'triangle', 'path', 'line'];
   const CIRCLE_APPROXIMATION_SEGMENTS = 90;
   function localPolygonsFor(obj) {
     if (obj.type === 'circle') {
@@ -831,6 +869,23 @@ if (fabricCanvasEl && window.fabric) {
       });
       return rings;
     }
+    if (obj.type === 'line') {
+      // Fabric draws a Line symmetric about the object's own center, half
+      // the (x1,y1)-(x2,y2) span each direction — reproduced locally here,
+      // then thickened into the rectangle its stroke actually renders as
+      // (a bare segment has no area of its own to union/subtract).
+      const x1 = (obj.x1 - obj.x2) / 2;
+      const y1 = (obj.y1 - obj.y2) / 2;
+      const x2 = (obj.x2 - obj.x1) / 2;
+      const y2 = (obj.y2 - obj.y1) / 2;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const hw = (obj.strokeWidth || 1) / 2;
+      const nx = (-dy / len) * hw;
+      const ny = (dx / len) * hw;
+      return [[[x1 + nx, y1 + ny], [x2 + nx, y2 + ny], [x2 - nx, y2 - ny], [x1 - nx, y1 - ny]]];
+    }
     // rect (default)
     const w = obj.width / 2;
     const h = obj.height / 2;
@@ -861,14 +916,22 @@ if (fabricCanvasEl && window.fabric) {
   function replaceWithBooleanResult(sourceObjects, regions, styleSource) {
     const canvasObjects = fabricCanvas.getObjects();
     const insertIndex = Math.min(...sourceObjects.map((o) => canvasObjects.indexOf(o)));
+    // A Line has no real fill (Fabric gives every object a default black
+    // fill even though Line's own rendering ignores it) — once turned
+    // into a filled ribbon polygon, that inert default would suddenly
+    // render as solid black. Use its stroke color as the result's fill
+    // instead, with no extra stroke on top of the already-outlined shape.
+    const style = styleSource.type === 'line'
+      ? { fill: styleSource.stroke, stroke: null, strokeWidth: 0 }
+      : styleSource;
     const path = new fabric.Path(pathDataFromRegions(regions), {
-      fill: styleSource.fill,
-      stroke: styleSource.stroke,
-      strokeWidth: styleSource.strokeWidth,
+      fill: style.fill,
+      stroke: style.stroke,
+      strokeWidth: style.strokeWidth,
       fillRule: 'evenodd',
     });
-    path.strokeAlign = styleSource.strokeAlign;
-    path._strokeWidthPx = styleSource._strokeWidthPx;
+    path.strokeAlign = style.strokeAlign;
+    path._strokeWidthPx = style._strokeWidthPx;
     fabricCanvas.discardActiveObject();
     sourceObjects.forEach((o) => fabricCanvas.remove(o));
     fabricCanvas.add(path);
@@ -1011,6 +1074,7 @@ if (fabricCanvasEl && window.fabric) {
     } else {
       shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.shape === obj.type));
       refreshFillModeUI(obj);
+      refreshLineStyleUI(obj);
     }
     const isRealObject = typeof obj.getCenterPoint === 'function';
     if (isRealObject) refreshTransformFields(obj);
