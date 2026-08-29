@@ -256,6 +256,13 @@
   padding: 8px 16px;
   border-bottom: 1px solid var(--line);
   flex: none;
+  /* The transform below (needed for the slide/fade animation) makes this
+     a stacking context of its own, which traps its dropdown panels'
+     z-index inside it — without a z-index here too, that whole context
+     still stacks by plain DOM order among its flex siblings, landing
+     BELOW .editor-canvas-scroll regardless. This is what actually lifts
+     the panels above the canvas and anything on it. */
+  z-index: 30;
   /* Slides/fades into frame rather than just snapping into view. Visibility
      switches instantly when appearing but only after the fade-out finishes
      when hiding, so it doesn't just vanish mid-animation. */
