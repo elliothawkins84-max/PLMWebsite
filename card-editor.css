@@ -849,11 +849,31 @@
 }
 .editor-modal-fields {
   display: flex;
+  flex-direction: column;
   gap: 10px;
   margin-bottom: 20px;
 }
-.editor-modal-fields .editor-field { flex: 1; }
+.editor-modal-fields .editor-field { width: 100%; }
 .editor-modal-fields .editor-field.is-hidden { display: none; }
+.editor-modal-fields .editor-field-label { width: auto; }
+.editor-modal-fields input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 6px 8px;
+  -moz-appearance: textfield;
+}
+.editor-modal-fields input[type="number"]::-webkit-outer-spin-button,
+.editor-modal-fields input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 .editor-modal-actions {
   display: flex;
   justify-content: flex-end;
