@@ -177,18 +177,45 @@
   transition: width 0.18s ease-out;
 }
 .editor-side-panel.is-open { width: 240px; border-right: 1px solid var(--line); }
-.editor-side-panel-section { display: none; width: 240px; padding: 24px 20px; }
-.editor-side-panel-section.is-active { display: block; }
-.editor-side-panel-section h2 { font-size: 1rem; margin-bottom: 12px; }
+.editor-side-panel-section {
+  display: none;
+  width: 240px;
+  padding: 24px 20px;
+  /* Fills the panel's full (grid-stretched) height, so the list below
+     can be capped to the remaining space instead of growing past it
+     with no way to reach the overflow — the panel's own overflow:hidden
+     above was silently clipping a long layer list rather than scrolling. */
+  height: 100%;
+  box-sizing: border-box;
+  flex-direction: column;
+  min-height: 0;
+}
+.editor-side-panel-section.is-active { display: flex; }
+.editor-side-panel-section h2 { font-size: 1rem; margin-bottom: 12px; flex: none; }
 .editor-side-panel-empty {
   font-size: 0.78rem;
   color: var(--muted);
   line-height: 1.6;
+  flex: none;
 }
 
 /* Layers list — front-most object first, matching the visual stacking
-   order (same convention as Illustrator/Figma's layers panel). */
-.editor-layers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+   order (same convention as Illustrator/Figma's layers panel). Scrolls
+   once it outgrows the panel; scrollbar hidden (same treatment as the
+   canvas viewport) so it doesn't eat into the list's own width. */
+.editor-layers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.editor-layers-list::-webkit-scrollbar { display: none; }
 .editor-layer-item {
   display: flex;
   align-items: center;
