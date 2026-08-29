@@ -146,7 +146,8 @@ const ZOOM_MIN = 25;
 const ZOOM_MAX = 300;
 const ZOOM_STEP = 10; // per button click — a deliberate, discrete action
 const ZOOM_WHEEL_STEP = 5; // per wheel/trackpad tick
-let zoomLevel = 100;
+const DEFAULT_ZOOM = 90; // slightly zoomed out, so the whole card sits comfortably inside the canvas area
+let zoomLevel = DEFAULT_ZOOM;
 
 const canvasFrame = document.querySelector('.editor-canvas-frame');
 const zoomValueEl = document.getElementById('zoom-value');
@@ -254,12 +255,17 @@ if (canvasScroll) {
   const recenterBtn = document.getElementById('recenter-view');
   if (recenterBtn) {
     recenterBtn.addEventListener('click', () => {
-      zoomLevel = 100;
+      zoomLevel = DEFAULT_ZOOM;
       applyZoom();
       centerPanArea();
     });
   }
 }
+
+// Match the initial zoom (and its label/button states) to the same
+// DEFAULT_ZOOM used above — the HTML's own static "100%" text is just a
+// placeholder until this runs.
+applyZoom();
 
 // ---- Renderings panel resize (drag the left edge) ----
 // The panel has its own explicit width (see card-editor.css); the panel
@@ -1023,7 +1029,12 @@ if (fabricCanvasEl && window.fabric) {
     hideEdgeIndicator();
   }
   function handleSelection(e) {
-    const obj = (e.selected && e.selected[0]) || fabricCanvas.getActiveObject();
+    // getActiveObject() first, not e.selected[0]: for a multi-selection,
+    // e.selected[0] is just one of the newly-selected members, which
+    // would wrongly show that single object's toolbar/edge indicator
+    // instead of recognizing the real active object is the whole
+    // ActiveSelection.
+    const obj = fabricCanvas.getActiveObject() || (e.selected && e.selected[0]);
     if (obj && (obj.type === 'i-text' || SHAPE_TYPES.includes(obj.type))) {
       showObjectToolbarFor(obj);
       applyScalingControlsVisibility(obj);
@@ -1430,30 +1441,47 @@ if (fabricCanvasEl && window.fabric) {
   // absolute bounding rect rather than its raw left/top, so it's correct
   // regardless of the object's origin, scale, or rotation.
   const objAlignButtons = document.querySelectorAll('.editor-align-btn[data-align-op]');
-  function alignActiveObject(op) {
-    const obj = fabricCanvas.getActiveObject();
-    if (!obj) return;
-    const canvasW = fabricCanvas.getWidth();
-    const canvasH = fabricCanvas.getHeight();
+  // Shifts obj so its bounding box aligns to `target` ({left, top, width,
+  // height}, in absolute canvas coordinates) per op — shared by both a
+  // single object aligning to the card and a multi-selection's other
+  // members aligning to the first one selected.
+  function alignRectTo(obj, op, target) {
     const rect = obj.getBoundingRect(true, true);
     let dx = 0;
     let dy = 0;
     if (op === 'left' || op === 'center' || op === 'center-h') {
-      const targetLeft = op === 'left' ? 0 : (canvasW - rect.width) / 2;
+      const targetLeft = op === 'left' ? target.left : target.left + (target.width - rect.width) / 2;
       dx = targetLeft - rect.left;
     } else if (op === 'right') {
-      dx = canvasW - (rect.left + rect.width);
+      dx = (target.left + target.width) - (rect.left + rect.width);
     }
     if (op === 'top' || op === 'center' || op === 'center-v') {
-      const targetTop = op === 'top' ? 0 : (canvasH - rect.height) / 2;
+      const targetTop = op === 'top' ? target.top : target.top + (target.height - rect.height) / 2;
       dy = targetTop - rect.top;
     } else if (op === 'bottom') {
-      dy = canvasH - (rect.top + rect.height);
+      dy = (target.top + target.height) - (rect.top + rect.height);
     }
     obj.set({ left: obj.left + dx, top: obj.top + dy });
     obj.setCoords();
+  }
+  function alignActiveObject(op) {
+    const active = fabricCanvas.getActiveObject();
+    if (!active) return;
+    if (active.type === 'activeSelection' && active.getObjects().length > 1) {
+      // Align every other selected object to the first one selected —
+      // picking an anchor and lining the rest up against it — rather
+      // than moving the whole selection as a block against the card.
+      const members = active.getObjects();
+      const target = members[0].getBoundingRect(true, true);
+      members.slice(1).forEach((obj) => alignRectTo(obj, op, target));
+      fabricCanvas.requestRenderAll();
+      refreshTransformFields(active);
+      return;
+    }
+    const target = { left: 0, top: 0, width: fabricCanvas.getWidth(), height: fabricCanvas.getHeight() };
+    alignRectTo(active, op, target);
     fabricCanvas.requestRenderAll();
-    refreshTransformFields(obj);
+    refreshTransformFields(active);
   }
   objAlignButtons.forEach((btn) => {
     btn.addEventListener('click', () => alignActiveObject(btn.dataset.alignOp));
