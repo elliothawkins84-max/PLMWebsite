@@ -464,6 +464,11 @@ if (fabricCanvasEl && window.fabric) {
     applyScalingControlsVisibility(shape);
     fabricCanvas.requestRenderAll();
     showObjectToolbarFor(shape);
+    // The shape was already added at drag-start (with a placeholder
+    // size) which pushed its own history step — this captures the drag's
+    // real, settled size/position, since nothing else does once drawing
+    // ends.
+    pushHistory();
   }
 
   let shapeDraw = null; // { type, x0, y0, shape }
@@ -474,9 +479,13 @@ if (fabricCanvasEl && window.fabric) {
     const type = currentShapeType;
     const shape = type === 'line' ? makeLine(pointer.x, pointer.y, pointer.x, pointer.y) : makeBoxShape(type);
     if (type !== 'line') fitBoxShape(shape, type, pointer.x, pointer.y, pointer.x, pointer.y);
+    // Set before add() (not after) so the object:added history listener
+    // below can see a draw is in progress and skip it — the shape's real
+    // size isn't known until the drag ends, so only finalizeShape's own
+    // pushHistory() call should record this as a single undo step.
+    shapeDraw = { type, x0: pointer.x, y0: pointer.y, shape };
     fabricCanvas.add(shape);
     fabricCanvas.requestRenderAll();
-    shapeDraw = { type, x0: pointer.x, y0: pointer.y, shape };
     showShapeDrawLabel(pointer.x, pointer.y, 0, 0);
   });
 
@@ -588,6 +597,7 @@ if (fabricCanvasEl && window.fabric) {
       setLineDashStyle(obj, btn.dataset.lineStyle);
       refreshLineStyleUI(obj);
       fabricCanvas.requestRenderAll();
+      pushHistory();
     });
   });
 
@@ -696,6 +706,7 @@ if (fabricCanvasEl && window.fabric) {
       setShapeFillMode(obj, btn.dataset.fillMode);
       refreshFillModeUI(obj);
       fabricCanvas.requestRenderAll();
+      pushHistory();
     });
   });
   strokeAlignButtons.forEach((btn) => {
@@ -706,6 +717,7 @@ if (fabricCanvasEl && window.fabric) {
       applyStrokeRender(obj);
       refreshFillModeUI(obj);
       fabricCanvas.requestRenderAll();
+      pushHistory();
     });
   });
 
@@ -783,6 +795,7 @@ if (fabricCanvasEl && window.fabric) {
     applyScalingControlsVisibility(group);
     fabricCanvas.requestRenderAll();
     showObjectToolbarFor(group);
+    pushHistory();
   }
   function ungroupActiveObject() {
     const active = fabricCanvas.getActiveObject();
@@ -791,6 +804,7 @@ if (fabricCanvasEl && window.fabric) {
     active.toActiveSelection();
     fabricCanvas.requestRenderAll();
     hideObjectToolbar();
+    pushHistory();
   }
 
   // ---- Z-order ----
@@ -803,6 +817,7 @@ if (fabricCanvasEl && window.fabric) {
     fabricCanvas.bringToFront(active);
     fabricCanvas.requestRenderAll();
     refreshLayersList();
+    pushHistory();
   }
   function sendActiveToBack() {
     const active = fabricCanvas.getActiveObject();
@@ -810,6 +825,7 @@ if (fabricCanvasEl && window.fabric) {
     fabricCanvas.sendToBack(active);
     fabricCanvas.requestRenderAll();
     refreshLayersList();
+    pushHistory();
   }
   // Shared by the Delete keyboard shortcut and the context menu's Delete
   // item — handles a single selected object or a whole multi-selection.
@@ -822,7 +838,107 @@ if (fabricCanvasEl && window.fabric) {
     objects.forEach((o) => fabricCanvas.remove(o));
     fabricCanvas.requestRenderAll();
     hideObjectToolbar();
+    pushHistory();
   }
+
+  // ---- Undo / Redo ----
+  // Whole-canvas JSON snapshots rather than a diff/command log — simplest
+  // way to cover every kind of edit in this file (drags, field commits,
+  // fill/stroke/anchor/dash changes, group/union/subtract, delete...)
+  // without having to hand-write an inverse for each one. Custom
+  // properties that aren't native Fabric ones (strokeAlign, the real
+  // stroke width behind inside/outside placement, the line dash choice)
+  // are passed to toJSON explicitly so they round-trip too; clipPath and
+  // everything else standard already serializes on its own. Helper
+  // overlays (the edge indicator, snap guide lines) are excluded
+  // automatically since they're marked excludeFromExport.
+  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle'];
+  const HISTORY_LIMIT = 50;
+  const undoBtn = document.getElementById('undo-btn');
+  const redoBtn = document.getElementById('redo-btn');
+  let undoStack = [];
+  let redoStack = [];
+  let isRestoringHistory = false;
+  function updateUndoRedoButtons() {
+    if (undoBtn) undoBtn.disabled = undoStack.length < 2;
+    if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+  }
+  // Called after every discrete edit settles (never mid-drag) — see the
+  // individual call sites throughout this file. Harmless to call more
+  // than once for the same edit: identical-to-the-top-of-stack snapshots
+  // are skipped, so a Fabric event and an explicit call for the same
+  // action don't create a duplicate undo step.
+  function pushHistory() {
+    if (isRestoringHistory) return;
+    const snapshot = JSON.stringify(fabricCanvas.toJSON(HISTORY_PROPS));
+    if (undoStack.length && undoStack[undoStack.length - 1] === snapshot) return;
+    undoStack.push(snapshot);
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack = [];
+    updateUndoRedoButtons();
+  }
+  function restoreHistorySnapshot(snapshot) {
+    isRestoringHistory = true;
+    fabricCanvas.discardActiveObject();
+    hideEdgeIndicator();
+    clearSnapGuides();
+    fabricCanvas.loadFromJSON(snapshot, () => {
+      fabricCanvas.requestRenderAll();
+      isRestoringHistory = false;
+      hideObjectToolbar();
+      refreshLayersList();
+      updateUndoRedoButtons();
+    });
+  }
+  function undo() {
+    if (undoStack.length < 2) return;
+    redoStack.push(undoStack.pop());
+    restoreHistorySnapshot(undoStack[undoStack.length - 1]);
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    const snapshot = redoStack.pop();
+    undoStack.push(snapshot);
+    restoreHistorySnapshot(snapshot);
+  }
+  if (undoBtn) undoBtn.addEventListener('click', undo);
+  if (redoBtn) redoBtn.addEventListener('click', redo);
+  // Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z — skipped while actually typing (a
+  // text input's own native undo, or Fabric's in-progress text editing,
+  // should win instead).
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+      const tag = e.target && e.target.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      const active = fabricCanvas.getActiveObject();
+      if (active && active.isEditing) return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    }
+  });
+  // Catches interactive drag/scale/rotate (fires once when the drag
+  // ends) plus most add/remove — but not helper overlays, and not the
+  // rapid-fire add/remove of a live drag's snap guide lines.
+  function isHistoryWorthy(target) {
+    return !target || target.evented !== false;
+  }
+  fabricCanvas.on('object:modified', (opt) => {
+    if (isHistoryWorthy(opt.target)) pushHistory();
+  });
+  fabricCanvas.on('object:added', (opt) => {
+    // A shape mid-drag was just added with a placeholder size — skip it,
+    // finalizeShape() records the real, settled result as one step once
+    // the drag ends.
+    if (shapeDraw) return;
+    if (isHistoryWorthy(opt.target)) pushHistory();
+  });
+  fabricCanvas.on('object:removed', (opt) => {
+    if (isHistoryWorthy(opt.target)) pushHistory();
+  });
+  // Baseline snapshot so undo from the very first edit returns to a
+  // truly empty card, instead of having nothing before it to land on.
+  pushHistory();
 
   // ---- Boolean shape operations (Union / Subtract) ----
   // Approximates each source object as a flat polygon in absolute canvas
@@ -1140,6 +1256,7 @@ if (fabricCanvasEl && window.fabric) {
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
     refreshLayersList();
+    pushHistory();
   });
   // Keeps a text layer's row showing its actual content live while typing,
   // not just once editing ends.
@@ -1285,6 +1402,7 @@ if (fabricCanvasEl && window.fabric) {
       if (!obj) return;
       obj.set('fontFamily', fontFamilySelect.value);
       fabricCanvas.requestRenderAll();
+      pushHistory();
     });
   }
 
@@ -1335,6 +1453,10 @@ if (fabricCanvasEl && window.fabric) {
         refreshTransformFields(obj);
       }
     });
+    // History is recorded on 'change' (fires once the field is left),
+    // not on every 'input' keystroke above — otherwise typing a font
+    // size would flood the undo stack with one step per digit.
+    fontSizeInput.addEventListener('change', () => pushHistory());
   }
   alignButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1343,6 +1465,7 @@ if (fabricCanvasEl && window.fabric) {
       obj.set('textAlign', btn.dataset.align);
       alignButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
       fabricCanvas.requestRenderAll();
+      pushHistory();
     });
   });
 
@@ -1413,6 +1536,7 @@ if (fabricCanvasEl && window.fabric) {
     obj.setCoords();
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
+    pushHistory();
   });
 
   // ---- Anchor picker: clicking a point in the dropdown grid sets it ----
@@ -1423,6 +1547,7 @@ if (fabricCanvasEl && window.fabric) {
       setObjectAnchor(obj, btn.dataset.anchor);
       fabricCanvas.requestRenderAll();
       refreshTransformFields(obj);
+      pushHistory();
     });
   });
 
@@ -1439,6 +1564,7 @@ if (fabricCanvasEl && window.fabric) {
     obj.setCoords();
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
+    pushHistory();
   }
   commitOnEnterOrBlur(posXInput, (val) => moveActiveObjectAnchorTo('x', val));
   commitOnEnterOrBlur(posYInput, (val) => moveActiveObjectAnchorTo('y', val));
@@ -1479,6 +1605,7 @@ if (fabricCanvasEl && window.fabric) {
     obj.setCoords();
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
+    pushHistory();
   }
   commitOnEnterOrBlur(sizeWInput, (val) => applySizeMm('w', val));
   commitOnEnterOrBlur(sizeHInput, (val) => applySizeMm('h', val));
@@ -1491,6 +1618,7 @@ if (fabricCanvasEl && window.fabric) {
     applyStrokeRender(obj);
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
+    pushHistory();
   });
 
   // ---- Scaling checkboxes (text's "Non-uniform scale", shapes' "Uniform
@@ -1547,12 +1675,14 @@ if (fabricCanvasEl && window.fabric) {
       members.slice(1).forEach((obj) => alignRectTo(obj, op, target));
       fabricCanvas.requestRenderAll();
       refreshTransformFields(active);
+      pushHistory();
       return;
     }
     const target = { left: 0, top: 0, width: fabricCanvas.getWidth(), height: fabricCanvas.getHeight() };
     alignRectTo(active, op, target);
     fabricCanvas.requestRenderAll();
     refreshTransformFields(active);
+    pushHistory();
   }
   objAlignButtons.forEach((btn) => {
     btn.addEventListener('click', () => alignActiveObject(btn.dataset.alignOp));
