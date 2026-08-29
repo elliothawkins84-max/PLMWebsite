@@ -541,23 +541,58 @@ if (fabricCanvasEl && window.fabric) {
   // sometimes a bare shape depending on what was in the file.
   const uploadBtn = document.getElementById('tool-upload');
   const importFileInput = document.getElementById('import-file-input');
+  // CSS px is defined as 1/96in; our canvas uses PX_PER_MM px per mm instead,
+  // so a value declared in real-world units (mm/cm/in/pt/pc) needs converting
+  // from the 96dpi space Fabric's SVG parser assumes into our own scale —
+  // otherwise a design authored at a known physical size comes in shrunk.
+  const MM_PER_UNIT = { mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6, px: 25.4 / 96 };
+  function parseSvgLengthToMm(str) {
+    if (!str) return null;
+    const match = String(str).trim().match(/^([\d.]+)\s*(mm|cm|in|pt|pc|px)?$/i);
+    if (!match) return null;
+    const value = parseFloat(match[1]);
+    if (!isFinite(value)) return null;
+    const unit = (match[2] || 'px').toLowerCase();
+    return value * MM_PER_UNIT[unit];
+  }
   function importSvgFile(file) {
     const reader = new FileReader();
     reader.onload = () => {
-      fabric.loadSVGFromString(String(reader.result), (objects) => {
+      const svgText = String(reader.result);
+      fabric.loadSVGFromString(svgText, (objects, options) => {
         const valid = (objects || []).filter(Boolean);
         if (!valid.length) {
           alert('Could not import that file — no supported shapes were found in it.');
           return;
         }
+        // Fabric objects default to strokeWidth:1 even with no stroke paint,
+        // which pads their bounding box and throws off the physical scale
+        // computed below — zero it out wherever there's no visible stroke.
+        valid.forEach((o) => {
+          if (!o.stroke) o.strokeWidth = 0;
+        });
         const group = new fabric.Group(valid, { originX: 'left', originY: 'top', centeredRotation: false });
-        // Imported artwork can be any size — scale it down (never up, so
-        // a tiny icon doesn't get blown up) to fit comfortably within the
-        // card, then center it.
-        const maxW = fabricCanvas.getWidth() * 0.7;
-        const maxH = fabricCanvas.getHeight() * 0.7;
-        const scale = Math.min(1, maxW / group.width, maxH / group.height);
-        if (scale < 1) group.scale(scale);
+
+        // If the SVG declares a real-world width/height (e.g. width="40mm"),
+        // rescale so the import lands on the card at that exact physical
+        // size, converting from Fabric's 96dpi assumption to our PX_PER_MM.
+        const rootTag = (svgText.match(/<svg\b[^>]*>/i) || [''])[0];
+        const declaredWmm = parseSvgLengthToMm((rootTag.match(/\bwidth="([^"]+)"/i) || [])[1]);
+        const declaredHmm = parseSvgLengthToMm((rootTag.match(/\bheight="([^"]+)"/i) || [])[1]);
+        if (declaredWmm && options && options.width) {
+          group.scale((declaredWmm * PX_PER_MM) / options.width);
+        } else if (declaredHmm && options && options.height) {
+          group.scale((declaredHmm * PX_PER_MM) / options.height);
+        }
+
+        // Only shrink further if the (now true-to-life) import doesn't
+        // actually fit on the card — never scale up, and don't touch the
+        // size otherwise.
+        const maxW = fabricCanvas.getWidth();
+        const maxH = fabricCanvas.getHeight();
+        const overflowScale = Math.min(1, maxW / group.getScaledWidth(), maxH / group.getScaledHeight());
+        if (overflowScale < 1) group.scale(group.scaleX * overflowScale);
+
         group.set({
           left: (fabricCanvas.getWidth() - group.getScaledWidth()) / 2,
           top: (fabricCanvas.getHeight() - group.getScaledHeight()) / 2,
