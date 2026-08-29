@@ -544,8 +544,15 @@
      throwing off centering/alignment and the guide-line crosshair. An
      outline draws outside the box without taking any of its space. */
   outline: 1.5px solid var(--line-strong);
+  /* 3mm fillet on the physical card's corners (27px at this editor's
+     fixed 9px/mm scale) — outlines follow border-radius the same way a
+     border would. Not applied with overflow:hidden here, since the
+     Front/dimensions label sits just below the card's own box
+     (bottom: -20px) and would otherwise get clipped off; the canvas
+     itself is rounded+clipped separately below instead. */
+  border-radius: 27px;
 }
-.editor-card canvas { position: absolute; top: 0; left: 0; }
+.editor-card canvas { position: absolute; top: 0; left: 0; border-radius: 27px; overflow: hidden; }
 .editor-card-label {
   position: absolute;
   bottom: -20px;
@@ -577,24 +584,20 @@
    editor's fixed 9px-per-mm scale (see PX_PER_MM in card-editor.js);
    since it lives inside the frame that CSS `zoom` scales as a whole,
    this stays correctly aligned at any zoom level without extra math.
-   Four separate edges with a repeating-gradient dash pattern (same
-   technique as the guide lines below) rather than border-style:dashed,
-   for control over dash length — long dashes, few of them, rather than
-   a fine dashed line. */
+   Drawn as a single rounded-rect SVG outline (rather than four separate
+   straight edges) so the long-dash pattern wraps smoothly around its
+   own 3mm fillet, matching the card's own rounded corners. */
 .editor-safe-zone {
   position: absolute;
   inset: 9px;
   pointer-events: none;
 }
-.sz-edge { position: absolute; }
-.sz-top,
-.sz-bottom { left: 0; right: 0; height: 1px; background-image: repeating-linear-gradient(to right, #ff3b3b 0 20px, transparent 20px 32px); }
-.sz-left,
-.sz-right { top: 0; bottom: 0; width: 1px; background-image: repeating-linear-gradient(to bottom, #ff3b3b 0 20px, transparent 20px 32px); }
-.sz-top { top: 0; }
-.sz-bottom { bottom: 0; }
-.sz-left { left: 0; }
-.sz-right { right: 0; }
+.editor-safe-zone rect {
+  fill: none;
+  stroke: #ff3b3b;
+  stroke-width: 1;
+  stroke-dasharray: 20 12;
+}
 
 /* Guides — toggled by the Guides button: a center crosshair (horizontal
    + vertical) for aligning design elements to the middle of the card.
