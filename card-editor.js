@@ -1103,9 +1103,90 @@ if (fabricCanvasEl && window.fabric) {
     // *are* the shape's size in both modes — nothing to fold anywhere.
     refreshTransformFields(obj);
   });
+  // ---- Smart alignment guides while dragging ----
+  // A moving object's edges/center snap to the card's edges/center and to
+  // other objects' edges/centers (Figma/Illustrator-style "smart
+  // guides"), drawing a thin green line for whichever axis just snapped.
+  // The lines are plain temporary Fabric objects, redrawn fresh each drag
+  // frame and cleared once the drag ends.
+  const SNAP_THRESHOLD = 6; // canvas px — scales with the app's own CSS zoom automatically, since that zooms the whole canvas uniformly
+  const SNAP_LINE_COLOR = '#3ddc71';
+  let snapLines = [];
+  function clearSnapGuides() {
+    if (!snapLines.length) return;
+    snapLines.forEach((l) => fabricCanvas.remove(l));
+    snapLines = [];
+    fabricCanvas.requestRenderAll();
+  }
+  function drawSnapLine(isVertical, pos) {
+    const w = fabricCanvas.getWidth();
+    const h = fabricCanvas.getHeight();
+    const coords = isVertical ? [pos, -50, pos, h + 50] : [-50, pos, w + 50, pos];
+    const line = new fabric.Line(coords, {
+      stroke: SNAP_LINE_COLOR, strokeWidth: 1, selectable: false, evented: false,
+      excludeFromExport: true, hoverCursor: 'default',
+    });
+    fabricCanvas.add(line);
+    fabricCanvas.bringToFront(line);
+    snapLines.push(line);
+  }
+  // Left/center/right (or top/center/bottom) of an object's axis-aligned
+  // bounding box — translation shifts this box by the same delta as the
+  // object itself regardless of rotation, so snapping math stays valid
+  // even for a rotated shape.
+  function snapBoundsOf(obj) {
+    const r = obj.getBoundingRect(true, true);
+    return {
+      xs: [r.left, r.left + r.width / 2, r.left + r.width],
+      ys: [r.top, r.top + r.height / 2, r.top + r.height],
+    };
+  }
+  function applySnapping(obj) {
+    // A multi-object drag snaps as one block, against everything else.
+    const moving = obj.type === 'activeSelection' ? obj.getObjects() : [obj];
+    const others = fabricCanvas.getObjects().filter((o) => o.evented !== false && !moving.includes(o));
+    const w = fabricCanvas.getWidth();
+    const h = fabricCanvas.getHeight();
+    const targetXs = [0, w / 2, w];
+    const targetYs = [0, h / 2, h];
+    others.forEach((o) => {
+      const b = snapBoundsOf(o);
+      targetXs.push(...b.xs);
+      targetYs.push(...b.ys);
+    });
+    const own = snapBoundsOf(obj);
+    let bestX = null;
+    own.xs.forEach((x) => {
+      targetXs.forEach((tx) => {
+        const d = tx - x;
+        if (Math.abs(d) <= SNAP_THRESHOLD && (!bestX || Math.abs(d) < Math.abs(bestX.d))) bestX = { d, tx };
+      });
+    });
+    let bestY = null;
+    own.ys.forEach((y) => {
+      targetYs.forEach((ty) => {
+        const d = ty - y;
+        if (Math.abs(d) <= SNAP_THRESHOLD && (!bestY || Math.abs(d) < Math.abs(bestY.d))) bestY = { d, ty };
+      });
+    });
+    clearSnapGuides();
+    if (bestX) {
+      obj.left += bestX.d;
+      drawSnapLine(true, bestX.tx);
+    }
+    if (bestY) {
+      obj.top += bestY.d;
+      drawSnapLine(false, bestY.ty);
+    }
+    if (bestX || bestY) obj.setCoords();
+  }
+  fabricCanvas.on('mouse:up', clearSnapGuides);
+
   // Live readouts while dragging the move handle or the rotate handle.
   fabricCanvas.on('object:moving', (opt) => {
-    if (opt.target) refreshTransformFields(opt.target);
+    if (!opt.target) return;
+    applySnapping(opt.target);
+    refreshTransformFields(opt.target);
   });
   fabricCanvas.on('object:rotating', (opt) => {
     if (opt.target) refreshTransformFields(opt.target);
@@ -1514,8 +1595,18 @@ if (fabricCanvasEl && window.fabric) {
       layersList.appendChild(li);
     });
   }
-  fabricCanvas.on('object:added', refreshLayersList);
-  fabricCanvas.on('object:removed', refreshLayersList);
+  // Helper overlays (the edge indicator, snap guide lines) are
+  // evented:false and never shown in the list anyway, so skip the
+  // rebuild for those — otherwise every drag frame's snap-line add/
+  // remove would needlessly rebuild this list too.
+  fabricCanvas.on('object:added', (opt) => {
+    if (opt.target && opt.target.evented === false) return;
+    refreshLayersList();
+  });
+  fabricCanvas.on('object:removed', (opt) => {
+    if (opt.target && opt.target.evented === false) return;
+    refreshLayersList();
+  });
   fabricCanvas.on('selection:created', refreshLayersList);
   fabricCanvas.on('selection:updated', refreshLayersList);
   fabricCanvas.on('selection:cleared', refreshLayersList);
