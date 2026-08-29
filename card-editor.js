@@ -521,6 +521,104 @@ if (fabricCanvasEl && window.fabric) {
     showShapeDrawLabel(Math.max(x0, x1), Math.max(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
   });
 
+  // ---- Shape-size modal ----
+  // A plain click (no drag) with the Shapes tool used to just drop a
+  // fixed-size default shape at the click point — now it opens this
+  // dialog instead, so the exact size can be typed in. `shape` is the
+  // placeholder Fabric already added at mouse:down (1x1, invisible);
+  // Cancel removes it, Done resizes/repositions it (or, for a Line,
+  // rebuilds it, since a Line's endpoints are baked in at construction)
+  // and centers it on the original click point (x0, y0).
+  const shapeSizeModal = document.getElementById('shape-size-modal');
+  const shapeSizeModalWField = document.getElementById('shape-size-modal-w-field');
+  const shapeSizeModalHField = document.getElementById('shape-size-modal-h-field');
+  const shapeSizeModalWLabel = document.getElementById('shape-size-modal-w-label');
+  const shapeSizeModalW = document.getElementById('shape-size-modal-w');
+  const shapeSizeModalH = document.getElementById('shape-size-modal-h');
+  const shapeSizeModalCancel = document.getElementById('shape-size-modal-cancel');
+  const shapeSizeModalDone = document.getElementById('shape-size-modal-done');
+  const SHAPE_SIZE_MODAL_DEFAULT_MM = 20;
+  let pendingShapeSize = null; // { shape, type, x0, y0 }
+  function isShapeSizeModalOpen() {
+    return !!(shapeSizeModal && shapeSizeModal.classList.contains('is-open'));
+  }
+  function openShapeSizeModal(shape, type, x0, y0) {
+    if (!shapeSizeModal) {
+      // No modal in the DOM (shouldn't happen) — fall back to the old
+      // fixed default so drawing still works.
+      const SIZE = 60;
+      fitBoxShape(shape, type, x0 - SIZE / 2, y0 - SIZE / 2, x0 + SIZE / 2, y0 + SIZE / 2);
+      finalizeShape(shape);
+      return;
+    }
+    pendingShapeSize = { shape, type, x0, y0 };
+    const isLine = type === 'line';
+    if (shapeSizeModalWLabel) shapeSizeModalWLabel.textContent = isLine ? 'L' : 'W';
+    if (shapeSizeModalHField) shapeSizeModalHField.classList.toggle('is-hidden', isLine);
+    if (shapeSizeModalWField) shapeSizeModalWField.title = isLine ? 'Length' : 'Width';
+    if (shapeSizeModalW) shapeSizeModalW.value = SHAPE_SIZE_MODAL_DEFAULT_MM;
+    if (shapeSizeModalH) shapeSizeModalH.value = SHAPE_SIZE_MODAL_DEFAULT_MM;
+    shapeSizeModal.classList.add('is-open');
+    shapeSizeModal.setAttribute('aria-hidden', 'false');
+    if (shapeSizeModalW) {
+      shapeSizeModalW.focus();
+      shapeSizeModalW.select();
+    }
+  }
+  function closeShapeSizeModal() {
+    if (!shapeSizeModal) return;
+    shapeSizeModal.classList.remove('is-open');
+    shapeSizeModal.setAttribute('aria-hidden', 'true');
+    pendingShapeSize = null;
+  }
+  function cancelShapeSizeModal() {
+    if (!pendingShapeSize) return;
+    fabricCanvas.remove(pendingShapeSize.shape);
+    fabricCanvas.requestRenderAll();
+    closeShapeSizeModal();
+  }
+  function commitShapeSizeModal() {
+    if (!pendingShapeSize) return;
+    const { shape, type, x0, y0 } = pendingShapeSize;
+    const wMm = parseFloat(shapeSizeModalW ? shapeSizeModalW.value : '');
+    const hMm = parseFloat(shapeSizeModalH ? shapeSizeModalH.value : '');
+    if (!(wMm > 0) || (type !== 'line' && !(hMm > 0))) return; // leave the dialog open to fix it
+    const wPx = wMm * PX_PER_MM;
+    if (type === 'line') {
+      // Same reason as the live drag preview: a Line's endpoints are
+      // fixed at construction, so redrawing it means a fresh object.
+      suppressHistoryEvents = true;
+      fabricCanvas.remove(shape);
+      const line = makeLine(x0 - wPx / 2, y0, x0 + wPx / 2, y0);
+      fabricCanvas.add(line);
+      suppressHistoryEvents = false;
+      closeShapeSizeModal();
+      finalizeShape(line);
+      return;
+    }
+    const hPx = hMm * PX_PER_MM;
+    fitBoxShape(shape, type, x0 - wPx / 2, y0 - hPx / 2, x0 + wPx / 2, y0 + hPx / 2);
+    closeShapeSizeModal();
+    finalizeShape(shape);
+  }
+  if (shapeSizeModalCancel) shapeSizeModalCancel.addEventListener('click', cancelShapeSizeModal);
+  if (shapeSizeModalDone) shapeSizeModalDone.addEventListener('click', commitShapeSizeModal);
+  // Click on the dark overlay (outside the dialog box) cancels too.
+  if (shapeSizeModal) {
+    shapeSizeModal.addEventListener('mousedown', (e) => {
+      if (e.target === shapeSizeModal) cancelShapeSizeModal();
+    });
+  }
+  [shapeSizeModalW, shapeSizeModalH].forEach((input) => {
+    if (!input) return;
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitShapeSizeModal();
+      }
+    });
+  });
+
   function finishShapeDraw() {
     if (!shapeDraw) return;
     const { shape, type, x0, y0 } = shapeDraw;
@@ -528,15 +626,8 @@ if (fabricCanvasEl && window.fabric) {
     hideShapeDrawLabel();
     const rect = shape.getBoundingRect(true, true);
     if (rect.width < 4 && rect.height < 4) {
-      const SIZE = 60; // px — about 6.7mm at PX_PER_MM=9
-      if (type === 'line') {
-        fabricCanvas.remove(shape);
-        const line = makeLine(x0 - SIZE / 2, y0, x0 + SIZE / 2, y0);
-        fabricCanvas.add(line);
-        finalizeShape(line);
-        return;
-      }
-      fitBoxShape(shape, type, x0 - SIZE / 2, y0 - SIZE / 2, x0 + SIZE / 2, y0 + SIZE / 2);
+      openShapeSizeModal(shape, type, x0, y0);
+      return;
     }
     finalizeShape(shape);
   }
@@ -1997,6 +2088,10 @@ if (fabricCanvasEl && window.fabric) {
   // but-not-editing object is deselected outright.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    if (isShapeSizeModalOpen()) {
+      cancelShapeSizeModal();
+      return;
+    }
     const obj = fabricCanvas.getActiveObject();
     if (!obj) return;
     if (obj.isEditing) {

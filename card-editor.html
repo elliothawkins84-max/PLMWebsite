@@ -401,6 +401,33 @@
     <button type="button" class="editor-context-menu-item editor-context-menu-item--danger" data-action="delete">Delete</button>
   </div>
 
+  <!-- Shown on a plain click (no drag) with the Shapes tool, in place of
+       the old fixed default size — lets the exact size be typed in
+       instead. Centered on screen (see card-editor.js for the shape
+       itself, which lands centered on the click point); Cancel removes
+       the placeholder shape, Done commits it at the entered size. -->
+  <div class="editor-modal-overlay" id="shape-size-modal" aria-hidden="true">
+    <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="shape-size-modal-title">
+      <h2 class="editor-modal-title" id="shape-size-modal-title">Shape size</h2>
+      <div class="editor-modal-fields">
+        <label class="editor-field" title="Width" id="shape-size-modal-w-field">
+          <span class="editor-field-label" id="shape-size-modal-w-label">W</span>
+          <input type="number" id="shape-size-modal-w" aria-label="Width" step="0.01" min="0.01" />
+          <span class="editor-field-unit">mm</span>
+        </label>
+        <label class="editor-field" title="Height" id="shape-size-modal-h-field">
+          <span class="editor-field-label">H</span>
+          <input type="number" id="shape-size-modal-h" aria-label="Height" step="0.01" min="0.01" />
+          <span class="editor-field-unit">mm</span>
+        </label>
+      </div>
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="shape-size-modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-sm" id="shape-size-modal-done">Done</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
   <script src="https://unpkg.com/polybooljs@1.2.2/dist/polybool.js"></script>
   <script src="card-editor.js"></script>

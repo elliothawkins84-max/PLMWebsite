@@ -821,6 +821,45 @@
 .editor-context-menu-item--danger:hover:not(:disabled) { background: rgba(255, 80, 80, 0.15); color: #ff6b6b; }
 .editor-context-menu-divider { height: 1px; background: var(--line); margin: 4px 2px; }
 
+/* ---- Shape-size modal (plain click with the Shapes tool) ---- */
+.editor-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.5);
+  align-items: center;
+  justify-content: center;
+}
+.editor-modal-overlay.is-open { display: flex; }
+.editor-modal {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 20px;
+  width: 220px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  font-family: var(--mono);
+}
+.editor-modal-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+  margin-bottom: 16px;
+}
+.editor-modal-fields {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.editor-modal-fields .editor-field { flex: 1; }
+.editor-modal-fields .editor-field.is-hidden { display: none; }
+.editor-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* ---- Desktop-only gate ---- */
 @media (max-width: 900px) {
   .editor-shell { display: none; }
