@@ -653,9 +653,20 @@ if (fabricCanvasEl && window.fabric) {
   // elsewhere.
   const EDGE_INDICATOR_COLOR = '#1e90ff';
   let edgeIndicator = null;
+  // Positioned by the object's true center point, always under a plain
+  // 'center' origin of its own — deliberately ignoring the real object's
+  // own left/top/originX/originY. Fabric's non-center origins (the anchor
+  // feature) convert between "left/top" and the object's actual center
+  // using its own strokeWidth as padding, so copying left/top verbatim
+  // onto an indicator with a *different* strokeWidth (it's always thin,
+  // while the real shape's is doubled for inside/outside placement) lands
+  // it in the wrong place for any anchor but center. Center-origin math
+  // has no such padding, so it's immune to that mismatch regardless of
+  // either object's strokeWidth.
   function makeEdgeIndicatorFor(obj) {
+    const center = obj.getCenterPoint();
     const common = {
-      left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
+      left: center.x, top: center.y, originX: 'center', originY: 'center',
       angle: obj.angle, scaleX: obj.scaleX, scaleY: obj.scaleY,
       fill: null, stroke: EDGE_INDICATOR_COLOR, strokeWidth: 2, strokeUniform: true,
       // A dark halo behind the line so it stays readable even when it
@@ -681,8 +692,9 @@ if (fabricCanvasEl && window.fabric) {
   }
   function syncEdgeIndicator(obj) {
     if (!edgeIndicator) return;
+    const center = obj.getCenterPoint();
     const props = {
-      left: obj.left, top: obj.top, originX: obj.originX, originY: obj.originY,
+      left: center.x, top: center.y, originX: 'center', originY: 'center',
       angle: obj.angle, scaleX: obj.scaleX, scaleY: obj.scaleY,
       width: obj.width, height: obj.height,
     };
