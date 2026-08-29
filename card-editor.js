@@ -577,12 +577,28 @@ if (fabricCanvasEl && window.fabric) {
         // rescale so the import lands on the card at that exact physical
         // size, converting from Fabric's 96dpi assumption to our PX_PER_MM.
         const rootTag = (svgText.match(/<svg\b[^>]*>/i) || [''])[0];
-        const declaredWmm = parseSvgLengthToMm((rootTag.match(/\bwidth="([^"]+)"/i) || [])[1]);
-        const declaredHmm = parseSvgLengthToMm((rootTag.match(/\bheight="([^"]+)"/i) || [])[1]);
-        if (declaredWmm && options && options.width) {
-          group.scale((declaredWmm * PX_PER_MM) / options.width);
-        } else if (declaredHmm && options && options.height) {
-          group.scale((declaredHmm * PX_PER_MM) / options.height);
+        let declaredWmm = parseSvgLengthToMm((rootTag.match(/\bwidth="([^"]+)"/i) || [])[1]);
+        let declaredHmm = parseSvgLengthToMm((rootTag.match(/\bheight="([^"]+)"/i) || [])[1]);
+        const viewBoxParts = ((rootTag.match(/\bviewBox="([^"]+)"/i) || [])[1] || '')
+          .trim()
+          .split(/[\s,]+/)
+          .map(Number);
+        const [, , viewBoxW, viewBoxH] = viewBoxParts.length === 4 ? viewBoxParts : [];
+        // Many design tools (e.g. Illustrator) export with no width/height
+        // attribute at all — just a viewBox — using PostScript points
+        // (72/inch) as the coordinate system. Fall back to that only when
+        // there's truly no other sizing info, since it's the standard
+        // default unit for print-oriented SVG/PDF tooling.
+        if (!declaredWmm && !declaredHmm && viewBoxW && viewBoxH) {
+          declaredWmm = viewBoxW * MM_PER_UNIT.pt;
+          declaredHmm = viewBoxH * MM_PER_UNIT.pt;
+        }
+        const refW = (options && options.width) || viewBoxW;
+        const refH = (options && options.height) || viewBoxH;
+        if (declaredWmm && refW) {
+          group.scale((declaredWmm * PX_PER_MM) / refW);
+        } else if (declaredHmm && refH) {
+          group.scale((declaredHmm * PX_PER_MM) / refH);
         }
 
         // Only shrink further if the (now true-to-life) import doesn't
