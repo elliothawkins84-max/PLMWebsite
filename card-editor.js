@@ -146,7 +146,14 @@ const ZOOM_MIN = 25;
 const ZOOM_MAX = 300;
 const ZOOM_STEP = 10; // per button click — a deliberate, discrete action
 const ZOOM_WHEEL_STEP = 5; // per wheel/trackpad tick
-const DEFAULT_ZOOM = 90; // slightly zoomed out, so the whole card sits comfortably inside the canvas area
+const DEFAULT_ZOOM = 100;
+// The old default was a true 90% (the card sitting slightly smaller than
+// its native size, so it fits comfortably in the canvas area) — rather
+// than hardcode that look as a one-off "100% happens to render at 90%"
+// special case, every displayed zoom percentage is scaled by this factor
+// before being applied, so 100% now *is* that size, and the whole
+// min/max range shifts proportionally along with it.
+const ZOOM_CALIBRATION = 0.9;
 let zoomLevel = DEFAULT_ZOOM;
 
 const canvasFrame = document.querySelector('.editor-canvas-frame');
@@ -155,7 +162,7 @@ const zoomOutBtn = document.getElementById('zoom-out');
 const zoomInBtn = document.getElementById('zoom-in');
 
 function applyZoom() {
-  if (canvasFrame) canvasFrame.style.zoom = zoomLevel / 100;
+  if (canvasFrame) canvasFrame.style.zoom = (zoomLevel / 100) * ZOOM_CALIBRATION;
   if (zoomValueEl) zoomValueEl.textContent = `${zoomLevel}%`;
   if (zoomOutBtn) zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN;
   if (zoomInBtn) zoomInBtn.disabled = zoomLevel >= ZOOM_MAX;
