@@ -1249,6 +1249,12 @@ if (fabricCanvasEl && window.fabric) {
   }
   function restoreHistorySnapshot(snapshot) {
     isRestoringHistory = true;
+    // Whatever's loose from a group-edit session is about to be wiped
+    // out by loadFromJSON below anyway — drop it now so the
+    // discardActiveObject() cascade below doesn't do the (harmless but
+    // pointless) work of re-grouping members that are seconds from being
+    // replaced wholesale.
+    groupEditSession = null;
     fabricCanvas.discardActiveObject();
     hideEdgeIndicator();
     clearSnapGuides();
@@ -1799,6 +1805,10 @@ if (fabricCanvasEl && window.fabric) {
     // instead of recognizing the real active object is the whole
     // ActiveSelection.
     const obj = fabricCanvas.getActiveObject() || (e.selected && e.selected[0]);
+    // Selection moved to something outside the currently-loose group
+    // piece(s) — re-form the group before handling whatever's newly
+    // selected (which stays selected; see endGroupEditSession).
+    if (groupEditSession && !isWithinGroupEditSession(obj)) endGroupEditSession();
     if (obj && (obj.type === 'i-text' || SHAPE_TYPES.includes(obj.type))) {
       showObjectToolbarFor(obj);
       applyScalingControlsVisibility(obj);
@@ -1808,7 +1818,10 @@ if (fabricCanvasEl && window.fabric) {
   }
   fabricCanvas.on('selection:created', handleSelection);
   fabricCanvas.on('selection:updated', handleSelection);
-  fabricCanvas.on('selection:cleared', hideObjectToolbar);
+  fabricCanvas.on('selection:cleared', () => {
+    endGroupEditSession();
+    hideObjectToolbar();
+  });
 
   // Clean up a text box left empty (placed, then clicked away from
   // without typing anything) instead of leaving a stray empty object.
@@ -2411,16 +2424,67 @@ if (fabricCanvasEl && window.fabric) {
   // members nested underneath; collapsed state is remembered here across
   // rebuilds since the list itself is rebuilt from scratch every time.
   const collapsedGroups = new Set();
-  // Selects a member nested inside one or more groups directly, so it
-  // can be edited/deleted on its own — Fabric has no way to make a
-  // group's child independently selectable while it's still a member,
-  // so this dissolves each ancestor group in turn (same mechanism as
-  // Ungroup), outermost first, until the object itself is a plain
-  // top-level canvas object, then selects it. This is a permanent split,
-  // same as using Ungroup directly — the other freed pieces are left as
-  // plain top-level objects too; select them all and hit Group again to
-  // re-form it once done.
+  // ---- Editing a member nested inside a group, without breaking it up ----
+  // Fabric has no way to make a group's child independently selectable
+  // while it stays a member, so selecting one from the Layers panel
+  // dissolves each ancestor group in turn (same mechanism as Ungroup),
+  // outermost first, until the clicked object is a plain top-level
+  // canvas object — then, the moment focus moves away from that
+  // temporarily-loose set (a different object gets selected, or
+  // selection is cleared entirely), the exact same groups are silently
+  // rebuilt, innermost first, from whatever's left of their original
+  // members. From the outside this reads as "edit a piece in place,
+  // still part of the group once you're done" — nothing here is a
+  // permanent Ungroup.
+  let groupEditSession = null; // { ancestors, levels } — see selectNestedObject
+  function isWithinGroupEditSession(obj) {
+    if (!groupEditSession || !obj) return false;
+    const { ancestors, levels } = groupEditSession;
+    const loose = new Set();
+    levels.forEach((members) => members.forEach((m) => {
+      if (!ancestors.includes(m)) loose.add(m);
+    }));
+    if (obj.type === 'activeSelection') return obj.getObjects().every((o) => loose.has(o));
+    return loose.has(obj);
+  }
+  // Rebuilds every dissolved ancestor level, innermost first, from
+  // whichever of its original members are still around (one could've
+  // been deleted while loose, or itself be the group rebuilt one level
+  // in) — without disturbing whatever's actually selected right now, so
+  // ending the session doesn't hijack a selection made by clicking a
+  // completely different object while a piece was still loose.
+  function endGroupEditSession() {
+    if (!groupEditSession) return;
+    const { ancestors, levels } = groupEditSession;
+    groupEditSession = null;
+    const keepActive = fabricCanvas.getActiveObject();
+    suppressHistoryEvents = true;
+    let rebuilt = null;
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      const nestedChild = ancestors[i + 1] || null;
+      const members = levels[i]
+        .map((o) => (o === nestedChild ? rebuilt : o))
+        .filter((o) => o && fabricCanvas.getObjects().includes(o));
+      if (members.length < 2) {
+        rebuilt = members[0] || null;
+        continue;
+      }
+      const insertIndex = Math.min(...members.map((o) => fabricCanvas.getObjects().indexOf(o)));
+      members.forEach((o) => fabricCanvas.remove(o));
+      rebuilt = new fabric.Group(members);
+      fabricCanvas.add(rebuilt);
+      fabricCanvas.moveTo(rebuilt, Math.min(insertIndex, fabricCanvas.getObjects().length - 1));
+    }
+    suppressHistoryEvents = false;
+    if (keepActive && keepActive !== rebuilt && fabricCanvas.getObjects().includes(keepActive)) {
+      fabricCanvas.setActiveObject(keepActive);
+    }
+    fabricCanvas.requestRenderAll();
+    refreshLayersList();
+    pushHistory();
+  }
   function selectNestedObject(obj) {
+    endGroupEditSession(); // close out any previous loose piece first
     const ancestors = [];
     let cur = obj;
     while (cur.group) {
@@ -2428,6 +2492,7 @@ if (fabricCanvasEl && window.fabric) {
       cur = cur.group;
     }
     if (!ancestors.length) return;
+    const levels = ancestors.map((group) => group.getObjects().slice());
     hideEdgeIndicator();
     suppressHistoryEvents = true;
     ancestors.forEach((group) => {
@@ -2435,12 +2500,16 @@ if (fabricCanvasEl && window.fabric) {
       group.toActiveSelection();
     });
     suppressHistoryEvents = false;
+    groupEditSession = { ancestors, levels };
     fabricCanvas.setActiveObject(obj);
     fabricCanvas.requestRenderAll();
     showObjectToolbarFor(obj);
     applyScalingControlsVisibility(obj);
     refreshLayersList();
-    pushHistory();
+    // No pushHistory here, deliberately — ending the session pushes once
+    // for the whole enter/edit/exit cycle, and if nothing was actually
+    // edited in between, that snapshot is identical to the one before
+    // selecting and gets deduped away entirely.
   }
   function refreshLayersList() {
     if (!layersList) return;
