@@ -748,11 +748,7 @@ if (fabricCanvasEl && window.fabric) {
         valid.forEach((o) => {
           if (!o.stroke) o.strokeWidth = 0;
         });
-        // subTargetCheck: lets a double-click reach into this group and
-        // select/edit one of its pieces directly (see the dblclick
-        // handler below), instead of only ever selecting the group as a
-        // whole.
-        const group = new fabric.Group(valid, { originX: 'left', originY: 'top', centeredRotation: false, subTargetCheck: true });
+        const group = new fabric.Group(valid, { originX: 'left', originY: 'top', centeredRotation: false });
 
         // If the SVG declares a real-world width/height (e.g. width="40mm"),
         // rescale so the import lands on the card at that exact physical
@@ -1146,9 +1142,6 @@ if (fabricCanvasEl && window.fabric) {
     hideEdgeIndicator();
     suppressHistoryEvents = true;
     const group = active.toGroup();
-    // Lets a double-click reach into this group and select/edit one of
-    // its pieces directly — see the dblclick handler below.
-    group.subTargetCheck = true;
     suppressHistoryEvents = false;
     applyScalingControlsVisibility(group);
     fabricCanvas.requestRenderAll();
@@ -1166,79 +1159,6 @@ if (fabricCanvasEl && window.fabric) {
     hideObjectToolbar();
     pushHistory();
   }
-  // ---- Double-click into a group to edit one piece, still grouped ----
-  // There's no lightweight "peek inside" in Fabric — a group's children
-  // aren't independently selectable while they're still its members. So
-  // a double-click temporarily dissolves the group (the same mechanism
-  // Ungroup uses) to make the specific piece double-clicked (found via
-  // subTargetCheck) a real, directly editable object, then silently
-  // re-forms the group from the same members the moment focus moves
-  // elsewhere — selecting something outside the group, or deselecting
-  // entirely. From the outside this reads as "edit a piece in place,
-  // still part of the group once you're done": nothing here permanently
-  // breaks the group apart the way the Ungroup command does. A
-  // double-click that lands on a *nested* group (a group inside a group)
-  // opens that inner group rather than a leaf — double-click again to go
-  // a level deeper.
-  let groupEditSession = null; // { members: fabric.Object[] }
-  function isWithinGroupEditSession(obj) {
-    if (!groupEditSession || !obj) return false;
-    const members = groupEditSession.members;
-    if (obj.type === 'activeSelection') return obj.getObjects().every((o) => members.includes(o));
-    return members.includes(obj);
-  }
-  // Rebuilds the group from whichever of its members are still around
-  // (a member could've been deleted while loose) without disturbing
-  // whatever's actually selected right now — unlike toGroup(), this
-  // doesn't require the members to already be the active selection, so
-  // ending the session doesn't hijack a selection the user just made by
-  // clicking something else entirely.
-  function endGroupEditSession() {
-    if (!groupEditSession) return;
-    const members = groupEditSession.members.filter((o) => fabricCanvas.getObjects().includes(o));
-    groupEditSession = null;
-    if (members.length < 2) {
-      pushHistory();
-      return;
-    }
-    const keepActive = fabricCanvas.getActiveObject();
-    const insertIndex = Math.min(...members.map((o) => fabricCanvas.getObjects().indexOf(o)));
-    suppressHistoryEvents = true;
-    members.forEach((o) => fabricCanvas.remove(o));
-    const group = new fabric.Group(members, { subTargetCheck: true });
-    fabricCanvas.add(group);
-    fabricCanvas.moveTo(group, Math.min(insertIndex, fabricCanvas.getObjects().length - 1));
-    suppressHistoryEvents = false;
-    if (keepActive && keepActive !== group && fabricCanvas.getObjects().includes(keepActive)) {
-      fabricCanvas.setActiveObject(keepActive);
-    }
-    fabricCanvas.requestRenderAll();
-    refreshLayersList();
-    pushHistory();
-  }
-  fabricCanvas.on('mouse:dblclick', (opt) => {
-    const target = opt.target;
-    if (!target || target.type !== 'group') return;
-    const subTargets = opt.subTargets || [];
-    const child = subTargets[subTargets.length - 1];
-    if (!child) return;
-    fabricCanvas.setActiveObject(target);
-    hideEdgeIndicator();
-    suppressHistoryEvents = true;
-    target.toActiveSelection();
-    suppressHistoryEvents = false;
-    const active = fabricCanvas.getActiveObject();
-    groupEditSession = { members: active && active.type === 'activeSelection' ? active.getObjects().slice() : [child] };
-    fabricCanvas.setActiveObject(child);
-    fabricCanvas.requestRenderAll();
-    showObjectToolbarFor(child);
-    applyScalingControlsVisibility(child);
-    refreshLayersList();
-    // No pushHistory here, deliberately — ending the session (below)
-    // pushes once for the whole enter/edit/exit cycle, and if nothing
-    // was actually edited in between, that snapshot is identical to the
-    // one before double-clicking and gets deduped away entirely.
-  });
 
   // ---- Z-order ----
   // Z-order changes don't add or remove any object, so (unlike everything
@@ -1287,7 +1207,7 @@ if (fabricCanvasEl && window.fabric) {
   // everything else standard already serializes on its own. Helper
   // overlays (the edge indicator, snap guide lines) are excluded
   // automatically since they're marked excludeFromExport.
-  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'isCardBackground', 'subTargetCheck'];
+  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'isCardBackground'];
   const HISTORY_LIMIT = 50;
   const undoBtn = document.getElementById('undo-btn');
   const redoBtn = document.getElementById('redo-btn');
@@ -1329,12 +1249,6 @@ if (fabricCanvasEl && window.fabric) {
   }
   function restoreHistorySnapshot(snapshot) {
     isRestoringHistory = true;
-    // Whatever's loose from a double-click group-edit session is about
-    // to be wiped out by loadFromJSON below anyway — drop it now so the
-    // discardActiveObject() cascade below doesn't do the (harmless but
-    // pointless) work of re-grouping members that are seconds from being
-    // replaced wholesale.
-    groupEditSession = null;
     fabricCanvas.discardActiveObject();
     hideEdgeIndicator();
     clearSnapGuides();
@@ -1885,10 +1799,6 @@ if (fabricCanvasEl && window.fabric) {
     // instead of recognizing the real active object is the whole
     // ActiveSelection.
     const obj = fabricCanvas.getActiveObject() || (e.selected && e.selected[0]);
-    // Selection moved to something outside the currently-loose group
-    // piece(s) — re-form the group before handling whatever's newly
-    // selected (which stays selected; see endGroupEditSession).
-    if (groupEditSession && !isWithinGroupEditSession(obj)) endGroupEditSession();
     if (obj && (obj.type === 'i-text' || SHAPE_TYPES.includes(obj.type))) {
       showObjectToolbarFor(obj);
       applyScalingControlsVisibility(obj);
@@ -1898,10 +1808,7 @@ if (fabricCanvasEl && window.fabric) {
   }
   fabricCanvas.on('selection:created', handleSelection);
   fabricCanvas.on('selection:updated', handleSelection);
-  fabricCanvas.on('selection:cleared', () => {
-    endGroupEditSession();
-    hideObjectToolbar();
-  });
+  fabricCanvas.on('selection:cleared', hideObjectToolbar);
 
   // Clean up a text box left empty (placed, then clicked away from
   // without typing anything) instead of leaving a stray empty object.
@@ -2504,6 +2411,37 @@ if (fabricCanvasEl && window.fabric) {
   // members nested underneath; collapsed state is remembered here across
   // rebuilds since the list itself is rebuilt from scratch every time.
   const collapsedGroups = new Set();
+  // Selects a member nested inside one or more groups directly, so it
+  // can be edited/deleted on its own — Fabric has no way to make a
+  // group's child independently selectable while it's still a member,
+  // so this dissolves each ancestor group in turn (same mechanism as
+  // Ungroup), outermost first, until the object itself is a plain
+  // top-level canvas object, then selects it. This is a permanent split,
+  // same as using Ungroup directly — the other freed pieces are left as
+  // plain top-level objects too; select them all and hit Group again to
+  // re-form it once done.
+  function selectNestedObject(obj) {
+    const ancestors = [];
+    let cur = obj;
+    while (cur.group) {
+      ancestors.unshift(cur.group);
+      cur = cur.group;
+    }
+    if (!ancestors.length) return;
+    hideEdgeIndicator();
+    suppressHistoryEvents = true;
+    ancestors.forEach((group) => {
+      fabricCanvas.setActiveObject(group);
+      group.toActiveSelection();
+    });
+    suppressHistoryEvents = false;
+    fabricCanvas.setActiveObject(obj);
+    fabricCanvas.requestRenderAll();
+    showObjectToolbarFor(obj);
+    applyScalingControlsVisibility(obj);
+    refreshLayersList();
+    pushHistory();
+  }
   function refreshLayersList() {
     if (!layersList) return;
     const active = fabricCanvas.getActiveObject();
@@ -2519,25 +2457,22 @@ if (fabricCanvasEl && window.fabric) {
       const children = isGroup ? obj.getObjects() : [];
       const collapsed = collapsedGroups.has(obj);
       if (depth === 0 && activeMembers.includes(obj)) li.classList.add('is-active');
-      if (depth > 0) {
-        // Nested members are shown for visibility into the group's
-        // contents, not as independently selectable/editable objects —
-        // Ungroup first to work with one directly.
-        li.classList.add('is-child');
-      }
+      if (depth > 0) li.classList.add('is-child');
       const toggle = isGroup && children.length
         ? `<button type="button" class="editor-layer-toggle" aria-label="${collapsed ? 'Expand' : 'Collapse'}" aria-expanded="${!collapsed}">${collapsed ? '▸' : '▾'}</button>`
         : '<span class="editor-layer-toggle-spacer"></span>';
       li.innerHTML = `${toggle}${LAYER_ICONS[obj.type] || ''}<span class="editor-layer-item-label"></span>`;
       li.querySelector('.editor-layer-item-label').textContent = layerLabelFor(obj);
-      if (depth === 0) {
-        li.addEventListener('click', (e) => {
-          if (e.target.closest('.editor-layer-toggle')) return;
+      li.addEventListener('click', (e) => {
+        if (e.target.closest('.editor-layer-toggle')) return;
+        if (depth === 0) {
           fabricCanvas.setActiveObject(obj);
           handleSelection({ selected: [obj] });
           fabricCanvas.requestRenderAll();
-        });
-      }
+        } else {
+          selectNestedObject(obj);
+        }
+      });
       layersList.appendChild(li);
       const toggleBtn = li.querySelector('.editor-layer-toggle');
       if (toggleBtn) {

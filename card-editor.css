@@ -233,11 +233,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* A group's own members, nested underneath it — shown for visibility
-   into what's inside, not as independently selectable rows (Ungroup
-   first to work with one directly). */
-.editor-layer-item.is-child { cursor: default; }
-.editor-layer-item.is-child:hover { background: none; color: var(--muted); }
+/* A group's own members, nested underneath it — clicking one selects
+   it directly (splitting it out of its parent group(s) to do so; see
+   selectNestedObject in card-editor.js), same as any top-level row. */
 .editor-layer-toggle {
   width: 14px;
   height: 14px;
