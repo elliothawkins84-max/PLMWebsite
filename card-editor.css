@@ -935,7 +935,11 @@
   color: var(--muted);
   margin-bottom: 20px;
 }
-#svg-oversize-modal .editor-modal { width: 280px; }
+/* Wider than the base .editor-modal, and its three action buttons wrap
+   onto their own row rather than overflowing — "Keep True Size"/"Scale
+   to Fit" are too long to reliably fit a single row at the base width. */
+#svg-oversize-modal .editor-modal { width: 320px; }
+#svg-oversize-modal .editor-modal-actions { flex-wrap: wrap; }
 
 /* ---- Desktop-only gate ---- */
 @media (max-width: 900px) {

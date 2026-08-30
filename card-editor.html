@@ -435,16 +435,17 @@
   </div>
 
   <!-- Shown when an imported SVG's true (physical) size is larger than
-       the card — importing it will scale it down to fit, which the user
-       should confirm rather than have happen silently. Cancel drops the
-       import entirely; Yes scales it down and adds it. -->
+       the card. Cancel drops the import entirely; Scale to Fit shrinks
+       it down to the card; Keep True Size adds it at its real size,
+       which will overflow onto the pasteboard around the card. -->
   <div class="editor-modal-overlay" id="svg-oversize-modal" aria-hidden="true">
     <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="svg-oversize-modal-title">
       <h2 class="editor-modal-title" id="svg-oversize-modal-title">Image too large</h2>
-      <p class="editor-modal-message" id="svg-oversize-modal-message">This image is larger than the card and will be scaled down to fit.</p>
+      <p class="editor-modal-message" id="svg-oversize-modal-message">This image is larger than the card. Scale it down to fit, or keep its true size (it'll overflow onto the pasteboard around the card)?</p>
       <div class="editor-modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" id="svg-oversize-modal-cancel">Cancel</button>
-        <button type="button" class="btn btn-sm" id="svg-oversize-modal-yes">Yes, scale it</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="svg-oversize-modal-true-size">Keep True Size</button>
+        <button type="button" class="btn btn-sm" id="svg-oversize-modal-yes">Scale to Fit</button>
       </div>
     </div>
   </div>
