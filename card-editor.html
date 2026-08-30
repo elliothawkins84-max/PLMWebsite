@@ -332,9 +332,15 @@
               <div class="ruler-corner"></div>
               <div class="ruler-top" id="ruler-top"></div>
               <div class="ruler-left" id="ruler-left"></div>
+              <!-- The Fabric canvas is a large pasteboard (sized/positioned
+                   via JS to sit behind this window with the card region
+                   showing through) — .editor-card is a purely visual
+                   overlay on top of it now, not a wrapper around it, so
+                   the canvas can extend beyond this box in every
+                   direction and still be reachable. -->
               <div class="editor-canvas-wrap">
+                <canvas id="fabric-canvas"></canvas>
                 <div class="editor-card" id="editor-card">
-                  <canvas id="fabric-canvas"></canvas>
                   <span class="editor-card-label" id="editor-card-label">Front</span>
                   <span class="editor-safe-zone" id="safe-zone" aria-hidden="true">
                     <svg width="100%" height="100%" viewBox="0 0 756 468" preserveAspectRatio="none">

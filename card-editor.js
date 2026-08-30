@@ -5,6 +5,20 @@
 
 const PX_PER_MM = 9; // matches the fixed sizing in card-editor.css
 
+// ---- Pasteboard / artboard geometry ----
+// The Fabric canvas is a large "pasteboard" (matching the existing
+// .editor-canvas-pan-area size, so panning already has room for it) —
+// the 86x54mm card is just a small artboard region within it, centered,
+// not the whole canvas. Anything that used to treat "the canvas" as "the
+// card" (position readouts, snapping, alignment, import centering) needs
+// this offset folded in.
+const PASTEBOARD_W = 2400;
+const PASTEBOARD_H = 1600;
+const CARD_W_PX = 86 * PX_PER_MM; // 774
+const CARD_H_PX = 54 * PX_PER_MM; // 486
+const CARD_OFFSET_X = (PASTEBOARD_W - CARD_W_PX) / 2;
+const CARD_OFFSET_Y = (PASTEBOARD_H - CARD_H_PX) / 2;
+
 // ---- Toolbar tool selection ----
 // Panel-toggle (Layers) and standalone-toggle (Guides) buttons are
 // excluded — neither selects a drawing tool, so they're not part of
@@ -274,9 +288,9 @@ const fabricCanvasEl = document.getElementById('fabric-canvas');
 let fabricCanvas = null;
 if (fabricCanvasEl && window.fabric) {
   fabricCanvas = new fabric.Canvas('fabric-canvas', {
-    width: 774,
-    height: 486,
-    backgroundColor: '#3a3a3a',
+    width: PASTEBOARD_W,
+    height: PASTEBOARD_H,
+    backgroundColor: '#000',
     selection: true,
     // Fabric's default (false) always draws the active object on top of
     // everything else while it's selected, regardless of its real
@@ -288,6 +302,40 @@ if (fabricCanvasEl && window.fabric) {
     // the shape it belongs to like any other later-added object would.
     preserveObjectStacking: true,
   });
+
+  // The canvas is now the whole pasteboard, much bigger than the card
+  // window (.editor-canvas-wrap, still 774x486) it sits inside — shift
+  // Fabric's own wrapper element (the div it wraps the lower/upper
+  // canvas pair in) up/left by the card's offset so the wrap's own
+  // (0,0)-to-(774,486) box shows exactly the card region of the
+  // pasteboard, matching where the ruler/ mm scale expect it.
+  if (fabricCanvas.wrapperEl) {
+    fabricCanvas.wrapperEl.style.position = 'absolute';
+    fabricCanvas.wrapperEl.style.left = `${-CARD_OFFSET_X}px`;
+    fabricCanvas.wrapperEl.style.top = `${-CARD_OFFSET_Y}px`;
+  }
+
+  // The card's own visual fill can no longer be a plain CSS background
+  // once the canvas covers the whole pasteboard (a canvas background
+  // color is uniform across its whole area) — it's a real, permanent
+  // Fabric object instead: non-interactive, excluded from the Layers
+  // panel and history-worthiness checks by evented:false (same as any
+  // other helper overlay), but still round-tripped through undo/redo and
+  // side-switching like real content, since it needs to survive those.
+  // It must never drift off the very back of the stack — see the
+  // sendToBack call at the top of pushHistory() below, which is the one
+  // place that enforces that regardless of which operation moved it.
+  // `let`, not `const`: loadFromJSON (undo/redo, side-switching) replaces
+  // every object with a freshly deserialized instance, so this reference
+  // gets stale the moment any restore happens — isCardBackground (passed
+  // to toJSON via HISTORY_PROPS below) is how it's found again afterward.
+  let cardBackgroundRect = new fabric.Rect({
+    left: CARD_OFFSET_X, top: CARD_OFFSET_Y, width: CARD_W_PX, height: CARD_H_PX,
+    rx: 27, ry: 27, fill: '#3a3a3a',
+    selectable: false, evented: false, hoverCursor: 'default',
+    isCardBackground: true,
+  });
+  fabricCanvas.add(cardBackgroundRect);
 
   const textBtn = document.getElementById('tool-text');
   const shapesBtn = document.getElementById('tool-shapes');
@@ -374,8 +422,11 @@ if (fabricCanvasEl && window.fabric) {
   function showShapeDrawLabel(nearX, nearY, wPx, hPx) {
     if (!shapeDrawLabel) return;
     shapeDrawLabel.textContent = `${(wPx / PX_PER_MM).toFixed(1)} × ${(hPx / PX_PER_MM).toFixed(1)} mm`;
-    shapeDrawLabel.style.left = `${nearX + 10}px`;
-    shapeDrawLabel.style.top = `${nearY + 10}px`;
+    // nearX/nearY are raw pasteboard-space canvas coordinates; this label
+    // is CSS-positioned relative to .editor-card (the card window), so
+    // the card's own offset into the pasteboard needs subtracting first.
+    shapeDrawLabel.style.left = `${nearX - CARD_OFFSET_X + 10}px`;
+    shapeDrawLabel.style.top = `${nearY - CARD_OFFSET_Y + 10}px`;
     shapeDrawLabel.classList.add('is-visible');
   }
   function hideShapeDrawLabel() {
@@ -619,8 +670,8 @@ if (fabricCanvasEl && window.fabric) {
   // shared by both the fits-fine path and the confirmed-oversize path.
   function placeImportedGroup(group) {
     group.set({
-      left: (fabricCanvas.getWidth() - group.getScaledWidth()) / 2,
-      top: (fabricCanvas.getHeight() - group.getScaledHeight()) / 2,
+      left: CARD_OFFSET_X + (CARD_W_PX - group.getScaledWidth()) / 2,
+      top: CARD_OFFSET_Y + (CARD_H_PX - group.getScaledHeight()) / 2,
     });
     fabricCanvas.add(group);
     finalizeShape(group);
@@ -717,8 +768,8 @@ if (fabricCanvasEl && window.fabric) {
         // actually fit on the card — never scale up, and don't touch the
         // size otherwise. If it doesn't fit, confirm with the user first
         // rather than silently shrinking their import.
-        const maxW = fabricCanvas.getWidth();
-        const maxH = fabricCanvas.getHeight();
+        const maxW = CARD_W_PX;
+        const maxH = CARD_H_PX;
         // A single ratio — the tighter of the two axes — applied through
         // .scale() (which sets scaleX and scaleY to the same value), so
         // the import always shrinks proportionally and never stretches.
@@ -1139,7 +1190,7 @@ if (fabricCanvasEl && window.fabric) {
   // everything else standard already serializes on its own. Helper
   // overlays (the edge indicator, snap guide lines) are excluded
   // automatically since they're marked excludeFromExport.
-  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle'];
+  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'isCardBackground'];
   const HISTORY_LIMIT = 50;
   const undoBtn = document.getElementById('undo-btn');
   const redoBtn = document.getElementById('redo-btn');
@@ -1166,6 +1217,12 @@ if (fabricCanvasEl && window.fabric) {
   // action don't create a duplicate undo step.
   function pushHistory() {
     if (isRestoringHistory) return;
+    // Cheap, central place to keep the card's background rect pinned to
+    // the very back of the stack — almost every mutation (z-order
+    // buttons, boolean ops, group/ungroup, delete, drags) ends up here,
+    // so this one call keeps the invariant true everywhere rather than
+    // needing a fixup at each individual call site.
+    if (cardBackgroundRect) fabricCanvas.sendToBack(cardBackgroundRect);
     const snapshot = JSON.stringify(fabricCanvas.toJSON(HISTORY_PROPS));
     if (undoStack.length && undoStack[undoStack.length - 1] === snapshot) return;
     undoStack.push(snapshot);
@@ -1179,6 +1236,12 @@ if (fabricCanvasEl && window.fabric) {
     hideEdgeIndicator();
     clearSnapGuides();
     fabricCanvas.loadFromJSON(snapshot, () => {
+      // loadFromJSON replaces every object with a freshly deserialized
+      // instance, orphaning the old cardBackgroundRect reference — find
+      // the new one (tagged via isCardBackground, round-tripped through
+      // HISTORY_PROPS) so pushHistory()'s sendToBack keeps targeting a
+      // real, current object instead of resurrecting a stale one.
+      cardBackgroundRect = fabricCanvas.getObjects().find((o) => o.isCardBackground) || null;
       fabricCanvas.requestRenderAll();
       isRestoringHistory = false;
       hideObjectToolbar();
@@ -1655,8 +1718,8 @@ if (fabricCanvasEl && window.fabric) {
   function refreshTransformFields(obj) {
     if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
     updateAnchorIcon(anchorKeyFor(obj));
-    if (posXInput) posXInput.value = (obj.left / PX_PER_MM).toFixed(2);
-    if (posYInput) posYInput.value = (obj.top / PX_PER_MM).toFixed(2);
+    if (posXInput) posXInput.value = ((obj.left - CARD_OFFSET_X) / PX_PER_MM).toFixed(2);
+    if (posYInput) posYInput.value = ((obj.top - CARD_OFFSET_Y) / PX_PER_MM).toFixed(2);
     if (sizeWInput) sizeWInput.value = (displayWidthOf(obj) / PX_PER_MM).toFixed(2);
     if (sizeHInput) sizeHInput.value = (displayHeightOf(obj) / PX_PER_MM).toFixed(2);
     syncEdgeIndicator(obj);
@@ -1846,10 +1909,8 @@ if (fabricCanvasEl && window.fabric) {
     // A multi-object drag snaps as one block, against everything else.
     const moving = obj.type === 'activeSelection' ? obj.getObjects() : [obj];
     const others = fabricCanvas.getObjects().filter((o) => o.evented !== false && !moving.includes(o));
-    const w = fabricCanvas.getWidth();
-    const h = fabricCanvas.getHeight();
-    const targetXs = [0, w / 2, w];
-    const targetYs = [0, h / 2, h];
+    const targetXs = [CARD_OFFSET_X, CARD_OFFSET_X + CARD_W_PX / 2, CARD_OFFSET_X + CARD_W_PX];
+    const targetYs = [CARD_OFFSET_Y, CARD_OFFSET_Y + CARD_H_PX / 2, CARD_OFFSET_Y + CARD_H_PX];
     others.forEach((o) => {
       const b = snapBoundsOf(o);
       targetXs.push(...b.xs);
@@ -2055,9 +2116,8 @@ if (fabricCanvasEl && window.fabric) {
   function moveActiveObjectAnchorTo(axis, valueMm) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj) return;
-    const targetPx = valueMm * PX_PER_MM;
-    if (axis === 'x') obj.set({ left: targetPx });
-    else obj.set({ top: targetPx });
+    if (axis === 'x') obj.set({ left: CARD_OFFSET_X + valueMm * PX_PER_MM });
+    else obj.set({ top: CARD_OFFSET_Y + valueMm * PX_PER_MM });
     obj.setCoords();
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
@@ -2180,7 +2240,7 @@ if (fabricCanvasEl && window.fabric) {
       pushHistory();
       return;
     }
-    const target = { left: 0, top: 0, width: fabricCanvas.getWidth(), height: fabricCanvas.getHeight() };
+    const target = { left: CARD_OFFSET_X, top: CARD_OFFSET_Y, width: CARD_W_PX, height: CARD_H_PX };
     alignRectTo(active, op, target);
     fabricCanvas.requestRenderAll();
     refreshTransformFields(active);

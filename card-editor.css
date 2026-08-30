@@ -545,6 +545,12 @@
   grid-template-rows: 18px 34px 16px 486px;
   width: fit-content;
 }
+/* z-index on these four: the pasteboard canvas is now much bigger than
+   its own grid cell (.editor-canvas-wrap, row 4) and visually overflows
+   upward/leftward into these rows via its negative JS-set offset — grid
+   items can take a z-index regardless of `position` (same rule as flex
+   items), so this keeps the ruler/label painting above that overflow
+   without needing to touch DOM order. */
 .safe-zone-label {
   grid-column: 3;
   grid-row: 1;
@@ -554,24 +560,28 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #ff3b3b;
+  z-index: 1;
 }
 .ruler-corner {
   grid-column: 1;
   grid-row: 2;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
+  z-index: 1;
 }
 .ruler-top {
   grid-column: 3;
   grid-row: 2;
   position: relative;
   border-bottom: 1px solid var(--line);
+  z-index: 1;
 }
 .ruler-left {
   grid-column: 1;
   grid-row: 4;
   position: relative;
   border-right: 1px solid var(--line);
+  z-index: 1;
 }
 .ruler-tick {
   position: absolute;
@@ -600,12 +610,23 @@
   transform: translateY(-50%);
 }
 
-.editor-canvas-wrap { grid-column: 3; grid-row: 4; width: 774px; height: 486px; }
+/* This is now just the "window" onto the card region of the much larger
+   pasteboard canvas behind it (positioned via JS — see CARD_OFFSET_X/Y
+   in card-editor.js) — not a box that contains/clips the canvas itself
+   anymore, so the canvas can extend beyond it in every direction. */
+.editor-canvas-wrap { position: relative; grid-column: 3; grid-row: 4; width: 774px; height: 486px; }
 .editor-card {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  background: #3a3a3a;
+  /* No background fill here anymore — the card's visual fill is a real
+     (permanent, non-interactive) Fabric object on the canvas now, since
+     a canvas's own background color can't vary by region. This is a
+     purely decorative overlay sitting on top of the canvas, so clicks
+     need to pass through it to reach the canvas underneath. */
+  pointer-events: none;
   /* outline, not border — a border eats into the box and would push the
      canvas (which fills this box exactly, at the same 774x486 the mm
      ruler is calibrated to) 1.5px off from the card's true center,
@@ -614,13 +635,15 @@
   outline: 1.5px solid var(--line-strong);
   /* 3mm fillet on the physical card's corners (27px at this editor's
      fixed 9px/mm scale) — outlines follow border-radius the same way a
-     border would. Not applied with overflow:hidden here, since the
-     Front/dimensions label sits just below the card's own box
-     (bottom: -20px) and would otherwise get clipped off; the canvas
-     itself is rounded+clipped separately below instead. */
+     border would. Matches the same radius baked into the Fabric
+     background rect (see card-editor.js), so the outline and the fill
+     line up exactly. Artwork itself is no longer clipped to this shape
+     live in the editor (the canvas is shared with the whole pasteboard,
+     so it can't be CSS-clipped to just this region without hiding the
+     rest of it too) — same as Illustrator/Figma, where the artboard
+     shape is just a visual guide until export. */
   border-radius: 27px;
 }
-.editor-card canvas { position: absolute; top: 0; left: 0; border-radius: 27px; overflow: hidden; }
 .editor-card-label {
   position: absolute;
   bottom: -20px;
