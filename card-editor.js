@@ -748,7 +748,11 @@ if (fabricCanvasEl && window.fabric) {
         valid.forEach((o) => {
           if (!o.stroke) o.strokeWidth = 0;
         });
-        const group = new fabric.Group(valid, { originX: 'left', originY: 'top', centeredRotation: false });
+        // subTargetCheck: lets a double-click reach into this group and
+        // select/edit one of its pieces directly (see the dblclick
+        // handler below), instead of only ever selecting the group as a
+        // whole.
+        const group = new fabric.Group(valid, { originX: 'left', originY: 'top', centeredRotation: false, subTargetCheck: true });
 
         // If the SVG declares a real-world width/height (e.g. width="40mm"),
         // rescale so the import lands on the card at that exact physical
@@ -1142,6 +1146,9 @@ if (fabricCanvasEl && window.fabric) {
     hideEdgeIndicator();
     suppressHistoryEvents = true;
     const group = active.toGroup();
+    // Lets a double-click reach into this group and select/edit one of
+    // its pieces directly — see the dblclick handler below.
+    group.subTargetCheck = true;
     suppressHistoryEvents = false;
     applyScalingControlsVisibility(group);
     fabricCanvas.requestRenderAll();
@@ -1159,6 +1166,36 @@ if (fabricCanvasEl && window.fabric) {
     hideObjectToolbar();
     pushHistory();
   }
+  // Double-click into a group to select and edit one of its pieces
+  // directly, rather than only ever being able to move/resize the group
+  // as a whole. There's no lightweight "peek inside" in Fabric — this
+  // just runs the same ungroup this file already has (dissolving the
+  // group into its individual pieces, each now a normal top-level
+  // object) and immediately selects the specific piece double-clicked,
+  // found via subTargetCheck. The rest of the former group's pieces are
+  // left as plain objects too, at their same positions — select them all
+  // again and hit Group to re-form it once done editing. A double-click
+  // that lands on a *nested* group (a group inside a group) selects that
+  // inner group rather than a leaf — double-click again to go a level
+  // deeper.
+  fabricCanvas.on('mouse:dblclick', (opt) => {
+    const target = opt.target;
+    if (!target || target.type !== 'group') return;
+    const subTargets = opt.subTargets || [];
+    const child = subTargets[subTargets.length - 1];
+    if (!child) return;
+    fabricCanvas.setActiveObject(target);
+    hideEdgeIndicator();
+    suppressHistoryEvents = true;
+    target.toActiveSelection();
+    suppressHistoryEvents = false;
+    fabricCanvas.setActiveObject(child);
+    fabricCanvas.requestRenderAll();
+    showObjectToolbarFor(child);
+    applyScalingControlsVisibility(child);
+    refreshLayersList();
+    pushHistory();
+  });
 
   // ---- Z-order ----
   // Z-order changes don't add or remove any object, so (unlike everything
@@ -1207,7 +1244,7 @@ if (fabricCanvasEl && window.fabric) {
   // everything else standard already serializes on its own. Helper
   // overlays (the edge indicator, snap guide lines) are excluded
   // automatically since they're marked excludeFromExport.
-  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'isCardBackground'];
+  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'isCardBackground', 'subTargetCheck'];
   const HISTORY_LIMIT = 50;
   const undoBtn = document.getElementById('undo-btn');
   const redoBtn = document.getElementById('redo-btn');
