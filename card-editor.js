@@ -365,6 +365,9 @@ if (fabricCanvasEl && window.fabric) {
   // is still selected.
   toolButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
+      // Picking a drawing tool implies leaving Finish mode — its toolbar
+      // would otherwise sit on screen at the same time as this one.
+      if (finishModeActive) setFinishMode(false);
       fabricCanvas.defaultCursor = btn.id === 'tool-text' ? 'text' : 'default';
       // Fabric's own click-drag-on-empty-canvas group-selection marquee
       // would otherwise fight with the Shapes tool's click-drag-to-draw.
@@ -748,6 +751,14 @@ if (fabricCanvasEl && window.fabric) {
         valid.forEach((o) => {
           if (!o.stroke) o.strokeWidth = 0;
         });
+        // Finish (defaulting to White) is what drives an object's color
+        // now, not whatever the source file happened to use — otherwise
+        // an imported design would keep its original artwork colors
+        // instead of reading as "not yet assigned a finish" like
+        // everything else. Checks each shape's own fill/stroke first
+        // (done above), so this only touches whichever channel it
+        // actually paints with.
+        valid.forEach((o) => applyFinishColor(o, FINISH_COLORS.white));
         const group = new fabric.Group(valid, { originX: 'left', originY: 'top', centeredRotation: false });
 
         // If the SVG declares a real-world width/height (e.g. width="40mm"),
@@ -1187,9 +1198,20 @@ if (fabricCanvasEl && window.fabric) {
     if (!active || active.isEditing) return;
     hideEdgeIndicator();
     const objects = active.type === 'activeSelection' ? active.getObjects() : [active];
-    fabricCanvas.discardActiveObject();
+    // Remove the object(s) BEFORE discarding the selection, not after.
+    // discardActiveObject() fires 'selection:cleared' synchronously, which
+    // (while editing a member of a group — see selectNestedObject) closes
+    // out that session and silently re-absorbs whatever's still on the
+    // canvas back into a rebuilt group. Discarding first meant the object
+    // was still present at that moment, so it got reabsorbed, and the
+    // fabricCanvas.remove() below then found nothing to remove (it was no
+    // longer a top-level object) — the object never actually got deleted.
+    // Removing first means it's already gone by the time the group
+    // reforms, so the rebuild's own filter for missing members correctly
+    // leaves it out.
     suppressHistoryEvents = true;
     objects.forEach((o) => fabricCanvas.remove(o));
+    fabricCanvas.discardActiveObject();
     suppressHistoryEvents = false;
     fabricCanvas.requestRenderAll();
     hideObjectToolbar();
@@ -1207,7 +1229,7 @@ if (fabricCanvasEl && window.fabric) {
   // everything else standard already serializes on its own. Helper
   // overlays (the edge indicator, snap guide lines) are excluded
   // automatically since they're marked excludeFromExport.
-  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'isCardBackground'];
+  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'isCardBackground', 'cardFinish', 'cardFinishTexture'];
   const HISTORY_LIMIT = 50;
   const undoBtn = document.getElementById('undo-btn');
   const redoBtn = document.getElementById('redo-btn');
@@ -1597,7 +1619,10 @@ if (fabricCanvasEl && window.fabric) {
     // the representative one.
     let style = styleSource;
     if (styleSource.type === 'line') {
-      style = { fill: styleSource.stroke, stroke: null, strokeWidth: 0 };
+      style = {
+        fill: styleSource.stroke, stroke: null, strokeWidth: 0,
+        cardFinish: styleSource.cardFinish, cardFinishTexture: styleSource.cardFinishTexture,
+      };
     } else if (styleSource.type === 'group') {
       style = firstFillableDescendant(styleSource) || { fill: '#000000', stroke: null, strokeWidth: 0 };
     }
@@ -1609,6 +1634,13 @@ if (fabricCanvasEl && window.fabric) {
     });
     path.strokeAlign = style.strokeAlign;
     path._strokeWidthPx = style._strokeWidthPx;
+    // Carries the finish along too (fill/stroke above already match it,
+    // same as any other property copied from styleSource) — otherwise
+    // the merged shape would silently read back as White/default the
+    // next time it's selected, even though it's still colored as
+    // whatever finish it actually has.
+    path.cardFinish = style.cardFinish;
+    path.cardFinishTexture = style.cardFinishTexture;
     fabricCanvas.discardActiveObject();
     suppressHistoryEvents = true;
     sourceObjects.forEach((o) => fabricCanvas.remove(o));
@@ -1798,6 +1830,224 @@ if (fabricCanvasEl && window.fabric) {
     textToolbar.classList.remove('is-visible');
     hideEdgeIndicator();
   }
+  // Shift-click toggling individual objects in/out of a selection is
+  // Fabric's own native behavior already. Shift-*dragging* a new marquee
+  // is not, though — Fabric always discards whatever was selected before
+  // and replaces it with exactly what the new box encloses. To match
+  // shift-click's toggle behavior for drag too, capture whatever was
+  // selected right before a shift+drag starts (before Fabric's own
+  // mousedown handling discards it), then once Fabric finishes building
+  // its own (box-only) result, replace it with the symmetric difference:
+  // objects that were selected before and aren't in the new box stay
+  // selected; objects newly enclosed that weren't selected get added;
+  // objects enclosed that were already selected get deselected.
+  let dragSelectPreState = null;
+  fabricCanvas.on('mouse:down:before', (opt) => {
+    dragSelectPreState = (fabricCanvas.selection && !opt.target && opt.e.shiftKey)
+      ? fabricCanvas.getActiveObjects().slice()
+      : null;
+  });
+  fabricCanvas.on('mouse:up', (opt) => {
+    const pre = dragSelectPreState;
+    dragSelectPreState = null;
+    if (!pre || !pre.length || opt.isClick) return;
+    const active = fabricCanvas.getActiveObject();
+    const boxed = active ? (active.type === 'activeSelection' ? active.getObjects() : [active]) : [];
+    const preSet = new Set(pre);
+    const boxedSet = new Set(boxed);
+    const merged = [...pre.filter((o) => !boxedSet.has(o)), ...boxed.filter((o) => !preSet.has(o))];
+    suppressHistoryEvents = true;
+    fabricCanvas.discardActiveObject();
+    if (merged.length === 1) {
+      fabricCanvas.setActiveObject(merged[0]);
+    } else if (merged.length > 1) {
+      fabricCanvas.setActiveObject(new fabric.ActiveSelection(merged, { canvas: fabricCanvas }));
+    }
+    suppressHistoryEvents = false;
+    fabricCanvas.requestRenderAll();
+  });
+  // ---- Finish mode ----
+  // A persistent mode (toggled on/off, not per-tool) rather than a
+  // regular side panel: turning it on forces the sidebar open on Layers
+  // (so a group/object can be picked while in this mode) and swaps the
+  // usual text/shape toolbar for the finish-options toolbar below —
+  // selecting something while this mode is active reflects/updates that
+  // object's own finish instead of opening the normal object toolbar.
+  let finishModeActive = false;
+  const finishToggleBtn = document.getElementById('toggle-finish');
+  const layersToggleBtn = document.getElementById('toggle-layers');
+  const finishToolbar = document.getElementById('finish-toolbar');
+  const finishButtons = document.querySelectorAll('.editor-finish-btn');
+  const finishTextureSlider = document.getElementById('finish-texture-slider');
+  const finishTextureRange = document.getElementById('finish-texture-range');
+  const finishTextureValue = document.getElementById('finish-texture-value');
+  // Every object/group defaults to White until a finish is explicitly
+  // chosen for it — reading through this one helper (instead of a raw
+  // `obj.cardFinish`) everywhere means new objects never need to have
+  // the default written onto them at creation time.
+  function getFinish(obj) {
+    return (obj && obj.cardFinish) || 'white';
+  }
+  // A proofing color per finish, so it's obvious at a glance what's been
+  // assigned to what — these aren't the real engraved appearance (that's
+  // what the Renderings panel is for eventually), just a legend.
+  const FINISH_COLORS = {
+    none: '#ef4444',
+    stroke: '#22c55e',
+    texture: '#3b82f6',
+    white: '#ffffff',
+    metallic: '#9ca3af',
+    'frosted-white': '#a855f7',
+  };
+  // Paints the finish color onto whichever channel a shape actually
+  // renders with — a plain shape/text uses fill, but one already in
+  // Stroke fill-mode (see setShapeFillMode) has fill:null and paints via
+  // stroke instead, and a Line never has a real fill at all (same
+  // reasoning as replaceWithBooleanResult below) — get either of those
+  // wrong and the color-coding would just silently not show up.
+  function applyFinishColor(obj, color) {
+    if (obj.type === 'line') {
+      obj.set({ stroke: color });
+      return;
+    }
+    if (!SHAPE_FILL_TYPES.includes(obj.type) && obj.type !== 'i-text') return;
+    // Whichever of fill/stroke is actually painting something gets the
+    // finish color — a shape can have both (a filled shape with its own
+    // outline), just one, or in principle neither, in which case fill is
+    // the sensible one to give it.
+    const next = {};
+    if (obj.fill != null) next.fill = color;
+    if (obj.stroke != null) next.stroke = color;
+    if (!('fill' in next) && !('stroke' in next)) next.fill = color;
+    obj.set(next);
+  }
+  function applyFinishToOne(obj, finish, textureAmount) {
+    obj.cardFinish = finish;
+    obj.cardFinishTexture = finish === 'texture' ? textureAmount : undefined;
+    applyFinishColor(obj, FINISH_COLORS[finish] || FINISH_COLORS.white);
+  }
+  // Applying a finish to a group (or a multi-object selection) sets it on
+  // every object inside too, recursively — overriding whatever finish
+  // those members had — same as picking Fill/Stroke mode for a whole
+  // group already works elsewhere in this file. Selecting one member on
+  // its own (via the Layers panel — see selectNestedObject) and changing
+  // it only ever reaches this with that one object, so it stays scoped
+  // to just that object, same as any plain shape.
+  function applyFinishCascade(obj, finish, textureAmount) {
+    if (obj.type === 'activeSelection') {
+      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount));
+      return;
+    }
+    applyFinishToOne(obj, finish, textureAmount);
+    if (obj.type === 'group') {
+      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount));
+    }
+  }
+  function refreshFinishUI(obj) {
+    const finish = getFinish(obj);
+    finishButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.finish === finish));
+    if (finishTextureSlider) finishTextureSlider.classList.toggle('is-visible', finish === 'texture');
+    const textureAmount = (obj && obj.cardFinishTexture) || 25;
+    if (finishTextureRange) finishTextureRange.value = textureAmount;
+    if (finishTextureValue) finishTextureValue.value = textureAmount;
+  }
+  // Shared by the slider and the typed number box, which stay in sync
+  // with each other. `commit` pushes history — used once dragging/typing
+  // actually finishes (slider `change`, number box blur/Enter), not on
+  // every intermediate `input` tick.
+  function setTextureAmount(rawValue, commit) {
+    const clamped = Math.min(50, Math.max(1, parseInt(rawValue, 10) || 1));
+    if (finishTextureRange) finishTextureRange.value = clamped;
+    if (finishTextureValue) finishTextureValue.value = clamped;
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj || obj.cardFinish !== 'texture') return;
+    applyFinishCascade(obj, 'texture', clamped);
+    refreshLayersList();
+    if (commit) pushHistory();
+  }
+  function setFinishMode(active) {
+    finishModeActive = active;
+    if (finishToggleBtn) finishToggleBtn.classList.toggle('is-active', active);
+    if (finishToolbar) finishToolbar.classList.toggle('is-visible', active);
+    if (!active) {
+      // Finish mode is what forced the Layers panel open in the first
+      // place — leaving the mode closes it back up again.
+      if (sidePanel) sidePanel.classList.remove('is-open');
+      if (layersToggleBtn) layersToggleBtn.classList.remove('is-active');
+      return;
+    }
+    // Force the sidebar open on Layers, same as clicking that button
+    // directly — this is how an object/group gets picked in this mode.
+    if (sidePanel && layersToggleBtn) {
+      panelToggles.forEach((b) => b.classList.remove('is-active'));
+      sidePanel.querySelectorAll('.editor-side-panel-section').forEach((s) => s.classList.remove('is-active'));
+      layersToggleBtn.classList.add('is-active');
+      sidePanel.classList.add('is-open');
+      const section = sidePanel.querySelector('[data-panel-content="layers"]');
+      if (section) section.classList.add('is-active');
+    }
+    textToolbar.classList.remove('is-visible');
+    hideEdgeIndicator();
+    // Drawing/typing doesn't make sense while assigning finishes — force
+    // the Select tool so its toolbar can't come back up over this one.
+    toolButtons.forEach((b) => b.classList.toggle('is-active', b.id === 'tool-select'));
+    fabricCanvas.defaultCursor = 'default';
+    fabricCanvas.selection = true;
+    refreshFinishUI(fabricCanvas.getActiveObject());
+  }
+  if (finishToggleBtn) {
+    finishToggleBtn.addEventListener('click', () => setFinishMode(!finishModeActive));
+  }
+  finishButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      // Always respond, even with nothing selected — there's just
+      // nothing to actually apply the choice to yet in that case.
+      const finish = btn.dataset.finish;
+      finishButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
+      if (finishTextureSlider) finishTextureSlider.classList.toggle('is-visible', finish === 'texture');
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj) return;
+      const textureAmount = finish === 'texture' ? (finishTextureRange ? parseInt(finishTextureRange.value, 10) : 25) : undefined;
+      applyFinishCascade(obj, finish, textureAmount);
+      refreshLayersList();
+      pushHistory();
+    });
+  });
+  if (finishTextureRange) {
+    finishTextureRange.addEventListener('input', () => setTextureAmount(finishTextureRange.value, false));
+    finishTextureRange.addEventListener('change', () => setTextureAmount(finishTextureRange.value, true));
+  }
+  if (finishTextureValue) {
+    finishTextureValue.addEventListener('input', () => setTextureAmount(finishTextureValue.value, false));
+    finishTextureValue.addEventListener('change', () => setTextureAmount(finishTextureValue.value, true));
+    finishTextureValue.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') finishTextureValue.blur();
+    });
+  }
+  // "What are these?" — placeholder popup until a real reference image
+  // is dropped in.
+  const finishHelpBtn = document.getElementById('finish-help-btn');
+  const finishHelpModal = document.getElementById('finish-help-modal');
+  const finishHelpModalClose = document.getElementById('finish-help-modal-close');
+  if (finishHelpBtn && finishHelpModal) {
+    finishHelpBtn.addEventListener('click', () => {
+      finishHelpModal.classList.add('is-open');
+      finishHelpModal.setAttribute('aria-hidden', 'false');
+    });
+    finishHelpModal.addEventListener('mousedown', (e) => {
+      if (e.target === finishHelpModal) {
+        finishHelpModal.classList.remove('is-open');
+        finishHelpModal.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+  if (finishHelpModalClose && finishHelpModal) {
+    finishHelpModalClose.addEventListener('click', () => {
+      finishHelpModal.classList.remove('is-open');
+      finishHelpModal.setAttribute('aria-hidden', 'true');
+    });
+  }
+
   function handleSelection(e) {
     // getActiveObject() first, not e.selected[0]: for a multi-selection,
     // e.selected[0] is just one of the newly-selected members, which
@@ -1809,6 +2059,10 @@ if (fabricCanvasEl && window.fabric) {
     // piece(s) — re-form the group before handling whatever's newly
     // selected (which stays selected; see endGroupEditSession).
     if (groupEditSession && !isWithinGroupEditSession(obj)) endGroupEditSession();
+    if (finishModeActive) {
+      refreshFinishUI(obj);
+      return;
+    }
     if (obj && (obj.type === 'i-text' || SHAPE_TYPES.includes(obj.type))) {
       showObjectToolbarFor(obj);
       applyScalingControlsVisibility(obj);
@@ -1820,6 +2074,10 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('selection:updated', handleSelection);
   fabricCanvas.on('selection:cleared', () => {
     endGroupEditSession();
+    if (finishModeActive) {
+      refreshFinishUI(null);
+      return;
+    }
     hideObjectToolbar();
   });
 
@@ -2365,19 +2623,28 @@ if (fabricCanvasEl && window.fabric) {
       contextMenu.style.left = `${Math.max(4, left)}px`;
       contextMenu.style.top = `${Math.max(4, top)}px`;
     }
-    fabricCanvas.upperCanvasEl.addEventListener('contextmenu', (e) => {
+    // Anywhere on the page, not just the canvas — right-clicking a text
+    // field/etc. still gets the browser's own menu (cut/copy/paste is
+    // more useful there), but everywhere else this menu shows instead,
+    // acting on whatever's currently selected on the card. Only an
+    // actual right-click ON the canvas re-picks the target under the
+    // cursor first, exactly as before.
+    document.addEventListener('contextmenu', (e) => {
+      if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
       e.preventDefault();
-      const target = fabricCanvas.findTarget(e, false);
-      const active = fabricCanvas.getActiveObject();
-      const alreadySelected = active && (active === target || (active.type === 'activeSelection' && active.getObjects().includes(target)));
-      if (target && !alreadySelected) {
-        fabricCanvas.setActiveObject(target);
-        handleSelection({ selected: [target] });
-      } else if (!target) {
-        fabricCanvas.discardActiveObject();
-        hideObjectToolbar();
+      if (e.target === fabricCanvas.upperCanvasEl) {
+        const target = fabricCanvas.findTarget(e, false);
+        const active = fabricCanvas.getActiveObject();
+        const alreadySelected = active && (active === target || (active.type === 'activeSelection' && active.getObjects().includes(target)));
+        if (target && !alreadySelected) {
+          fabricCanvas.setActiveObject(target);
+          handleSelection({ selected: [target] });
+        } else if (!target) {
+          fabricCanvas.discardActiveObject();
+          hideObjectToolbar();
+        }
+        fabricCanvas.requestRenderAll();
       }
-      fabricCanvas.requestRenderAll();
       openContextMenuAt(e.clientX, e.clientY);
     });
     contextMenu.addEventListener('click', (e) => {
@@ -2411,6 +2678,17 @@ if (fabricCanvasEl && window.fabric) {
     'i-text': '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 6h14"/><path d="M12 6v12"/><path d="M9 18h6"/></svg>',
     group: '<svg class="editor-layer-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="12" height="12"/><rect x="9" y="9" width="12" height="12"/></svg>',
   };
+  // Same glyphs as the Finish toolbar's own buttons (see card-editor.html)
+  // — shown on the right of each Layers row so an object/group's current
+  // finish is visible without selecting it.
+  const FINISH_ICONS = {
+    none: '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><line x1="6" y1="18" x2="18" y2="6"/></svg>',
+    stroke: '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"/></svg>',
+    texture: '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16"/><line x1="4" y1="14" x2="14" y2="4"/><line x1="4" y1="20" x2="20" y2="4"/><line x1="10" y1="20" x2="20" y2="10"/></svg>',
+    white: '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16" fill="currentColor"/></svg>',
+    metallic: '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16"/><line x1="8" y1="20" x2="20" y2="8" stroke-width="2.4"/></svg>',
+    'frosted-white': '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16"/><circle cx="9" cy="9" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="0.9" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none"/></svg>',
+  };
   function layerLabelFor(obj) {
     if (obj.type === 'i-text' || obj.type === 'text') return (obj.text && obj.text.trim()) || 'Text';
     const names = {
@@ -2419,11 +2697,74 @@ if (fabricCanvasEl && window.fabric) {
     };
     return names[obj.type] || obj.type.charAt(0).toUpperCase() + obj.type.slice(1);
   }
+  // ---- Layers panel row thumbnails ----
+  // A little rendered snapshot of the actual object (shape, color,
+  // rotation and all) instead of a generic per-type icon. Fabric objects
+  // (groups included) can render themselves to a small PNG via their own
+  // toDataURL() — but that's real canvas work, so it's cached on the
+  // object itself and only regenerated when something about how it
+  // actually looks has changed, not every time the list is rebuilt
+  // (which happens on most selection changes, not just edits).
+  const LAYER_THUMB_SIZE = 20; // px — the rendered image is fit inside this box, not stretched to it
+  // A cheap fingerprint of everything that affects how obj is drawn.
+  // Comparing this against what's cached is far cheaper than re-rendering
+  // a thumbnail on every list rebuild, and self-heals — nothing has to
+  // remember to invalidate the cache at each of this file's many places
+  // that can change a shape's appearance.
+  function thumbSignatureFor(obj) {
+    if (obj.type === 'group') {
+      return `group@${obj.angle}:` + obj.getObjects().map(thumbSignatureFor).join('|');
+    }
+    return [
+      obj.type, obj.fill, obj.stroke, obj.strokeWidth, obj.strokeDashArray && obj.strokeDashArray.join(','),
+      obj.angle, obj.flipX, obj.flipY, obj.opacity,
+      obj.width, obj.height, obj.radius, obj.rx, obj.ry,
+      obj.points && JSON.stringify(obj.points), obj.path && obj.path.length,
+      obj.text, obj.fontFamily, obj.fontSize, obj.fontWeight, obj.fontStyle, obj.textAlign, obj.underline,
+    ].join('|');
+  }
+  function renderLayerThumbnail(obj) {
+    const box = obj.getBoundingRect(true, true);
+    const maxDim = Math.max(box.width, box.height, 1);
+    try {
+      return obj.toDataURL({ format: 'png', multiplier: LAYER_THUMB_SIZE / maxDim });
+    } catch (e) {
+      return null;
+    }
+  }
+  function getLayerThumbDataUrl(obj) {
+    const sig = thumbSignatureFor(obj);
+    if (!obj.__layerThumb || obj.__layerThumb.sig !== sig) {
+      obj.__layerThumb = { sig, dataUrl: renderLayerThumbnail(obj) };
+    }
+    return obj.__layerThumb.dataUrl;
+  }
   // Groups (from the context menu's Group action, or an imported SVG —
   // see importSvgFile below) default to expanded, showing their own
   // members nested underneath; collapsed state is remembered here across
   // rebuilds since the list itself is rebuilt from scratch every time.
   const collapsedGroups = new Set();
+  // ---- Multi-selecting top-level rows from the Layers panel ----
+  // Shift-click selects the visual range between this row and the last
+  // one clicked (like a file browser); Cmd/Ctrl-click toggles just this
+  // row in or out of whatever's currently selected, stacking freely.
+  // Only for depth-0 rows — a nested row's "selection" is really a
+  // temporary dissolve of its ancestor group(s) (see selectNestedObject),
+  // which doesn't have a sensible way to combine with a second, unrelated
+  // multi-selected object, so modifier clicks there are ignored.
+  let layersRangeAnchor = null;
+  function selectLayerObjects(arr) {
+    suppressHistoryEvents = true;
+    fabricCanvas.discardActiveObject();
+    if (arr.length === 1) {
+      fabricCanvas.setActiveObject(arr[0]);
+    } else if (arr.length > 1) {
+      fabricCanvas.setActiveObject(new fabric.ActiveSelection(arr, { canvas: fabricCanvas }));
+    }
+    suppressHistoryEvents = false;
+    handleSelection({ selected: arr });
+    fabricCanvas.requestRenderAll();
+  }
   // ---- Editing a member nested inside a group, without breaking it up ----
   // Fabric has no way to make a group's child independently selectable
   // while it stays a member, so selecting one from the Layers panel
@@ -2437,6 +2778,14 @@ if (fabricCanvasEl && window.fabric) {
   // still part of the group once you're done" — nothing here is a
   // permanent Ungroup.
   let groupEditSession = null; // { ancestors, levels } — see selectNestedObject
+  // Dissolving/rebuilding a group during a group-edit session fires a
+  // burst of Fabric selection/add/remove events, each of which would
+  // otherwise trigger its own Layers panel rebuild — several redundant
+  // renders for what's really one logical step. Set around those
+  // sequences; the deliberate refreshLayersList() call at the end of
+  // each one still runs directly (unaffected by this), so the panel
+  // still always ends up in sync — it just skips the churn in between.
+  let suppressLayersRefresh = false;
   function isWithinGroupEditSession(obj) {
     if (!groupEditSession || !obj) return false;
     const { ancestors, levels } = groupEditSession;
@@ -2454,11 +2803,12 @@ if (fabricCanvasEl && window.fabric) {
   // ending the session doesn't hijack a selection made by clicking a
   // completely different object while a piece was still loose.
   function endGroupEditSession() {
-    if (!groupEditSession) return;
+    if (!groupEditSession) return null;
     const { ancestors, levels } = groupEditSession;
     groupEditSession = null;
     const keepActive = fabricCanvas.getActiveObject();
     suppressHistoryEvents = true;
+    suppressLayersRefresh = true;
     let rebuilt = null;
     for (let i = ancestors.length - 1; i >= 0; i--) {
       const nestedChild = ancestors[i + 1] || null;
@@ -2479,9 +2829,11 @@ if (fabricCanvasEl && window.fabric) {
     if (keepActive && keepActive !== rebuilt && fabricCanvas.getObjects().includes(keepActive)) {
       fabricCanvas.setActiveObject(keepActive);
     }
+    suppressLayersRefresh = false;
     fabricCanvas.requestRenderAll();
     refreshLayersList();
     pushHistory();
+    return rebuilt;
   }
   function selectNestedObject(obj) {
     endGroupEditSession(); // close out any previous loose piece first
@@ -2495,6 +2847,7 @@ if (fabricCanvasEl && window.fabric) {
     const levels = ancestors.map((group) => group.getObjects().slice());
     hideEdgeIndicator();
     suppressHistoryEvents = true;
+    suppressLayersRefresh = true;
     ancestors.forEach((group) => {
       fabricCanvas.setActiveObject(group);
       group.toActiveSelection();
@@ -2502,9 +2855,14 @@ if (fabricCanvasEl && window.fabric) {
     suppressHistoryEvents = false;
     groupEditSession = { ancestors, levels };
     fabricCanvas.setActiveObject(obj);
+    suppressLayersRefresh = false;
     fabricCanvas.requestRenderAll();
-    showObjectToolbarFor(obj);
-    applyScalingControlsVisibility(obj);
+    if (finishModeActive) {
+      refreshFinishUI(obj);
+    } else {
+      showObjectToolbarFor(obj);
+      applyScalingControlsVisibility(obj);
+    }
     refreshLayersList();
     // No pushHistory here, deliberately — ending the session pushes once
     // for the whole enter/edit/exit cycle, and if nothing was actually
@@ -2515,7 +2873,44 @@ if (fabricCanvasEl && window.fabric) {
     if (!layersList) return;
     const active = fabricCanvas.getActiveObject();
     const activeMembers = active ? (active.type === 'activeSelection' ? active.getObjects() : [active]) : [];
-    const objects = fabricCanvas.getObjects().filter((o) => o.evented !== false);
+    const session = groupEditSession;
+    // While a member inside a group is being edited, its ancestor
+    // group(s) are genuinely dissolved on the canvas — Fabric has no
+    // other way to make a member directly selectable while it stays in
+    // the group — but the Layers panel doesn't have to show that churn.
+    // Render the tree as if nothing had been dissolved: for whichever
+    // level(s) are currently loose, use the pre-dissolve snapshot
+    // captured in the session instead of each group's (now empty/gone)
+    // live children, so it looks exactly like it did before selecting
+    // in, and exactly like it will again once the session ends.
+    function childrenOf(obj) {
+      if (session) {
+        const idx = session.ancestors.indexOf(obj);
+        if (idx !== -1) return session.levels[idx];
+      }
+      return obj.getObjects();
+    }
+    let objects = fabricCanvas.getObjects().filter((o) => o.evented !== false);
+    if (session) {
+      // Every dissolved level's members are, right now, sitting as real
+      // top-level canvas objects (not just the outermost one's) — all of
+      // them need hiding from the top-level list, since they're each
+      // shown nested instead via childrenOf(). Only the outermost
+      // ancestor gets a placeholder row put back among the real
+      // top-level objects, in the same spot, so the row structure
+      // doesn't change shape; the inner ancestor(s) only ever appear as
+      // some other row's child, never at the top level.
+      const outerMembers = new Set(session.levels[0]);
+      const allLooseMembers = new Set();
+      session.levels.forEach((members) => members.forEach((m) => allLooseMembers.add(m)));
+      const firstMemberIndex = objects.findIndex((o) => outerMembers.has(o));
+      let insertAt = 0;
+      for (let i = 0; i < firstMemberIndex; i++) {
+        if (!allLooseMembers.has(objects[i])) insertAt++;
+      }
+      objects = objects.filter((o) => !allLooseMembers.has(o));
+      objects.splice(insertAt, 0, session.ancestors[0]);
+    }
     if (layersEmpty) layersEmpty.style.display = objects.length ? 'none' : '';
     layersList.innerHTML = '';
     function renderRow(obj, depth) {
@@ -2523,23 +2918,53 @@ if (fabricCanvasEl && window.fabric) {
       li.className = 'editor-layer-item';
       li.style.paddingLeft = `${8 + depth * 16}px`;
       const isGroup = obj.type === 'group';
-      const children = isGroup ? obj.getObjects() : [];
+      const children = isGroup ? childrenOf(obj) : [];
       const collapsed = collapsedGroups.has(obj);
-      if (depth === 0 && activeMembers.includes(obj)) li.classList.add('is-active');
+      if (activeMembers.includes(obj)) li.classList.add('is-active');
       if (depth > 0) li.classList.add('is-child');
       const toggle = isGroup && children.length
         ? `<button type="button" class="editor-layer-toggle" aria-label="${collapsed ? 'Expand' : 'Collapse'}" aria-expanded="${!collapsed}">${collapsed ? '▸' : '▾'}</button>`
         : '<span class="editor-layer-toggle-spacer"></span>';
-      li.innerHTML = `${toggle}${LAYER_ICONS[obj.type] || ''}<span class="editor-layer-item-label"></span>`;
+      // A dissolved ancestor has no live children of its own right now to
+      // render a thumbnail from — its plain type icon instead of a
+      // stale/empty render.
+      const isDissolvedAncestor = !!(session && session.ancestors.includes(obj));
+      const thumbUrl = isDissolvedAncestor ? null : getLayerThumbDataUrl(obj);
+      const thumbHtml = thumbUrl
+        ? `<img class="editor-layer-item-thumb" src="${thumbUrl}" alt="" />`
+        : (LAYER_ICONS[obj.type] || '');
+      li.innerHTML = `${toggle}${thumbHtml}<span class="editor-layer-item-label"></span>${FINISH_ICONS[getFinish(obj)] || ''}`;
       li.querySelector('.editor-layer-item-label').textContent = layerLabelFor(obj);
       li.addEventListener('click', (e) => {
         if (e.target.closest('.editor-layer-toggle')) return;
-        if (depth === 0) {
-          fabricCanvas.setActiveObject(obj);
-          handleSelection({ selected: [obj] });
-          fabricCanvas.requestRenderAll();
-        } else {
+        // This row only shows as a group because it's mid-edit — there's
+        // no real object behind it to select. End the session (which
+        // rebuilds it for real) and select whatever comes out of that.
+        if (isDissolvedAncestor) {
+          const rebuilt = endGroupEditSession();
+          if (rebuilt) selectLayerObjects([rebuilt]);
+          return;
+        }
+        if (depth > 0) {
           selectNestedObject(obj);
+          return;
+        }
+        // Top-of-stack first, matching the row order actually rendered.
+        const displayOrder = objects.slice().reverse();
+        if (e.shiftKey && layersRangeAnchor && displayOrder.includes(layersRangeAnchor)) {
+          const iA = displayOrder.indexOf(layersRangeAnchor);
+          const iB = displayOrder.indexOf(obj);
+          const [lo, hi] = iA < iB ? [iA, iB] : [iB, iA];
+          selectLayerObjects(displayOrder.slice(lo, hi + 1));
+        } else if (e.metaKey || e.ctrlKey) {
+          const current = fabricCanvas.getActiveObject();
+          const currentMembers = current ? (current.type === 'activeSelection' ? current.getObjects() : [current]) : [];
+          const next = currentMembers.includes(obj) ? currentMembers.filter((o) => o !== obj) : [...currentMembers, obj];
+          selectLayerObjects(next);
+          layersRangeAnchor = obj;
+        } else {
+          selectLayerObjects([obj]);
+          layersRangeAnchor = obj;
         }
       });
       layersList.appendChild(li);
@@ -2563,16 +2988,19 @@ if (fabricCanvasEl && window.fabric) {
   // evented:false and never shown in the list anyway, so skip the
   // rebuild for those — otherwise every drag frame's snap-line add/
   // remove would needlessly rebuild this list too.
+  function refreshLayersListIfNeeded() {
+    if (!suppressLayersRefresh) refreshLayersList();
+  }
   fabricCanvas.on('object:added', (opt) => {
     if (opt.target && opt.target.evented === false) return;
-    refreshLayersList();
+    refreshLayersListIfNeeded();
   });
   fabricCanvas.on('object:removed', (opt) => {
     if (opt.target && opt.target.evented === false) return;
-    refreshLayersList();
+    refreshLayersListIfNeeded();
   });
-  fabricCanvas.on('selection:created', refreshLayersList);
-  fabricCanvas.on('selection:updated', refreshLayersList);
-  fabricCanvas.on('selection:cleared', refreshLayersList);
+  fabricCanvas.on('selection:created', refreshLayersListIfNeeded);
+  fabricCanvas.on('selection:updated', refreshLayersListIfNeeded);
+  fabricCanvas.on('selection:cleared', refreshLayersListIfNeeded);
   refreshLayersList();
 }

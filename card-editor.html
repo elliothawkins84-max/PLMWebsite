@@ -67,6 +67,22 @@
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="22" stroke-dasharray="2 2.4"/><line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="2 2.4"/><circle cx="12" cy="12" r="3"/></svg>
             <span class="editor-tool-label">Guides</span>
           </button>
+          <button type="button" class="editor-tool editor-standalone-toggle" id="toggle-finish">
+            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <g transform="rotate(180 12 12)">
+                <circle cx="9" cy="12" r="2.6" fill="currentColor" stroke="none"/>
+                <line x1="9" y1="7" x2="9" y2="3"/>
+                <line x1="12.5" y1="8.5" x2="15" y2="6"/>
+                <line x1="12.5" y1="15.5" x2="15" y2="18"/>
+                <line x1="9" y1="17" x2="9" y2="21"/>
+                <line x1="5.5" y1="15.5" x2="3" y2="18"/>
+                <line x1="4" y1="12" x2="1" y2="12"/>
+                <line x1="5.5" y1="8.5" x2="3" y2="6"/>
+                <line x1="11.5" y1="12" x2="22" y2="12" stroke-width="3"/>
+              </g>
+            </svg>
+            <span class="editor-tool-label">Finish</span>
+          </button>
         </div>
 
         <div class="editor-zoom">
@@ -325,6 +341,52 @@
           </label>
         </div>
 
+        <!-- Finish mode toolbar — replaces the text/shape toolbar while
+             Finish mode is active (toggled via the Finish button). Not
+             tied to any one selection; the Layers panel (forced open in
+             the sidebar while this mode is active) is how an object or
+             group is picked to apply a finish to. -->
+        <div class="editor-text-toolbar" id="finish-toolbar">
+          <div class="editor-shape-type-group" id="finish-options-group">
+            <button type="button" class="editor-finish-btn" data-finish="none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+              Don't engrave
+            </button>
+            <button type="button" class="editor-finish-btn" data-finish="stroke">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"/></svg>
+              Stroke
+            </button>
+            <button type="button" class="editor-finish-btn" data-finish="texture">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16"/><line x1="4" y1="14" x2="14" y2="4"/><line x1="4" y1="20" x2="20" y2="4"/><line x1="10" y1="20" x2="20" y2="10"/></svg>
+              Texture
+            </button>
+            <button type="button" class="editor-finish-btn is-active" data-finish="white">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16" fill="currentColor"/></svg>
+              White
+            </button>
+            <button type="button" class="editor-finish-btn" data-finish="metallic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16"/><line x1="8" y1="20" x2="20" y2="8" stroke-width="2.4"/></svg>
+              Metallic
+            </button>
+            <button type="button" class="editor-finish-btn" data-finish="frosted-white">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16"/><circle cx="9" cy="9" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="0.9" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none"/></svg>
+              Frosted White
+            </button>
+          </div>
+
+          <div class="editor-finish-texture-slider" id="finish-texture-slider">
+            <input type="range" id="finish-texture-range" aria-label="Texture amount" min="1" max="50" value="25" />
+            <input type="number" class="editor-finish-texture-value" id="finish-texture-value" aria-label="Texture amount" min="1" max="50" value="25" />
+          </div>
+
+          <div class="editor-text-toolbar-divider"></div>
+
+          <button type="button" class="editor-finish-help" id="finish-help-btn" title="What are these?">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="12" x2="3" y2="12"/><polyline points="9,6 3,12 9,18"/></svg>
+            <span>What are these?</span>
+          </button>
+        </div>
+
         <div class="editor-canvas-scroll" id="canvas-scroll">
           <div class="editor-canvas-pan-area">
             <div class="editor-canvas-frame">
@@ -446,6 +508,18 @@
         <button type="button" class="btn btn-ghost btn-sm" id="svg-oversize-modal-cancel">Cancel</button>
         <button type="button" class="btn btn-ghost btn-sm" id="svg-oversize-modal-true-size">Keep True Size</button>
         <button type="button" class="btn btn-sm" id="svg-oversize-modal-yes">Scale to Fit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- "What are these?" popup for the Finish toolbar — placeholder image
+       for now, to be swapped for a real reference image later. -->
+  <div class="editor-modal-overlay" id="finish-help-modal" aria-hidden="true">
+    <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="finish-help-modal-title">
+      <h2 class="editor-modal-title" id="finish-help-modal-title">Finish types</h2>
+      <div class="editor-finish-help-placeholder">Image coming soon</div>
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-sm" id="finish-help-modal-close">Close</button>
       </div>
     </div>
   </div>

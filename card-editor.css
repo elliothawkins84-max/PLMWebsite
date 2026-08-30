@@ -228,11 +228,20 @@
 .editor-layer-item:hover { background: rgba(255, 255, 255, 0.06); color: var(--fg); }
 .editor-layer-item.is-active { background: rgba(255, 255, 255, 0.1); color: var(--fg); }
 .editor-layer-item-icon { width: 16px; height: 16px; flex: none; }
+.editor-layer-item-thumb { width: 16px; height: 16px; flex: none; object-fit: contain; }
 .editor-layer-item-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The object/group's current finish, at the far right of its row (see
+   FINISH_ICONS in card-editor.js) — dimmer than the row's own type icon
+   so it doesn't compete with the label for attention. */
+.editor-layer-item-finish-icon { width: 13px; height: 13px; flex: none; opacity: 0.6; }
+.editor-layer-item:hover .editor-layer-item-finish-icon,
+.editor-layer-item.is-active .editor-layer-item-finish-icon { opacity: 0.9; }
 /* A group's own members, nested underneath it — clicking one selects
    it directly (splitting it out of its parent group(s) to do so; see
    selectNestedObject in card-editor.js), same as any top-level row. */
@@ -470,6 +479,102 @@
 
 .editor-shape-type-group { display: flex; gap: 4px; flex: none; }
 .editor-shape-type-btn svg { width: 15px; height: 15px; }
+
+/* ---- Finish toolbar (Finish mode) ---- */
+.editor-finish-btn {
+  height: 28px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.editor-finish-btn svg { width: 14px; height: 14px; flex: none; }
+.editor-finish-btn:hover:not(.is-active) { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
+.editor-finish-btn.is-active { color: var(--bg); background: var(--fg); }
+.editor-finish-texture-slider { display: none; align-items: center; gap: 8px; }
+.editor-finish-texture-slider.is-visible { display: flex; }
+.editor-finish-texture-slider input[type="range"] {
+  width: 100px;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.editor-finish-texture-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--bg);
+  border: 1px solid var(--fg);
+}
+.editor-finish-texture-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--fg);
+}
+.editor-finish-texture-slider input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: var(--bg);
+  border: 1px solid var(--fg);
+}
+.editor-finish-texture-slider input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--fg);
+}
+.editor-finish-texture-value {
+  width: 34px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 6px 4px;
+  text-align: right;
+}
+.editor-finish-texture-value::-webkit-outer-spin-button,
+.editor-finish-texture-value::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.editor-finish-help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.editor-finish-help:hover { color: var(--fg); }
+.editor-finish-help svg { width: 16px; height: 16px; flex: none; }
+.editor-finish-help-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  margin-bottom: 20px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+#finish-help-modal .editor-modal { width: 320px; }
 .editor-text-toolbar #text-rotation {
   width: 52px;
 }
