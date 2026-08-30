@@ -1166,18 +1166,56 @@ if (fabricCanvasEl && window.fabric) {
     hideObjectToolbar();
     pushHistory();
   }
-  // Double-click into a group to select and edit one of its pieces
-  // directly, rather than only ever being able to move/resize the group
-  // as a whole. There's no lightweight "peek inside" in Fabric — this
-  // just runs the same ungroup this file already has (dissolving the
-  // group into its individual pieces, each now a normal top-level
-  // object) and immediately selects the specific piece double-clicked,
-  // found via subTargetCheck. The rest of the former group's pieces are
-  // left as plain objects too, at their same positions — select them all
-  // again and hit Group to re-form it once done editing. A double-click
-  // that lands on a *nested* group (a group inside a group) selects that
-  // inner group rather than a leaf — double-click again to go a level
-  // deeper.
+  // ---- Double-click into a group to edit one piece, still grouped ----
+  // There's no lightweight "peek inside" in Fabric — a group's children
+  // aren't independently selectable while they're still its members. So
+  // a double-click temporarily dissolves the group (the same mechanism
+  // Ungroup uses) to make the specific piece double-clicked (found via
+  // subTargetCheck) a real, directly editable object, then silently
+  // re-forms the group from the same members the moment focus moves
+  // elsewhere — selecting something outside the group, or deselecting
+  // entirely. From the outside this reads as "edit a piece in place,
+  // still part of the group once you're done": nothing here permanently
+  // breaks the group apart the way the Ungroup command does. A
+  // double-click that lands on a *nested* group (a group inside a group)
+  // opens that inner group rather than a leaf — double-click again to go
+  // a level deeper.
+  let groupEditSession = null; // { members: fabric.Object[] }
+  function isWithinGroupEditSession(obj) {
+    if (!groupEditSession || !obj) return false;
+    const members = groupEditSession.members;
+    if (obj.type === 'activeSelection') return obj.getObjects().every((o) => members.includes(o));
+    return members.includes(obj);
+  }
+  // Rebuilds the group from whichever of its members are still around
+  // (a member could've been deleted while loose) without disturbing
+  // whatever's actually selected right now — unlike toGroup(), this
+  // doesn't require the members to already be the active selection, so
+  // ending the session doesn't hijack a selection the user just made by
+  // clicking something else entirely.
+  function endGroupEditSession() {
+    if (!groupEditSession) return;
+    const members = groupEditSession.members.filter((o) => fabricCanvas.getObjects().includes(o));
+    groupEditSession = null;
+    if (members.length < 2) {
+      pushHistory();
+      return;
+    }
+    const keepActive = fabricCanvas.getActiveObject();
+    const insertIndex = Math.min(...members.map((o) => fabricCanvas.getObjects().indexOf(o)));
+    suppressHistoryEvents = true;
+    members.forEach((o) => fabricCanvas.remove(o));
+    const group = new fabric.Group(members, { subTargetCheck: true });
+    fabricCanvas.add(group);
+    fabricCanvas.moveTo(group, Math.min(insertIndex, fabricCanvas.getObjects().length - 1));
+    suppressHistoryEvents = false;
+    if (keepActive && keepActive !== group && fabricCanvas.getObjects().includes(keepActive)) {
+      fabricCanvas.setActiveObject(keepActive);
+    }
+    fabricCanvas.requestRenderAll();
+    refreshLayersList();
+    pushHistory();
+  }
   fabricCanvas.on('mouse:dblclick', (opt) => {
     const target = opt.target;
     if (!target || target.type !== 'group') return;
@@ -1189,12 +1227,17 @@ if (fabricCanvasEl && window.fabric) {
     suppressHistoryEvents = true;
     target.toActiveSelection();
     suppressHistoryEvents = false;
+    const active = fabricCanvas.getActiveObject();
+    groupEditSession = { members: active && active.type === 'activeSelection' ? active.getObjects().slice() : [child] };
     fabricCanvas.setActiveObject(child);
     fabricCanvas.requestRenderAll();
     showObjectToolbarFor(child);
     applyScalingControlsVisibility(child);
     refreshLayersList();
-    pushHistory();
+    // No pushHistory here, deliberately — ending the session (below)
+    // pushes once for the whole enter/edit/exit cycle, and if nothing
+    // was actually edited in between, that snapshot is identical to the
+    // one before double-clicking and gets deduped away entirely.
   });
 
   // ---- Z-order ----
@@ -1286,6 +1329,12 @@ if (fabricCanvasEl && window.fabric) {
   }
   function restoreHistorySnapshot(snapshot) {
     isRestoringHistory = true;
+    // Whatever's loose from a double-click group-edit session is about
+    // to be wiped out by loadFromJSON below anyway — drop it now so the
+    // discardActiveObject() cascade below doesn't do the (harmless but
+    // pointless) work of re-grouping members that are seconds from being
+    // replaced wholesale.
+    groupEditSession = null;
     fabricCanvas.discardActiveObject();
     hideEdgeIndicator();
     clearSnapGuides();
@@ -1836,6 +1885,10 @@ if (fabricCanvasEl && window.fabric) {
     // instead of recognizing the real active object is the whole
     // ActiveSelection.
     const obj = fabricCanvas.getActiveObject() || (e.selected && e.selected[0]);
+    // Selection moved to something outside the currently-loose group
+    // piece(s) — re-form the group before handling whatever's newly
+    // selected (which stays selected; see endGroupEditSession).
+    if (groupEditSession && !isWithinGroupEditSession(obj)) endGroupEditSession();
     if (obj && (obj.type === 'i-text' || SHAPE_TYPES.includes(obj.type))) {
       showObjectToolbarFor(obj);
       applyScalingControlsVisibility(obj);
@@ -1845,7 +1898,10 @@ if (fabricCanvasEl && window.fabric) {
   }
   fabricCanvas.on('selection:created', handleSelection);
   fabricCanvas.on('selection:updated', handleSelection);
-  fabricCanvas.on('selection:cleared', hideObjectToolbar);
+  fabricCanvas.on('selection:cleared', () => {
+    endGroupEditSession();
+    hideObjectToolbar();
+  });
 
   // Clean up a text box left empty (placed, then clicked away from
   // without typing anything) instead of leaving a stray empty object.
