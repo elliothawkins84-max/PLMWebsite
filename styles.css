@@ -267,6 +267,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 /* ---- Sections ---- */
 .section { padding: 100px 28px; border-top: 1px solid var(--line); }
 .section-head { margin-bottom: 56px; }
+.section-head .lead { max-width: none; white-space: nowrap; }
 .section-head .eyebrow { margin-bottom: 16px; }
 
 /* ---- Specialties (material / wavelength explorer) ---- */
@@ -1425,6 +1426,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .product-name {
   font-family: var(--mono);
   font-size: 0.9rem;
+  font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--fg);
 }
@@ -1435,9 +1437,13 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   white-space: nowrap;
 }
 .product-desc {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--muted);
   max-width: 60ch;
+}
+.product-features {
+  font-size: 0.72rem;
+  color: var(--muted);
 }
 .product-row-info .btn { align-self: flex-start; margin-top: 4px; }
 .product-list .product-row:nth-child(even) .product-row-info .btn { align-self: flex-end; }
@@ -1454,6 +1460,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
     gap: 16px;
   }
   .product-row-photo { flex-basis: auto; }
+  .section-head .lead { white-space: normal; }
   .product-list .product-row:nth-child(even) .product-row-photo,
   .product-list .product-row:nth-child(even) .product-row-info {
     order: initial;
