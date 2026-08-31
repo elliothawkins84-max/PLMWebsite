@@ -4,6 +4,16 @@
 // canvas functionality (what a selected tool actually does) yet.
 
 const PX_PER_MM = 9; // matches the fixed sizing in card-editor.css
+const MM_PER_IN = 25.4;
+// The display unit for every user-facing measurement field (position,
+// size, stroke width, corner radius, the ruler) — purely a display/input
+// concern. Internally, everything is still stored and computed in px
+// (via PX_PER_MM), same as always; only reading from/writing to the UI
+// goes through pxPerUnit() so a field shows/accepts the chosen unit.
+let unitSystem = 'mm';
+function pxPerUnit() { return unitSystem === 'in' ? PX_PER_MM * MM_PER_IN : PX_PER_MM; }
+function unitLabel() { return unitSystem === 'in' ? 'in' : 'mm'; }
+function unitDecimals() { return unitSystem === 'in' ? 3 : 2; }
 
 // ---- Pasteboard / artboard geometry ----
 // The Fabric canvas is a large "pasteboard" (matching the existing
@@ -57,34 +67,52 @@ if (sidePanel && panelToggles.length) {
 }
 
 // ---- Rulers ----
+// lengthMm is always the card's real physical size in mm — unitSystem only
+// changes how the ticks are divided up and labeled. Clears its own
+// previous contents first so it can be re-run when the unit changes.
 function buildRuler(el, lengthMm, isVertical) {
-  const MAJOR_EVERY = 10; // mm
-  const MINOR_EVERY = 2; // mm
-  for (let mm = 0; mm <= lengthMm; mm += MINOR_EVERY) {
-    const isMajor = mm % MAJOR_EVERY === 0;
-    const pos = mm * PX_PER_MM;
-
+  el.innerHTML = '';
+  function addTick(pos, isMajor, labelText) {
     const tick = document.createElement('span');
     tick.className = 'ruler-tick ' + (isMajor ? 'major' : 'minor');
     if (isVertical) tick.style.top = `${pos}px`;
     else tick.style.left = `${pos}px`;
     el.appendChild(tick);
-
     if (isMajor) {
       const label = document.createElement('span');
       label.className = 'ruler-label';
-      label.textContent = mm;
+      label.textContent = labelText;
       if (isVertical) label.style.top = `${pos}px`;
       else label.style.left = `${pos}px`;
       el.appendChild(label);
     }
   }
+  if (unitSystem === 'in') {
+    const MINOR_EVERY_IN = 0.125; // 1/8"
+    const MAJOR_EVERY_STEPS = 8; // every 8th minor tick = 1"
+    const lengthIn = lengthMm / MM_PER_IN;
+    const steps = Math.round(lengthIn / MINOR_EVERY_IN);
+    for (let i = 0; i <= steps; i++) {
+      const inch = i * MINOR_EVERY_IN;
+      const isMajor = i % MAJOR_EVERY_STEPS === 0;
+      addTick(inch * MM_PER_IN * PX_PER_MM, isMajor, inch);
+    }
+    return;
+  }
+  const MAJOR_EVERY = 10; // mm
+  const MINOR_EVERY = 2; // mm
+  for (let mm = 0; mm <= lengthMm; mm += MINOR_EVERY) {
+    addTick(mm * PX_PER_MM, mm % MAJOR_EVERY === 0, mm);
+  }
 }
 
 const rulerTop = document.getElementById('ruler-top');
 const rulerLeft = document.getElementById('ruler-left');
-if (rulerTop) buildRuler(rulerTop, 86, false);
-if (rulerLeft) buildRuler(rulerLeft, 54, true);
+function rebuildRulers() {
+  if (rulerTop) buildRuler(rulerTop, 86, false);
+  if (rulerLeft) buildRuler(rulerLeft, 54, true);
+}
+rebuildRulers();
 
 // ---- Zoom ----
 // Uses the CSS `zoom` property (not `transform: scale`) specifically
@@ -366,7 +394,7 @@ if (fabricCanvasEl && window.fabric) {
   const shapeDrawLabel = document.getElementById('shape-draw-label');
   function showShapeDrawLabel(nearX, nearY, wPx, hPx) {
     if (!shapeDrawLabel) return;
-    shapeDrawLabel.textContent = `${(wPx / PX_PER_MM).toFixed(1)} × ${(hPx / PX_PER_MM).toFixed(1)} mm`;
+    shapeDrawLabel.textContent = `${(wPx / pxPerUnit()).toFixed(unitDecimals())} × ${(hPx / pxPerUnit()).toFixed(unitDecimals())} ${unitLabel()}`;
     // nearX/nearY are raw pasteboard-space canvas coordinates; this label
     // is CSS-positioned relative to .editor-card (the card window), so
     // the card's own offset into the pasteboard needs subtracting first.
@@ -543,7 +571,7 @@ if (fabricCanvasEl && window.fabric) {
   const shapeSizeModalH = document.getElementById('shape-size-modal-h');
   const shapeSizeModalCancel = document.getElementById('shape-size-modal-cancel');
   const shapeSizeModalDone = document.getElementById('shape-size-modal-done');
-  const SHAPE_SIZE_MODAL_DEFAULT_MM = 20;
+  const SHAPE_SIZE_MODAL_DEFAULT_PX = 20 * PX_PER_MM;
   let pendingShapeSize = null; // { shape, type, x0, y0 }
   function isShapeSizeModalOpen() {
     return !!(shapeSizeModal && shapeSizeModal.classList.contains('is-open'));
@@ -562,8 +590,9 @@ if (fabricCanvasEl && window.fabric) {
     if (shapeSizeModalWLabel) shapeSizeModalWLabel.textContent = isLine ? 'L' : 'W';
     if (shapeSizeModalHField) shapeSizeModalHField.classList.toggle('is-hidden', isLine);
     if (shapeSizeModalWField) shapeSizeModalWField.title = isLine ? 'Length' : 'Width';
-    if (shapeSizeModalW) shapeSizeModalW.value = SHAPE_SIZE_MODAL_DEFAULT_MM;
-    if (shapeSizeModalH) shapeSizeModalH.value = SHAPE_SIZE_MODAL_DEFAULT_MM;
+    const defaultVal = (SHAPE_SIZE_MODAL_DEFAULT_PX / pxPerUnit()).toFixed(unitDecimals());
+    if (shapeSizeModalW) shapeSizeModalW.value = defaultVal;
+    if (shapeSizeModalH) shapeSizeModalH.value = defaultVal;
     shapeSizeModal.classList.add('is-open');
     shapeSizeModal.setAttribute('aria-hidden', 'false');
     if (shapeSizeModalW) {
@@ -586,10 +615,10 @@ if (fabricCanvasEl && window.fabric) {
   function commitShapeSizeModal() {
     if (!pendingShapeSize) return;
     const { shape, type, x0, y0 } = pendingShapeSize;
-    const wMm = parseFloat(shapeSizeModalW ? shapeSizeModalW.value : '');
-    const hMm = parseFloat(shapeSizeModalH ? shapeSizeModalH.value : '');
-    if (!(wMm > 0) || (type !== 'line' && !(hMm > 0))) return; // leave the dialog open to fix it
-    const wPx = wMm * PX_PER_MM;
+    const wVal = parseFloat(shapeSizeModalW ? shapeSizeModalW.value : '');
+    const hVal = parseFloat(shapeSizeModalH ? shapeSizeModalH.value : '');
+    if (!(wVal > 0) || (type !== 'line' && !(hVal > 0))) return; // leave the dialog open to fix it
+    const wPx = wVal * pxPerUnit();
     if (type === 'line') {
       // Same reason as the live drag preview: a Line's endpoints are
       // fixed at construction, so redrawing it means a fresh object.
@@ -602,7 +631,7 @@ if (fabricCanvasEl && window.fabric) {
       finalizeShape(line);
       return;
     }
-    const hPx = hMm * PX_PER_MM;
+    const hPx = hVal * pxPerUnit();
     fitBoxShape(shape, type, x0 - wPx / 2, y0 - hPx / 2, x0 + wPx / 2, y0 + hPx / 2);
     closeShapeSizeModal();
     finalizeShape(shape);
@@ -919,7 +948,7 @@ if (fabricCanvasEl && window.fabric) {
     if (cornerRadiusField) cornerRadiusField.classList.toggle('is-hidden', !applicable);
     if (!applicable) return;
     const px = obj._cornerRadiusPx || 0;
-    if (cornerRadiusInput) cornerRadiusInput.value = (px / PX_PER_MM).toFixed(2);
+    if (cornerRadiusInput) cornerRadiusInput.value = (px / pxPerUnit()).toFixed(unitDecimals());
   }
   function fillEligible(obj) {
     return SHAPE_FILL_TYPES.includes(obj.type) || obj.type === 'group';
@@ -1049,7 +1078,7 @@ if (fabricCanvasEl && window.fabric) {
     if (strokeSettingsDropdown) strokeSettingsDropdown.classList.toggle('is-visible', mode === 'stroke');
     if (mode !== 'stroke') return;
     const widthPx = rep._strokeWidthPx || rep.strokeWidth || 0.5 * PX_PER_MM;
-    if (strokeWidthInput) strokeWidthInput.value = (widthPx / PX_PER_MM).toFixed(2);
+    if (strokeWidthInput) strokeWidthInput.value = (widthPx / pxPerUnit()).toFixed(unitDecimals());
     const align = rep.strokeAlign || 'center';
     strokeAlignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.strokeAlign === align));
   }
@@ -1407,7 +1436,13 @@ if (fabricCanvasEl && window.fabric) {
   const addBackBtn = document.getElementById('add-back-side');
   const cardLabel = document.getElementById('editor-card-label');
 
+  function cardSizeLabelText() {
+    if (unitSystem === 'in') return `${(86 / MM_PER_IN).toFixed(2)} × ${(54 / MM_PER_IN).toFixed(2)}in`;
+    return '86 × 54mm';
+  }
+  let currentSideName = 'front';
   function setActiveSideUI(sideName) {
+    currentSideName = sideName;
     if (sidesEl) {
       sidesEl.querySelectorAll('.editor-side-thumb').forEach((thumb) => {
         thumb.classList.toggle('is-active', thumb.dataset.side === sideName);
@@ -1415,19 +1450,26 @@ if (fabricCanvasEl && window.fabric) {
     }
     if (cardLabel) {
       const name = sideName === 'front' ? 'Front' : 'Back';
-      cardLabel.textContent = `${name} — 86 × 54mm`;
+      cardLabel.textContent = `${name} — ${cardSizeLabelText()}`;
     }
   }
 
-  function switchToSide(sideName) {
-    if (sideName === currentSide) return;
-    sideHistories[currentSide] = { undo: undoStack, redo: redoStack };
+  // Swaps in a side's own undo/redo history and restores its content —
+  // shared by switchToSide below and by project import, which needs to
+  // force-load a side without switchToSide's "already there" early return
+  // (import is populating sideHistories itself, not reacting to a click).
+  function loadSideAndSwitch(sideName) {
     currentSide = sideName;
     const stored = sideHistories[sideName];
     undoStack = stored ? stored.undo : [blankCanvasSnapshot];
     redoStack = stored ? stored.redo : [];
     setActiveSideUI(sideName);
     restoreHistorySnapshot(undoStack[undoStack.length - 1]);
+  }
+  function switchToSide(sideName) {
+    if (sideName === currentSide) return;
+    sideHistories[currentSide] = { undo: undoStack, redo: redoStack };
+    loadSideAndSwitch(sideName);
   }
 
   if (sidesEl) {
@@ -1442,8 +1484,14 @@ if (fabricCanvasEl && window.fabric) {
   // front/back click.
   setActiveSideUI('front');
 
-  if (addBackBtn) {
-    addBackBtn.addEventListener('click', () => {
+  // Creates the "Back" side thumbnail and its renderings-panel card box —
+  // shared by the Add Back Side button and project import (which needs a
+  // back side to exist in the DOM before it can load content into it, but
+  // shouldn't switch to it or touch its content the way a fresh click
+  // would). Safe to call more than once — does nothing once both already
+  // exist.
+  function ensureBackSideUI() {
+    if (!document.querySelector('.editor-side-thumb[data-side="back"]')) {
       const backThumb = document.createElement('button');
       backThumb.type = 'button';
       backThumb.className = 'editor-side-thumb';
@@ -1452,20 +1500,166 @@ if (fabricCanvasEl && window.fabric) {
         <span class="editor-side-thumb-card"></span>
         <span class="editor-side-thumb-label">Back</span>
       `;
-      addBackBtn.replaceWith(backThumb);
+      if (addBackBtn && addBackBtn.isConnected) addBackBtn.replaceWith(backThumb);
+      else if (sidesEl) sidesEl.appendChild(backThumb);
+    }
+    // A back side now exists, so the renderings panel should preview both
+    // sides — add a second card box alongside the front one.
+    if (renderingsBody && !renderingsBody.querySelector('[data-side="back"]')) {
+      const backPreview = document.createElement('canvas');
+      backPreview.className = 'editor-renderings-canvas';
+      backPreview.dataset.side = 'back';
+      backPreview.width = 860;
+      backPreview.height = 540;
+      renderingsBody.appendChild(backPreview);
+    }
+  }
+  if (addBackBtn) {
+    addBackBtn.addEventListener('click', () => {
+      ensureBackSideUI();
       switchToSide('back');
+      renderCardPreview('back');
+    });
+  }
 
-      // A back side now exists, so the renderings panel should preview
-      // both sides — add a second card box alongside the front one.
-      if (renderingsBody && !renderingsBody.querySelector('[data-side="back"]')) {
-        const backPreview = document.createElement('canvas');
-        backPreview.className = 'editor-renderings-canvas';
-        backPreview.dataset.side = 'back';
-        backPreview.width = 860;
-        backPreview.height = 540;
-        renderingsBody.appendChild(backPreview);
-        renderCardPreview('back');
+  // ---- Save to / Import from a local file ----
+  // The whole project (both sides' full designs) as one plain JSON file —
+  // not the print-ready SVG export (Export / Submit Design, still
+  // unbuilt), just enough to reconstruct the editable project exactly as
+  // it was, the same way "Save" and "Open" work in a desktop app.
+  function getSideSnapshotJSON(side) {
+    if (side === currentSide) return undoStack[undoStack.length - 1];
+    const stored = sideHistories[side];
+    return stored ? stored.undo[stored.undo.length - 1] : null;
+  }
+  function projectHasBackSide() {
+    return currentSide === 'back' || !!sideHistories.back || !!document.querySelector('.editor-side-thumb[data-side="back"]');
+  }
+  function downloadProjectFile(filename) {
+    const hasBack = projectHasBackSide();
+    const payload = {
+      app: 'business-card-editor',
+      version: 1,
+      currentSide,
+      front: JSON.parse(getSideSnapshotJSON('front') || blankCanvasSnapshot),
+      back: hasBack ? JSON.parse(getSideSnapshotJSON('back') || blankCanvasSnapshot) : null,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+  // ---- Save As modal ----
+  // Most browsers only prompt for a filename/location on download if the
+  // user has "ask where to save each file" turned on in their own browser
+  // settings — with that off, a plain <a download> save would silently
+  // always use the same fixed name. Asking here first means the file
+  // always gets the name typed here regardless of that setting.
+  const saveBtn = document.getElementById('save-btn');
+  const saveAsModal = document.getElementById('save-as-modal');
+  const saveAsFilenameInput = document.getElementById('save-as-filename');
+  const saveAsCancelBtn = document.getElementById('save-as-modal-cancel');
+  const saveAsDoneBtn = document.getElementById('save-as-modal-done');
+  function isSaveAsModalOpen() {
+    return !!(saveAsModal && saveAsModal.classList.contains('is-open'));
+  }
+  function openSaveAsModal() {
+    if (!saveAsModal) {
+      downloadProjectFile('business-card.json');
+      return;
+    }
+    if (saveAsFilenameInput) saveAsFilenameInput.value = 'business-card';
+    saveAsModal.classList.add('is-open');
+    saveAsModal.setAttribute('aria-hidden', 'false');
+    if (saveAsFilenameInput) {
+      saveAsFilenameInput.focus();
+      saveAsFilenameInput.select();
+    }
+  }
+  function closeSaveAsModal() {
+    if (!saveAsModal) return;
+    saveAsModal.classList.remove('is-open');
+    saveAsModal.setAttribute('aria-hidden', 'true');
+  }
+  function commitSaveAsModal() {
+    const raw = (saveAsFilenameInput ? saveAsFilenameInput.value : '').trim();
+    // Strips characters that aren't valid in a filename on Windows/macOS —
+    // typing them wouldn't crash anything, but could silently produce a
+    // file the OS itself refuses to save, or a confusingly mangled name.
+    const cleaned = (raw || 'business-card').replace(/[\\/:*?"<>|]+/g, '').trim() || 'business-card';
+    const filename = /\.json$/i.test(cleaned) ? cleaned : `${cleaned}.json`;
+    closeSaveAsModal();
+    downloadProjectFile(filename);
+  }
+  if (saveBtn) saveBtn.addEventListener('click', openSaveAsModal);
+  if (saveAsCancelBtn) saveAsCancelBtn.addEventListener('click', closeSaveAsModal);
+  if (saveAsDoneBtn) saveAsDoneBtn.addEventListener('click', commitSaveAsModal);
+  if (saveAsModal) {
+    saveAsModal.addEventListener('mousedown', (e) => {
+      if (e.target === saveAsModal) closeSaveAsModal();
+    });
+  }
+  if (saveAsFilenameInput) {
+    saveAsFilenameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitSaveAsModal();
       }
+    });
+  }
+  const importBtn = document.getElementById('import-btn');
+  const importProjectInput = document.getElementById('import-project-input');
+  // Replaces the whole project with what's in the file — same as "Open"
+  // in a desktop app, not a merge. Undo/redo history resets to just this
+  // loaded state, on both sides; there's nothing meaningful to undo back
+  // to from a freshly opened file.
+  function importProjectData(payload) {
+    if (!payload || typeof payload !== 'object' || !payload.front) {
+      alert("That file doesn't look like a valid business card design.");
+      return;
+    }
+    groupEditSession = null;
+    fabricCanvas.discardActiveObject();
+    hideEdgeIndicator();
+    clearSnapGuides();
+    hideObjectToolbar();
+    Object.keys(sideHistories).forEach((key) => delete sideHistories[key]);
+    sideHistories.front = { undo: [JSON.stringify(payload.front)], redo: [] };
+    if (payload.back) {
+      ensureBackSideUI();
+      sideHistories.back = { undo: [JSON.stringify(payload.back)], redo: [] };
+    }
+    const targetSide = payload.currentSide === 'back' && payload.back ? 'back' : 'front';
+    loadSideAndSwitch(targetSide);
+    if (payload.back) renderCardPreview('back');
+  }
+  if (importBtn && importProjectInput) {
+    importBtn.addEventListener('click', () => {
+      const hasExistingWork = undoStack.length > 1 || projectHasBackSide();
+      if (hasExistingWork && !confirm('Importing a file will replace your current design. Continue?')) return;
+      importProjectInput.value = '';
+      importProjectInput.click();
+    });
+    importProjectInput.addEventListener('change', () => {
+      const file = importProjectInput.files && importProjectInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        let payload;
+        try {
+          payload = JSON.parse(String(reader.result));
+        } catch (err) {
+          alert("That file couldn't be read as a business card design.");
+          return;
+        }
+        importProjectData(payload);
+      };
+      reader.readAsText(file);
     });
   }
 
@@ -2165,10 +2359,10 @@ if (fabricCanvasEl && window.fabric) {
   function refreshTransformFields(obj) {
     if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
     updateAnchorIcon(anchorKeyFor(obj));
-    if (posXInput) posXInput.value = ((obj.left - CARD_OFFSET_X) / PX_PER_MM).toFixed(2);
-    if (posYInput) posYInput.value = ((obj.top - CARD_OFFSET_Y) / PX_PER_MM).toFixed(2);
-    if (sizeWInput) sizeWInput.value = (displayWidthOf(obj) / PX_PER_MM).toFixed(2);
-    if (sizeHInput) sizeHInput.value = (displayHeightOf(obj) / PX_PER_MM).toFixed(2);
+    if (posXInput) posXInput.value = ((obj.left - CARD_OFFSET_X) / pxPerUnit()).toFixed(unitDecimals());
+    if (posYInput) posYInput.value = ((obj.top - CARD_OFFSET_Y) / pxPerUnit()).toFixed(unitDecimals());
+    if (sizeWInput) sizeWInput.value = (displayWidthOf(obj) / pxPerUnit()).toFixed(unitDecimals());
+    if (sizeHInput) sizeHInput.value = (displayHeightOf(obj) / pxPerUnit()).toFixed(unitDecimals());
     syncEdgeIndicator(obj);
   }
   function clearTransformFields() {
@@ -2426,6 +2620,72 @@ if (fabricCanvasEl && window.fabric) {
   }
   if (finishToggleBtn) {
     finishToggleBtn.addEventListener('click', () => setFinishMode(!finishModeActive));
+  }
+
+  // ---- Settings pop-up (left toolbar, below Finish) ----
+  // Empty shell for now — positioned next to its trigger button, same
+  // fixed-position + JS-placement mechanism as the right-click context menu.
+  const settingsToggleBtn = document.getElementById('toggle-settings');
+  const settingsPopup = document.getElementById('settings-popup');
+  if (settingsToggleBtn && settingsPopup) {
+    function closeSettingsPopup() {
+      settingsPopup.classList.remove('is-open');
+      settingsToggleBtn.classList.remove('is-active');
+      settingsToggleBtn.setAttribute('aria-expanded', 'false');
+    }
+    function openSettingsPopup() {
+      settingsPopup.classList.add('is-open');
+      settingsToggleBtn.classList.add('is-active');
+      settingsToggleBtn.setAttribute('aria-expanded', 'true');
+      const btnRect = settingsToggleBtn.getBoundingClientRect();
+      const popupRect = settingsPopup.getBoundingClientRect();
+      const left = Math.min(btnRect.right + 6, window.innerWidth - popupRect.width - 4);
+      const top = Math.min(btnRect.top, window.innerHeight - popupRect.height - 4);
+      settingsPopup.style.left = `${Math.max(4, left)}px`;
+      settingsPopup.style.top = `${Math.max(4, top)}px`;
+    }
+    settingsToggleBtn.addEventListener('click', () => {
+      if (settingsPopup.classList.contains('is-open')) closeSettingsPopup();
+      else openSettingsPopup();
+    });
+    document.addEventListener('click', (e) => {
+      if (!settingsPopup.classList.contains('is-open')) return;
+      if (settingsPopup.contains(e.target) || settingsToggleBtn.contains(e.target)) return;
+      closeSettingsPopup();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeSettingsPopup();
+    });
+
+    // ---- Units (mm / in) ----
+    const unitButtons = settingsPopup.querySelectorAll('.editor-settings-unit-btn');
+    const UNIT_LABEL_IDS = ['corner-radius-unit', 'stroke-width-unit', 'pos-x-unit', 'pos-y-unit', 'size-w-unit', 'size-h-unit', 'shape-modal-w-unit', 'shape-modal-h-unit'];
+    function refreshUnitLabels() {
+      UNIT_LABEL_IDS.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = unitLabel();
+      });
+    }
+    function setUnitSystem(next) {
+      if (next === unitSystem) return;
+      unitSystem = next;
+      unitButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.unit === unitSystem));
+      refreshUnitLabels();
+      rebuildRulers();
+      setActiveSideUI(currentSideName);
+      // Re-populate every currently-visible numeric field in the new unit
+      // — otherwise a field keeps showing its old number until the next
+      // selection change happens to refresh it.
+      const active = fabricCanvas.getActiveObject();
+      if (active) {
+        refreshTransformFields(active);
+        refreshCornerRadiusUI(active);
+        refreshFillModeUI(active);
+      }
+    }
+    unitButtons.forEach((btn) => {
+      btn.addEventListener('click', () => setUnitSystem(btn.dataset.unit));
+    });
   }
   finishButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2831,15 +3091,16 @@ if (fabricCanvasEl && window.fabric) {
     });
   });
 
-  // ---- Position fields (anchor point, mm from the card's top-left) ----
+  // ---- Position fields (anchor point, in the current display unit from
+  // the card's top-left) ----
   // obj.left/top already *are* the anchor point's coordinates once
   // originX/Y is set to match it, so this is a direct set — no delta
   // math needed.
-  function moveActiveObjectAnchorTo(axis, valueMm) {
+  function moveActiveObjectAnchorTo(axis, value) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj) return;
-    if (axis === 'x') obj.set({ left: CARD_OFFSET_X + valueMm * PX_PER_MM });
-    else obj.set({ top: CARD_OFFSET_Y + valueMm * PX_PER_MM });
+    if (axis === 'x') obj.set({ left: CARD_OFFSET_X + value * pxPerUnit() });
+    else obj.set({ top: CARD_OFFSET_Y + value * pxPerUnit() });
     obj.setCoords();
     fabricCanvas.requestRenderAll();
     refreshTransformFields(obj);
@@ -2848,17 +3109,17 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(posXInput, (val) => moveActiveObjectAnchorTo('x', val));
   commitOnEnterOrBlur(posYInput, (val) => moveActiveObjectAnchorTo('y', val));
 
-  // ---- Size fields (width/height, mm) ----
+  // ---- Size fields (width/height, in the current display unit) ----
   // Text, uniform (default): folds into fontSize so both dimensions move
   // together, same anti-distortion approach as corner-drag scaling.
   // Text, non-uniform: only the edited axis's scale changes.
   // Shapes: there's no fontSize equivalent, so it's always scaleX/scaleY
   // directly — uniform mode scales both by the edited axis's ratio,
   // non-uniform mode only touches the one axis.
-  function applySizeMm(axis, valueMm) {
+  function applySizeMm(axis, value) {
     const obj = fabricCanvas.getActiveObject();
-    if (!obj || valueMm <= 0) return;
-    const targetPx = valueMm * PX_PER_MM;
+    if (!obj || value <= 0) return;
+    const targetPx = value * pxPerUnit();
     const nonUniform = isNonUniformAllowed(obj);
     if (obj.type === 'i-text') {
       if (nonUniform) {
@@ -2893,7 +3154,7 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(strokeWidthInput, (val) => {
     const obj = fabricCanvas.getActiveObject();
     if (!obj || shapeFillModeFor(obj) !== 'stroke') return;
-    const px = Math.max(0.01, val) * PX_PER_MM;
+    const px = Math.max(0.01, val) * pxPerUnit();
     if (obj.type === 'group') {
       eachFillableDescendant(obj, (child) => { child._strokeWidthPx = px; });
     } else {
@@ -2966,7 +3227,7 @@ if (fabricCanvasEl && window.fabric) {
   commitOnEnterOrBlur(cornerRadiusInput, (val) => {
     const obj = fabricCanvas.getActiveObject();
     if (!isRoundableShape(obj)) return;
-    applyCornerRadius(obj, val * PX_PER_MM);
+    applyCornerRadius(obj, val * pxPerUnit());
   });
 
   // ---- Scaling checkboxes ("Non-uniform scale" for both text and
@@ -3050,6 +3311,10 @@ if (fabricCanvasEl && window.fabric) {
     }
     if (isOversizeModalOpen()) {
       closeOversizeModal();
+      return;
+    }
+    if (isSaveAsModalOpen()) {
+      closeSaveAsModal();
       return;
     }
     const obj = fabricCanvas.getActiveObject();

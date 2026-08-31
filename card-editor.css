@@ -70,29 +70,37 @@
 .editor-icon-btn:disabled { cursor: not-allowed; opacity: 0.5; }
 /* .btn-sm carries a margin-top meant for spacing under a product-card
    caption elsewhere on the site — reset it here so these buttons center
-   properly in the top bar instead of inheriting that offset. */
-.editor-topbar-actions .btn { cursor: not-allowed; margin-top: 0; }
+   properly in the top bar instead of inheriting that offset. The
+   not-allowed cursor is only for whichever of these are actually
+   disabled (Export/Submit, for now) — Import and Save are real, clickable
+   buttons and shouldn't look otherwise. */
+.editor-topbar-actions .btn { margin-top: 0; }
+.editor-topbar-actions .btn:disabled { cursor: not-allowed; }
 
 /* ---- Main layout: 4 columns (toolbar, layers/guides panel, canvas,
    renderings), 2 rows ---- */
 .editor-main {
+  position: relative;
   flex: 1;
   display: grid;
   /* Renderings column sized to the panel's own (resizable) width, not
-     hardcoded here — see .editor-renderings. */
-  grid-template-columns: 112px auto 1fr auto;
+     hardcoded here — see .editor-renderings. The Layers/Finish side panel
+     used to have its own reserved column here too, pushing the canvas
+     over whenever it opened — it's now an absolutely-positioned overlay
+     instead (see .editor-side-panel below), floating on top of the canvas
+     rather than resizing everything else around it. */
+  grid-template-columns: 112px 1fr auto;
   grid-template-rows: 1fr auto;
   min-height: 0;
 }
 .editor-toolbar { grid-column: 1; grid-row: 1 / 3; }
-.editor-side-panel { grid-column: 2; grid-row: 1 / 3; }
-.editor-canvas-area { grid-column: 3; grid-row: 1; }
-.editor-renderings { grid-column: 4; grid-row: 1; }
+.editor-canvas-area { grid-column: 2; grid-row: 1; }
+.editor-renderings { grid-column: 3; grid-row: 1; }
 /* Spans under both the canvas and renderings columns, so it's a single
    full-width footer rather than living inside just one column — this is
    also what makes the renderings panel's own box shorter, since row 1
    no longer extends all the way to the bottom. */
-.editor-bottombar { grid-column: 3 / 5; grid-row: 2; }
+.editor-bottombar { grid-column: 2 / 4; grid-row: 2; }
 
 /* ---- Left toolbar ---- */
 .editor-toolbar {
@@ -171,12 +179,21 @@
 }
 
 /* ---- Layers / Guides side panel ---- */
+/* Floats over the canvas instead of taking its own grid column — opening
+   it no longer shifts the canvas (or the renderings panel) over. Anchored
+   to .editor-main (position: relative, above), right after the toolbar. */
 .editor-side-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 112px;
+  z-index: 20;
   width: 0;
   overflow: hidden;
+  background: var(--bg);
   transition: width 0.18s ease-out;
 }
-.editor-side-panel.is-open { width: 240px; border-right: 1px solid var(--line); }
+.editor-side-panel.is-open { width: 240px; border-right: 1px solid var(--line); box-shadow: 4px 0 16px rgba(0, 0, 0, 0.35); }
 .editor-side-panel-section {
   display: none;
   width: 240px;
@@ -315,7 +332,17 @@
      when hiding, so it doesn't just vanish mid-animation. */
   opacity: 0;
   transform: translateY(-6px);
-  transition: opacity 0.16s ease-out, transform 0.16s ease-out, visibility 0s linear 0.16s;
+  transition: opacity 0.16s ease-out, transform 0.16s ease-out, visibility 0s linear 0.16s, margin-left 0.18s ease-out;
+}
+/* The side panel floats over the canvas (see .editor-side-panel) rather
+   than pushing it over — but this toolbar's own z-index (above, needed to
+   lift its dropdown panels over the canvas) also puts it above the side
+   panel, so without this it visibly collides with the panel instead of
+   just being covered by it. Shifting the toolbar itself past the open
+   panel's width keeps both usable at once (Finish mode needs this toolbar
+   and the Layers panel up simultaneously) without moving the canvas. */
+.editor-side-panel.is-open ~ .editor-canvas-area .editor-text-toolbar {
+  margin-left: 240px;
 }
 .editor-text-toolbar.is-visible {
   visibility: visible;
@@ -898,6 +925,9 @@
 .editor-renderings-hint {
   font-size: 0.72rem;
   color: var(--muted);
+  margin-bottom: 2px;
+}
+.editor-renderings-hint:last-of-type {
   margin-bottom: 20px;
 }
 .editor-renderings-body {
@@ -999,6 +1029,40 @@
 .editor-context-menu-item--danger:hover:not(:disabled) { background: rgba(255, 80, 80, 0.15); color: #ff6b6b; }
 .editor-context-menu-divider { height: 1px; background: var(--line); margin: 4px 2px; }
 
+/* ---- Settings pop-up (left toolbar) ---- */
+.editor-settings-popup {
+  display: none;
+  position: fixed;
+  z-index: 100;
+  width: 220px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-family: var(--mono);
+}
+.editor-settings-popup.is-open { display: block; }
+.editor-settings-popup-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.editor-settings-unit-row { display: flex; gap: 6px; }
+.editor-settings-unit-btn {
+  flex: 1;
+  height: 30px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.editor-settings-unit-btn:hover:not(.is-active) { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
+.editor-settings-unit-btn.is-active { color: var(--bg); background: var(--fg); border-color: var(--fg); }
+
 /* ---- Shape-size modal (plain click with the Shapes tool) ---- */
 .editor-modal-overlay {
   display: none;
@@ -1034,7 +1098,8 @@
 .editor-modal-fields .editor-field { width: 100%; }
 .editor-modal-fields .editor-field.is-hidden { display: none; }
 .editor-modal-fields .editor-field-label { width: auto; }
-.editor-modal-fields input[type="number"] {
+.editor-modal-fields input[type="number"],
+.editor-modal-fields input[type="text"] {
   flex: 1;
   min-width: 0;
   width: 100%;
@@ -1068,6 +1133,7 @@
    to Fit" are too long to reliably fit a single row at the base width. */
 #svg-oversize-modal .editor-modal { width: 320px; }
 #svg-oversize-modal .editor-modal-actions { flex-wrap: wrap; }
+#save-as-modal .editor-modal { width: 280px; }
 
 /* ---- Desktop-only gate ---- */
 @media (max-width: 900px) {

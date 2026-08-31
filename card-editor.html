@@ -28,7 +28,9 @@
       <div class="editor-topbar-actions">
         <button type="button" class="editor-icon-btn" id="undo-btn" disabled aria-label="Undo" title="Undo (&#8984;Z)">&#8630;</button>
         <button type="button" class="editor-icon-btn" id="redo-btn" disabled aria-label="Redo" title="Redo (&#8984;&#8679;Z)">&#8631;</button>
-        <button type="button" class="btn btn-ghost btn-sm" disabled>Save</button>
+        <input type="file" id="import-project-input" accept=".json,application/json" hidden />
+        <button type="button" class="btn btn-ghost btn-sm" id="import-btn">Import</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="save-btn">Save</button>
         <button type="button" class="btn btn-sm" disabled>Export / Submit Design</button>
       </div>
     </header>
@@ -78,6 +80,12 @@
               </g>
             </svg>
             <span class="editor-tool-label">Finish</span>
+          </button>
+          <button type="button" class="editor-tool editor-standalone-toggle" id="toggle-settings" aria-haspopup="true" aria-expanded="false">
+            <svg class="editor-tool-icon" viewBox="0 0 24 24">
+              <path fill="currentColor" fill-rule="evenodd" d="M10.72,4.71 L10.33,2.55 L13.67,2.55 L13.29,4.71 L16.25,5.94 L17.51,4.14 L19.86,6.49 L18.06,7.76 L19.29,10.72 L21.45,10.33 L21.45,13.67 L19.29,13.29 L18.06,16.25 L19.86,17.51 L17.51,19.86 L16.25,18.06 L13.29,19.29 L13.67,21.45 L10.33,21.45 L10.72,19.29 L7.76,18.06 L6.49,19.86 L4.14,17.51 L5.94,16.25 L4.71,13.29 L2.55,13.67 L2.55,10.33 L4.71,10.72 L5.94,7.76 L4.14,6.49 L6.49,4.14 L7.76,5.94 Z M12,7.7 A4.3,4.3 0 1,0 12,16.3 A4.3,4.3 0 1,0 12,7.7 Z"/>
+            </svg>
+            <span class="editor-tool-label">Settings</span>
           </button>
         </div>
 
@@ -196,7 +204,7 @@
           <label class="editor-field editor-mode-shape" id="corner-radius-field" title="Corner radius">
             <span class="editor-field-label editor-field-label--wide">Radius</span>
             <input type="number" id="shape-corner-radius" aria-label="Corner radius" step="0.1" min="0" value="0" />
-            <span class="editor-field-unit">mm</span>
+            <span class="editor-field-unit" id="corner-radius-unit">mm</span>
           </label>
 
           <!-- Stroke settings — width and inside/center/outside placement
@@ -214,7 +222,7 @@
               <label class="editor-field" title="Stroke width">
                 <span class="editor-field-label editor-field-label--wide">Width</span>
                 <input type="number" id="shape-stroke-width" aria-label="Stroke width" step="0.01" min="0.01" value="0.5" />
-                <span class="editor-field-unit">mm</span>
+                <span class="editor-field-unit" id="stroke-width-unit">mm</span>
               </label>
               <p class="editor-align-dropdown-label">Stroke placement</p>
               <div class="editor-align-dropdown-row">
@@ -310,12 +318,12 @@
             <label class="editor-field" title="X position (from card's top-left, measured at the anchor point)">
               <span class="editor-field-label">X</span>
               <input type="number" id="text-pos-x" aria-label="X position" step="0.01" />
-              <span class="editor-field-unit">mm</span>
+              <span class="editor-field-unit" id="pos-x-unit">mm</span>
             </label>
             <label class="editor-field" title="Y position (from card's top-left, measured at the anchor point)">
               <span class="editor-field-label">Y</span>
               <input type="number" id="text-pos-y" aria-label="Y position" step="0.01" />
-              <span class="editor-field-unit">mm</span>
+              <span class="editor-field-unit" id="pos-y-unit">mm</span>
             </label>
           </div>
 
@@ -325,12 +333,12 @@
             <label class="editor-field" title="Width">
               <span class="editor-field-label">W</span>
               <input type="number" id="text-size-w" aria-label="Width" step="0.01" min="1" />
-              <span class="editor-field-unit">mm</span>
+              <span class="editor-field-unit" id="size-w-unit">mm</span>
             </label>
             <label class="editor-field" title="Height">
               <span class="editor-field-label">H</span>
               <input type="number" id="text-size-h" aria-label="Height" step="0.01" min="1" />
-              <span class="editor-field-unit">mm</span>
+              <span class="editor-field-unit" id="size-h-unit">mm</span>
             </label>
           </div>
 
@@ -430,7 +438,8 @@
       <!-- Renderings (blank for now) -->
       <aside class="editor-renderings" id="renderings-panel">
         <h2>Mockup</h2>
-        <p class="editor-renderings-hint">Note* This is a simplified representation of the final product</p>
+        <p class="editor-renderings-hint">This is a simplified representation of the final product</p>
+        <p class="editor-renderings-hint">Click on card to enlarge</p>
         <div class="editor-renderings-body" id="renderings-body">
           <canvas class="editor-renderings-canvas" data-side="front" width="860" height="540"></canvas>
         </div>
@@ -477,11 +486,43 @@
     <button type="button" class="editor-context-menu-item editor-context-menu-item--danger" data-action="delete">Delete</button>
   </div>
 
+  <!-- Settings pop-up — opened from the left toolbar's Settings button.
+       Positioned via JS (left/top set inline) next to that button, same
+       mechanism as the context menu above. -->
+  <div class="editor-settings-popup" id="settings-popup">
+    <p class="editor-settings-popup-label">Units</p>
+    <div class="editor-settings-unit-row">
+      <button type="button" class="editor-settings-unit-btn is-active" data-unit="mm">mm</button>
+      <button type="button" class="editor-settings-unit-btn" data-unit="in">in</button>
+    </div>
+  </div>
+
   <!-- Shown on a plain click (no drag) with the Shapes tool, in place of
        the old fixed default size — lets the exact size be typed in
        instead. Centered on screen (see card-editor.js for the shape
        itself, which lands centered on the click point); Cancel removes
        the placeholder shape, Done commits it at the entered size. -->
+  <!-- Lets the filename be chosen before the project downloads — the
+       browser's own save dialog only reliably offers that if the user has
+       "ask where to save each file" turned on, so this makes it work the
+       same way regardless of that setting. -->
+  <div class="editor-modal-overlay" id="save-as-modal" aria-hidden="true">
+    <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="save-as-modal-title">
+      <h2 class="editor-modal-title" id="save-as-modal-title">Save design</h2>
+      <div class="editor-modal-fields">
+        <label class="editor-field" title="File name">
+          <span class="editor-field-label editor-field-label--wide">Name</span>
+          <input type="text" id="save-as-filename" aria-label="File name" />
+          <span class="editor-field-unit">.json</span>
+        </label>
+      </div>
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="save-as-modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-sm" id="save-as-modal-done">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div class="editor-modal-overlay" id="shape-size-modal" aria-hidden="true">
     <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="shape-size-modal-title">
       <h2 class="editor-modal-title" id="shape-size-modal-title">Shape size</h2>
@@ -489,12 +530,12 @@
         <label class="editor-field" title="Width" id="shape-size-modal-w-field">
           <span class="editor-field-label" id="shape-size-modal-w-label">W</span>
           <input type="number" id="shape-size-modal-w" aria-label="Width" step="0.01" min="0.01" />
-          <span class="editor-field-unit">mm</span>
+          <span class="editor-field-unit" id="shape-modal-w-unit">mm</span>
         </label>
         <label class="editor-field" title="Height" id="shape-size-modal-h-field">
           <span class="editor-field-label">H</span>
           <input type="number" id="shape-size-modal-h" aria-label="Height" step="0.01" min="0.01" />
-          <span class="editor-field-unit">mm</span>
+          <span class="editor-field-unit" id="shape-modal-h-unit">mm</span>
         </label>
       </div>
       <div class="editor-modal-actions">
