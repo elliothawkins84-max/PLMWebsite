@@ -29,6 +29,33 @@ const CARD_H_PX = 54 * PX_PER_MM; // 486
 const CARD_OFFSET_X = (PASTEBOARD_W - CARD_W_PX) / 2;
 const CARD_OFFSET_Y = (PASTEBOARD_H - CARD_H_PX) / 2;
 
+// ---- Live price estimate constants ----
+// Calibrated against a real timed run: 6 double-sided cards (a logo side
+// plus a fairly full info side, White finish plus a Stroke portrait) took
+// ~10 minutes total at a $95/hr shop rate. That reference card's actual
+// weighted coverage, measured the same pixel-based way the live estimate
+// uses (see weightedCoveragePx2ForSnapshot/updatePriceEstimate further
+// down), comes out to ~7.13% — which pins the two cost constants below.
+const PRICING_SHOP_RATE_PER_MIN = 95 / 60;
+const PRICING_MATERIAL_COST = 0.2;
+const PRICING_FIXED_SEC_PER_CARD = 30; // handling/setup, both sides
+const PRICING_VARIABLE_SEC_PER_CARD = (10 / 6) * 60 - PRICING_FIXED_SEC_PER_CARD; // 70s
+const PRICING_CALIBRATION_WEIGHTED_PCT = 7.13;
+const PRICING_FIXED_COST = (PRICING_FIXED_SEC_PER_CARD / 60) * PRICING_SHOP_RATE_PER_MIN + PRICING_MATERIAL_COST;
+const PRICING_VARIABLE_COST_PER_PCT = ((PRICING_VARIABLE_SEC_PER_CARD / 60) * PRICING_SHOP_RATE_PER_MIN)
+  / PRICING_CALIBRATION_WEIGHTED_PCT;
+// Ratio of the 100–149-card tier price to direct cost, from the
+// quantity-tier pricing table this was built against.
+const PRICING_QTY100_MARKUP = 1.228;
+// Relative engrave-time weight per finish, from the swatch reference
+// card's own $ tiers — Metallic or Frosted White takes longer per mm^2
+// than a plain White fill or a thin Stroke outline.
+const FINISH_TIME_WEIGHT = { stroke: 0.7, white: 1.0, metallic: 1.7, 'frosted-white': 2.0 };
+// Resolution the price estimate renders each finish pass at (see
+// weightedCoveragePx2ForSnapshot) — higher catches fine Texture/grain
+// spacing more accurately, at the cost of a bigger pixel buffer to sum.
+const COVERAGE_RESOLUTION_SCALE = 3;
+
 // ---- Toolbar tool selection ----
 // Panel-toggle (Layers) and standalone-toggle (Guides) buttons are
 // excluded — neither selects a drawing tool, so they're not part of
@@ -408,7 +435,15 @@ if (fabricCanvasEl && window.fabric) {
 
   function makeLine(x1, y1, x2, y2) {
     return new fabric.Line([x1, y1, x2, y2], {
-      originX: 'left', originY: 'top', centeredRotation: false, stroke: '#ffffff', strokeWidth: 2,
+      originX: 'left', originY: 'top', centeredRotation: false,
+      // A line has no fillable area, so Stroke is the only finish that
+      // actually makes physical sense for it — default to that instead
+      // of the usual White fallback (see getFinish), which would render
+      // as nothing at all (a Line ignores fill, and White clears stroke).
+      // Its visual color starts at Stroke's own proofing color (rather
+      // than plain white) since that's what it's already set to.
+      stroke: FINISH_COLORS.stroke, strokeWidth: 2,
+      cardFinish: 'stroke',
     });
   }
   function makeBoxShape(type) {
@@ -1354,6 +1389,7 @@ if (fabricCanvasEl && window.fabric) {
     redoStack = [];
     updateUndoRedoButtons();
     renderCardPreview(currentSide);
+    updatePriceEstimate();
   }
   function restoreHistorySnapshot(snapshot) {
     isRestoringHistory = true;
@@ -1373,6 +1409,7 @@ if (fabricCanvasEl && window.fabric) {
       refreshLayersList();
       updateUndoRedoButtons();
       renderCardPreview(currentSide);
+      updatePriceEstimate();
     });
   }
   function undo() {
@@ -1506,7 +1543,7 @@ if (fabricCanvasEl && window.fabric) {
       backThumb.className = 'editor-side-thumb';
       backThumb.dataset.side = 'back';
       backThumb.innerHTML = `
-        <span class="editor-side-thumb-card"></span>
+        <canvas class="editor-side-thumb-card" width="108" height="68"></canvas>
         <span class="editor-side-thumb-label">Back</span>
       `;
       if (addBackBtn && addBackBtn.isConnected) addBackBtn.replaceWith(backThumb);
@@ -1820,6 +1857,150 @@ if (fabricCanvasEl && window.fabric) {
   // the whole scene through Fabric's own viewport transform, the same
   // mechanism objects/patternTransform already scale through, so stroke
   // widths and hatch spacing stay physically correct at any resolution.
+  // The pattern tile's own pixel resolution never changes (always a
+  // crisp, fixed HATCH_TILE_SOURCE_PX square) — the real spacing is
+  // controlled entirely through patternTransform's scale instead. Sizing
+  // the tile bitmap itself to the spacing (the previous approach) rounds
+  // to a whole pixel, and every spacing under ~4px (any Texture density
+  // past ~22 L/cm, and all of White's fixed 200 L/cm) rounded to the
+  // exact same 4px floor — collapsing every one of those densities into
+  // an identical, indistinguishable pattern. A fixed-resolution tile
+  // scaled by an arbitrary, unrounded factor has no such floor, so it
+  // keeps distinguishing densities right down to sub-pixel spacing
+  // (visually converging into a near-solid fill as spacing shrinks below
+  // the line width, which is physically correct — tightly-packed lines
+  // really do read as solid). patternTransform also carries the same
+  // avgScale correction as before, canceling out the object's (and its
+  // ancestor groups') own accumulated scale.
+  //
+  // This whole render-styling block used to live only inside
+  // renderStrokeOutlinesToDataURL below — it's shared scope now because
+  // the price estimate (further down) reuses it too, rendering the exact
+  // same pixels the Mockup preview shows rather than recomputing
+  // coverage from separate vector geometry.
+  const HATCH_TILE_SOURCE_PX = 64;
+  function buildHatchFillPattern(obj, linesPerCm, crossed) {
+    const { scaleX, scaleY } = fabric.util.qrDecompose(obj.calcTransformMatrix());
+    const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2 || 1;
+    const spacing = textureSpacingPx(linesPerCm);
+    const tileScale = spacing / HATCH_TILE_SOURCE_PX;
+    const lineWidthInTile = RENDER_LINE_WIDTH_PX / tileScale;
+    const patternCanvas = makeHatchPatternCanvas(HATCH_TILE_SOURCE_PX, 'rgb(250,250,250)', lineWidthInTile, crossed);
+    const pattern = new fabric.Pattern({ source: patternCanvas, repeat: 'repeat' });
+    const finalScale = tileScale / avgScale;
+    pattern.patternTransform = [finalScale, 0, 0, finalScale, 0, 0];
+    return pattern;
+  }
+  // White's own fixed single-direction grain — a subtle brushed look,
+  // distinct at a glance from Frosted White's perfectly flat fill.
+  // Reuses the hatch tile mechanics above, just with the tile's own
+  // background painted first (so gaps between grain lines show white,
+  // not the card underneath) and a low-contrast line color instead of
+  // the Texture finish's bright trace lines. Deliberately not as fine as
+  // it was originally (90 L/cm) — the Mockup preview usually renders
+  // well below the card's native resolution (a small thumbnail, or the
+  // side-bar mini previews), and at that scale a 90 L/cm spacing falls
+  // under a pixel, aliasing into a false diagonal gradient/banding
+  // instead of reading as grain. This density stays visually resolved
+  // even shrunk down.
+  const WHITE_GRAIN_LINES_PER_CM = 40;
+  function buildWhiteFillPattern(obj) {
+    const { scaleX, scaleY } = fabric.util.qrDecompose(obj.calcTransformMatrix());
+    const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2 || 1;
+    const spacing = textureSpacingPx(WHITE_GRAIN_LINES_PER_CM);
+    const tileScale = spacing / HATCH_TILE_SOURCE_PX;
+    const lineWidthInTile = (RENDER_LINE_WIDTH_PX * 0.5) / tileScale;
+    const patternCanvas = document.createElement('canvas');
+    patternCanvas.width = HATCH_TILE_SOURCE_PX;
+    patternCanvas.height = HATCH_TILE_SOURCE_PX;
+    const pctx = patternCanvas.getContext('2d');
+    pctx.fillStyle = 'rgb(253,253,253)';
+    pctx.fillRect(0, 0, HATCH_TILE_SOURCE_PX, HATCH_TILE_SOURCE_PX);
+    pctx.strokeStyle = 'rgba(185,185,185,0.9)';
+    pctx.lineWidth = lineWidthInTile;
+    pctx.beginPath();
+    pctx.moveTo(0, HATCH_TILE_SOURCE_PX);
+    pctx.lineTo(HATCH_TILE_SOURCE_PX, 0);
+    pctx.stroke();
+    const pattern = new fabric.Pattern({ source: patternCanvas, repeat: 'repeat' });
+    const finalScale = tileScale / avgScale;
+    pattern.patternTransform = [finalScale, 0, 0, finalScale, 0, 0];
+    return pattern;
+  }
+  // A diagonal silver gradient with a bright highlight band down the
+  // middle — the same sheen technique used on the aluminum card
+  // background, just applied to the shape's own fill. Percentage
+  // gradient units keep it scaled to each shape's own bounding box,
+  // so it holds up at any size, aspect ratio, or rotation.
+  function buildMetallicFill() {
+    return new fabric.Gradient({
+      type: 'linear',
+      gradientUnits: 'percentage',
+      coords: { x1: 0, y1: 0, x2: 1, y2: 1 },
+      colorStops: [
+        { offset: 0, color: '#3f4144' },
+        { offset: 0.12, color: '#6c6f72' },
+        { offset: 0.25, color: '#a8abad' },
+        { offset: 0.38, color: '#f7f7f7' },
+        { offset: 0.45, color: '#ffffff' },
+        { offset: 0.52, color: '#f7f7f7' },
+        { offset: 0.65, color: '#9a9d9f' },
+        { offset: 0.78, color: '#5c5f62' },
+        { offset: 0.88, color: '#8e9092' },
+        { offset: 1, color: '#3f4144' },
+      ],
+    });
+  }
+  function styleForRender(obj) {
+    if (obj.type === 'group') {
+      obj.getObjects().forEach(styleForRender);
+      return;
+    }
+    const finish = getFinish(obj);
+    if (finish === 'metallic') {
+      obj.set({ fill: buildMetallicFill(), stroke: null, opacity: 1 });
+      return;
+    }
+    if (finish === 'texture') {
+      // Outline traces the shape's own edge on top of the hatch fill —
+      // deliberately overriding strokeWidth (obj's real one is the
+      // Outline checkbox's own editor-visibility width, wider than the
+      // shared render line width) so every line in this preview reads
+      // as the same physical thickness, texture hatch included.
+      obj.set({
+        fill: buildHatchFillPattern(obj, obj.cardFinishTexture, true),
+        stroke: obj.cardFinishOutline ? 'rgb(250,250,250)' : null,
+        strokeWidth: RENDER_LINE_WIDTH_PX,
+        strokeUniform: true,
+        opacity: 1,
+      });
+      return;
+    }
+    if (finish === 'white') {
+      // A fine brushed grain, not a flat fill — subtle enough to still
+      // read as plain white, but gives Frosted White (the perfectly
+      // smooth, brighter finish) an obvious step up rather than the
+      // two looking identical.
+      obj.set({ fill: buildWhiteFillPattern(obj), stroke: null, opacity: 1 });
+      return;
+    }
+    if (finish === 'frosted-white') {
+      // The brightest, fully smooth finish — plain full white, no line
+      // texture at all.
+      obj.set({ fill: '#ffffff', stroke: null, opacity: 1 });
+      return;
+    }
+    if (finish !== 'stroke') {
+      obj.set({ opacity: 0 });
+      return;
+    }
+    // A real laser always cuts the same fine hairline regardless of
+    // whatever width a source SVG's stroke happened to be authored
+    // at (a vector "stroke-width" is a screen-display concept, not
+    // a kerf width) — so every Stroke-finish shape traces at the
+    // same representative line width here, not its own real one.
+    obj.set({ fill: null, stroke: 'rgb(250,250,250)', strokeWidth: RENDER_LINE_WIDTH_PX, strokeUniform: true, opacity: 1 });
+  }
   function renderStrokeOutlinesToDataURL(snapshotJson, resolutionScale, callback) {
     const off = document.createElement('canvas');
     off.width = Math.round(CARD_W_PX * resolutionScale);
@@ -1827,120 +2008,6 @@ if (fabricCanvasEl && window.fabric) {
     const staticCanvas = new fabric.StaticCanvas(off);
     staticCanvas.setZoom(resolutionScale);
     staticCanvas.loadFromJSON(snapshotJson, () => {
-      // A shape that already carries a real, painted stroke (an SVG import's
-      // own outline, or a shape given a border via the Shapes toolbar) gets
-      // traced at that actual width — keeping whatever strokeUniform the
-      // live object already has, so the preview matches the editor exactly:
-      // a raw, never-touched vector stroke scales with the object like any
-      // other geometry, while a width dialed in via the Stroke settings
-      // field (which sets strokeUniform itself, precisely so it stays put
-      // regardless of an imported SVG's own internal scale) stays constant
-      // here too. A shape with no real stroke (a filled path/donut shape)
-      // has no natural width to preserve, so it falls back to the fixed
-      // representative trace width, held constant regardless of scale.
-      function hasRealStroke(obj) {
-        return !!(obj.stroke && obj.stroke !== 'none' && obj.strokeWidth > 0);
-      }
-      // The pattern tile's own pixel resolution never changes (always a
-      // crisp, fixed HATCH_TILE_SOURCE_PX square) — the real spacing is
-      // controlled entirely through patternTransform's scale instead.
-      // Sizing the tile bitmap itself to the spacing (the previous
-      // approach) rounds to a whole pixel, and every spacing under ~4px
-      // (any Texture density past ~22 L/cm, and all of White's fixed
-      // 200 L/cm) rounded to the exact same 4px floor — collapsing every
-      // one of those densities into an identical, indistinguishable
-      // pattern. A fixed-resolution tile scaled by an arbitrary, unrounded
-      // factor has no such floor, so it keeps distinguishing densities
-      // right down to sub-pixel spacing (visually converging into a
-      // near-solid fill as spacing shrinks below the line width, which is
-      // physically correct — tightly-packed lines really do read as solid).
-      // patternTransform also carries the same avgScale correction as
-      // before, canceling out the object's (and its ancestor groups')
-      // own accumulated scale.
-      const HATCH_TILE_SOURCE_PX = 64;
-      function buildHatchFillPattern(obj, linesPerCm, crossed) {
-        const { scaleX, scaleY } = fabric.util.qrDecompose(obj.calcTransformMatrix());
-        const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2 || 1;
-        const spacing = textureSpacingPx(linesPerCm);
-        const tileScale = spacing / HATCH_TILE_SOURCE_PX;
-        const lineWidthInTile = RENDER_LINE_WIDTH_PX / tileScale;
-        const patternCanvas = makeHatchPatternCanvas(HATCH_TILE_SOURCE_PX, 'rgb(250,250,250)', lineWidthInTile, crossed);
-        const pattern = new fabric.Pattern({ source: patternCanvas, repeat: 'repeat' });
-        const finalScale = tileScale / avgScale;
-        pattern.patternTransform = [finalScale, 0, 0, finalScale, 0, 0];
-        return pattern;
-      }
-      // A diagonal silver gradient with a bright highlight band down the
-      // middle — the same sheen technique used on the aluminum card
-      // background, just applied to the shape's own fill. Percentage
-      // gradient units keep it scaled to each shape's own bounding box,
-      // so it holds up at any size, aspect ratio, or rotation.
-      function buildMetallicFill() {
-        return new fabric.Gradient({
-          type: 'linear',
-          gradientUnits: 'percentage',
-          coords: { x1: 0, y1: 0, x2: 1, y2: 1 },
-          colorStops: [
-            { offset: 0, color: '#3f4144' },
-            { offset: 0.12, color: '#6c6f72' },
-            { offset: 0.25, color: '#a8abad' },
-            { offset: 0.38, color: '#f7f7f7' },
-            { offset: 0.45, color: '#ffffff' },
-            { offset: 0.52, color: '#f7f7f7' },
-            { offset: 0.65, color: '#9a9d9f' },
-            { offset: 0.78, color: '#5c5f62' },
-            { offset: 0.88, color: '#8e9092' },
-            { offset: 1, color: '#3f4144' },
-          ],
-        });
-      }
-      function styleForRender(obj) {
-        if (obj.type === 'group') {
-          obj.getObjects().forEach(styleForRender);
-          return;
-        }
-        const finish = getFinish(obj);
-        if (finish === 'metallic') {
-          obj.set({ fill: buildMetallicFill(), stroke: null, opacity: 1 });
-          return;
-        }
-        if (finish === 'texture') {
-          // Outline traces the shape's own edge on top of the hatch fill —
-          // deliberately overriding strokeWidth (obj's real one is the
-          // Outline checkbox's own editor-visibility width, wider than the
-          // shared render line width) so every line in this preview reads
-          // as the same physical thickness, texture hatch included.
-          obj.set({
-            fill: buildHatchFillPattern(obj, obj.cardFinishTexture, true),
-            stroke: obj.cardFinishOutline ? 'rgb(250,250,250)' : null,
-            strokeWidth: RENDER_LINE_WIDTH_PX,
-            strokeUniform: true,
-            opacity: 1,
-          });
-          return;
-        }
-        if (finish === 'white') {
-          // Plain solid fill, a touch off pure white so Frosted White (the
-          // brighter, full-white finish) still reads as a distinct step up.
-          obj.set({ fill: 'rgb(240,240,240)', stroke: null, opacity: 1 });
-          return;
-        }
-        if (finish === 'frosted-white') {
-          // The brightest, fully smooth finish — plain full white, no line
-          // texture at all.
-          obj.set({ fill: '#ffffff', stroke: null, opacity: 1 });
-          return;
-        }
-        if (finish !== 'stroke') {
-          obj.set({ opacity: 0 });
-          return;
-        }
-        if (hasRealStroke(obj)) {
-          obj.set({ fill: null, stroke: 'rgb(250,250,250)', opacity: 1 });
-        } else {
-          obj.set({ fill: null, stroke: 'rgb(250,250,250)', strokeWidth: RENDER_LINE_WIDTH_PX, strokeUniform: true, opacity: 1 });
-        }
-      }
       staticCanvas.getObjects().forEach((obj) => {
         // Snapshots store pasteboard-absolute coordinates; this canvas
         // is sized to just the card, so shift back to card-relative.
@@ -1983,17 +2050,22 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
   function renderCardPreview(side) {
-    const canvasEl = renderingsBody && renderingsBody.querySelector(`.editor-renderings-canvas[data-side="${side}"]`);
-    if (!canvasEl) return;
     const snapshot = side === currentSide
       ? undoStack[undoStack.length - 1]
       : (sideHistories[side] ? sideHistories[side].undo[sideHistories[side].undo.length - 1] : blankCanvasSnapshot);
-    paintCardPreview(canvasEl, snapshot);
-    // Keep the fullscreen modal live too, if it's open and showing this
-    // same side, so an edit made without closing it doesn't go stale.
-    if (renderModal && renderModal.classList.contains('is-open') && renderModalSide === side) {
-      paintCardPreview(renderModalCanvas, snapshot);
+    const canvasEl = renderingsBody && renderingsBody.querySelector(`.editor-renderings-canvas[data-side="${side}"]`);
+    if (canvasEl) {
+      paintCardPreview(canvasEl, snapshot);
+      // Keep the fullscreen modal live too, if it's open and showing this
+      // same side, so an edit made without closing it doesn't go stale.
+      if (renderModal && renderModal.classList.contains('is-open') && renderModalSide === side) {
+        paintCardPreview(renderModalCanvas, snapshot);
+      }
     }
+    // Front/Back thumbnails down in the bottom bar get the same live
+    // preview, just tiny.
+    const thumbCanvas = document.querySelector(`.editor-side-thumb[data-side="${side}"] .editor-side-thumb-card`);
+    if (thumbCanvas) paintCardPreview(thumbCanvas, snapshot);
   }
   renderCardPreview('front');
 
@@ -2321,6 +2393,146 @@ if (fabricCanvasEl && window.fabric) {
     replaceWithBooleanResult(ordered, result.regions, bottom);
   }
 
+  // ---- Live price estimate (surface-area based) ----
+  // Approximates shop cost from whatever's actually on the card, reusing
+  // the same geometry-flattening machinery as Boolean Union/Subtract
+  // above (localPolygonsFor et al.) to measure real engraved ink area
+  // instead of bounding boxes. Cost constants (PRICING_*, FINISH_TIME_WEIGHT)
+  // live near the top of the file, alongside PX_PER_MM — they're needed by
+  // the very first pushHistory() call during setup, well before this point.
+  function textureTimeWeight(linesPerCm) {
+    const clamped = Math.max(10, Math.min(50, linesPerCm || 25));
+    const t = (clamped - 10) / (50 - 10);
+    return 0.5 + t * (0.7 - 0.5);
+  }
+  function finishTimeWeightFor(obj) {
+    const finish = getFinish(obj);
+    if (finish === 'texture') return textureTimeWeight(obj.cardFinishTexture);
+    return FINISH_TIME_WEIGHT[finish] || 0;
+  }
+  // Coverage now comes straight from the same rendered pixels the Mockup
+  // preview shows, rather than a separately-computed vector area — reads
+  // the alpha channel (not brightness/color) since a real laser either
+  // engraves a pixel or doesn't, and alpha stays 1 across a whole shape
+  // even where a finish's own look (Metallic's shine gradient, for
+  // instance) happens to render dark there. A part-covered edge pixel
+  // from anti-aliasing contributes its fractional alpha rather than an
+  // all-or-nothing count, so edges/curves measure accurately too. This
+  // sidesteps the geometry bugs a hand-rolled vector-area calculation is
+  // prone to (a filled-vs-stroked mixup was exactly that kind of bug) —
+  // if the render is right, the price is right, because they're reading
+  // the same source of truth.
+  //
+  // Only one finish can be isolated at a time (rendering everything at
+  // once loses which pixel belongs to which finish, and different
+  // finishes take different real engrave time per mm^2), so this makes
+  // one full render pass per distinct finish/density actually present —
+  // e.g. two Texture objects at different densities are two separate
+  // passes, each with its own correct time weight.
+  function finishGroupKeyFor(obj) {
+    const finish = getFinish(obj);
+    if (finish === 'texture') return `texture:${obj.cardFinishTexture || 25}`;
+    return finish;
+  }
+  function finishGroupWeight(key) {
+    if (key.indexOf('texture:') === 0) return textureTimeWeight(parseFloat(key.slice(8)));
+    return FINISH_TIME_WEIGHT[key] || 0;
+  }
+  function collectFinishGroupKeys(objects, keys) {
+    objects.forEach((obj) => {
+      if (obj.excludeFromExport) return;
+      if (obj.type === 'group') { collectFinishGroupKeys(obj.getObjects(), keys); return; }
+      keys.add(finishGroupKeyFor(obj));
+    });
+  }
+  // Same per-finish styling as the real render (styleForRender), plus:
+  // anything not matching this pass's target finish/density is forced
+  // invisible, so only that one group's pixels end up lit.
+  function styleForRenderIsolated(obj, targetKey) {
+    if (obj.type === 'group') {
+      obj.getObjects().forEach((o) => styleForRenderIsolated(o, targetKey));
+      return;
+    }
+    styleForRender(obj);
+    if (finishGroupKeyFor(obj) !== targetKey) obj.set({ opacity: 0 });
+  }
+  // Weighted "ink" area for one side's snapshot, in native (both-sides-
+  // denominator) px^2 — one offscreen render pass per finish/density
+  // group present, each measured by summing that pass's alpha channel
+  // (self-canceling back down from the render's own resolution).
+  function weightedCoveragePx2ForSnapshot(snapshotJson, callback) {
+    if (!snapshotJson) { callback(0); return; }
+    const off = document.createElement('canvas');
+    off.width = Math.round(CARD_W_PX * COVERAGE_RESOLUTION_SCALE);
+    off.height = Math.round(CARD_H_PX * COVERAGE_RESOLUTION_SCALE);
+    // Retina scaling would silently double (or more) the canvas's actual
+    // backing-store pixel dimensions on a high-DPI display, throwing off
+    // every pixel-count math below by that factor squared — off entirely
+    // so off.width/off.height stay exactly what's set above.
+    const staticCanvas = new fabric.StaticCanvas(off, { enableRetinaScaling: false });
+    staticCanvas.setZoom(COVERAGE_RESOLUTION_SCALE);
+    staticCanvas.loadFromJSON(snapshotJson, () => {
+      const ctx = off.getContext('2d');
+      const objects = staticCanvas.getObjects();
+      objects.forEach((obj) => {
+        obj.set({ left: obj.left - CARD_OFFSET_X, top: obj.top - CARD_OFFSET_Y });
+        obj.setCoords();
+      });
+      const keys = new Set();
+      collectFinishGroupKeys(objects, keys);
+      let weightedPx2 = 0;
+      keys.forEach((key) => {
+        const weight = finishGroupWeight(key);
+        if (!weight) return; // "Don't engrave" and the like never light a pixel
+        objects.forEach((obj) => styleForRenderIsolated(obj, key));
+        staticCanvas.renderAll();
+        const { data } = ctx.getImageData(0, 0, off.width, off.height);
+        let alphaSum = 0;
+        for (let i = 3; i < data.length; i += 4) alphaSum += data[i];
+        weightedPx2 += (alphaSum / 255) * weight;
+      });
+      staticCanvas.dispose();
+      // Back down from this render's resolution to native card px^2.
+      callback(weightedPx2 / (COVERAGE_RESOLUTION_SCALE * COVERAGE_RESOLUTION_SCALE));
+    });
+  }
+  function snapshotForSide(side) {
+    if (side === currentSide) return undoStack[undoStack.length - 1];
+    return sideHistories[side] ? sideHistories[side].undo[sideHistories[side].undo.length - 1] : null;
+  }
+  // A snapshot with zero real objects — excludeFromExport helpers (edge
+  // indicator, snap guides) never make it into the saved JSON in the
+  // first place, so any object present here is real content.
+  function snapshotHasObjects(snapshotJson) {
+    if (!snapshotJson) return false;
+    try {
+      const parsed = JSON.parse(snapshotJson);
+      return !!(parsed.objects && parsed.objects.length);
+    } catch (e) {
+      return false;
+    }
+  }
+  function updatePriceEstimate() {
+    const priceEl = document.getElementById('editor-price');
+    if (!priceEl) return;
+    const frontSnapshot = snapshotForSide('front');
+    const backSnapshot = snapshotForSide('back');
+    if (!snapshotHasObjects(frontSnapshot) && !snapshotHasObjects(backSnapshot)) {
+      priceEl.innerHTML = 'Estimated Price: n/a';
+      return;
+    }
+    weightedCoveragePx2ForSnapshot(frontSnapshot, (frontWeighted) => {
+      weightedCoveragePx2ForSnapshot(backSnapshot, (backWeighted) => {
+        const totalWeightedPx2 = frontWeighted + backWeighted;
+        const totalCardAreaPx2 = CARD_W_PX * CARD_H_PX * 2; // both sides, always
+        const weightedPct = (totalWeightedPx2 / totalCardAreaPx2) * 100;
+        const directCost = PRICING_FIXED_COST + PRICING_VARIABLE_COST_PER_PCT * weightedPct;
+        const pricePerCard = directCost * PRICING_QTY100_MARKUP;
+        priceEl.innerHTML = `Estimated Price: $${pricePerCard.toFixed(2)} ea. <span class="editor-price-qty">/100</span>`;
+      });
+    });
+  }
+
   // Both default to uniform scaling — both checkboxes are "Non-uniform
   // scale", unchecked by default, so either has to be deliberately
   // opted into non-uniform/free stretching.
@@ -2406,18 +2618,24 @@ if (fabricCanvasEl && window.fabric) {
   function showObjectToolbarFor(obj) {
     if (!textToolbar) return;
     textToolbar.classList.add('is-visible');
-    const isText = obj.type === 'i-text';
+    // A multi-selection is text mode only if every member is text — one
+    // shape (or group) mixed in among text members bumps the whole
+    // selection to shape mode, same as if a lone shape were selected.
+    const members = obj.type === 'activeSelection' ? obj.getObjects() : [obj];
+    const isText = members.length > 0 && members.every((m) => m.type === 'i-text');
     textToolbar.classList.toggle('mode-text', isText);
     textToolbar.classList.toggle('mode-shape', !isText);
     if (isText) {
-      if (fontFamilySelect) fontFamilySelect.value = obj.fontFamily || 'Arial';
-      if (fontSizeInput) fontSizeInput.value = Math.round(obj.fontSize || 24);
-      alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (obj.textAlign || 'left')));
+      const rep = members.find((m) => m.type === 'i-text') || obj;
+      if (fontFamilySelect) fontFamilySelect.value = rep.fontFamily || 'Arial';
+      if (fontSizeInput) fontSizeInput.value = Math.round(rep.fontSize || 24);
+      alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (rep.textAlign || 'left')));
     } else {
-      shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.shape === obj.type));
-      refreshFillModeUI(obj);
-      refreshLineStyleUI(obj);
-      refreshCornerRadiusUI(obj);
+      const rep = members.find((m) => SHAPE_TYPES.includes(m.type)) || obj;
+      shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.shape === rep.type));
+      refreshFillModeUI(rep);
+      refreshLineStyleUI(rep);
+      refreshCornerRadiusUI(rep);
     }
     const isRealObject = typeof obj.getCenterPoint === 'function';
     if (isRealObject) refreshTransformFields(obj);
@@ -2497,9 +2715,15 @@ if (fabricCanvasEl && window.fabric) {
   // Every object/group defaults to White until a finish is explicitly
   // chosen for it — reading through this one helper (instead of a raw
   // `obj.cardFinish`) everywhere means new objects never need to have
-  // the default written onto them at creation time.
+  // the default written onto them at creation time. A Line is the one
+  // exception: it has no fillable area, so Stroke is the only finish
+  // that's physically possible for it (White would just render as
+  // nothing) — makeLine already writes 'stroke' onto new ones, but this
+  // covers any line that somehow reaches here without it.
   function getFinish(obj) {
-    return (obj && obj.cardFinish) || 'white';
+    if (obj && obj.cardFinish) return obj.cardFinish;
+    if (obj && obj.type === 'line') return 'stroke';
+    return 'white';
   }
   // A proofing color per finish, so it's obvious at a glance what's been
   // assigned to what — these aren't the real engraved appearance (that's
@@ -2842,6 +3066,30 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
 
+  // "How we calculate price" — same popup pattern as "What are these?"
+  // above, just a plain-language explanation next to the price readout.
+  const priceHelpBtn = document.getElementById('price-help-btn');
+  const priceHelpModal = document.getElementById('price-help-modal');
+  const priceHelpModalClose = document.getElementById('price-help-modal-close');
+  if (priceHelpBtn && priceHelpModal) {
+    priceHelpBtn.addEventListener('click', () => {
+      priceHelpModal.classList.add('is-open');
+      priceHelpModal.setAttribute('aria-hidden', 'false');
+    });
+    priceHelpModal.addEventListener('mousedown', (e) => {
+      if (e.target === priceHelpModal) {
+        priceHelpModal.classList.remove('is-open');
+        priceHelpModal.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+  if (priceHelpModalClose && priceHelpModal) {
+    priceHelpModalClose.addEventListener('click', () => {
+      priceHelpModal.classList.remove('is-open');
+      priceHelpModal.setAttribute('aria-hidden', 'true');
+    });
+  }
+
   function handleSelection(e) {
     // getActiveObject() first, not e.selected[0]: for a multi-selection,
     // e.selected[0] is just one of the newly-selected members, which
@@ -2857,7 +3105,15 @@ if (fabricCanvasEl && window.fabric) {
       refreshFinishUI(obj);
       return;
     }
-    if (obj && (obj.type === 'i-text' || SHAPE_TYPES.includes(obj.type))) {
+    // A multi-selection (activeSelection) is eligible too, as long as at
+    // least one member is text or a shape — showObjectToolbarFor decides
+    // text vs. shape mode from the actual mix (shape wins on a tie).
+    const isEligible = obj && (
+      obj.type === 'i-text'
+      || SHAPE_TYPES.includes(obj.type)
+      || (obj.type === 'activeSelection' && obj.getObjects().some((m) => m.type === 'i-text' || SHAPE_TYPES.includes(m.type)))
+    );
+    if (isEligible) {
       showObjectToolbarFor(obj);
       applyScalingControlsVisibility(obj);
     } else {
@@ -2867,6 +3123,7 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('selection:created', handleSelection);
   fabricCanvas.on('selection:updated', handleSelection);
   fabricCanvas.on('selection:cleared', () => {
+    if (suppressGroupSessionEnd) return;
     endGroupEditSession();
     if (finishModeActive) {
       refreshFinishUI(null);
@@ -3033,7 +3290,16 @@ if (fabricCanvasEl && window.fabric) {
     refreshTransformFields(opt.target);
   });
   fabricCanvas.on('object:rotating', (opt) => {
-    if (opt.target) refreshTransformFields(opt.target);
+    if (!opt.target) return;
+    // Shift snaps to the nearest 45deg increment, same modifier
+    // convention as most design tools — checked on the original mouse
+    // event, not a tracked keydown/up pair, so it's live-toggleable
+    // mid-drag with no extra state to keep in sync.
+    if (opt.e && opt.e.shiftKey) {
+      opt.target.angle = Math.round(opt.target.angle / 45) * 45;
+      opt.target.setCoords();
+    }
+    refreshTransformFields(opt.target);
   });
 
   if (fontFamilySelect) {
@@ -3397,12 +3663,16 @@ if (fabricCanvasEl && window.fabric) {
     btn.addEventListener('click', () => alignActiveObject(btn.dataset.alignOp));
   });
 
-  // ---- Escape exits text editing, or deselects ----
-  // Fabric doesn't bind either itself (only clicking away or Enter exits
-  // editing), but both are the expected shortcut, so wire them up
-  // explicitly. Editing takes priority — the first Escape just leaves
-  // edit mode, matching how Enter/click-away already behave; a selected-
-  // but-not-editing object is deselected outright.
+  // ---- Escape exits text editing, deselects, or backs out a step at a
+  // time ----
+  // Fabric doesn't bind any of this itself (only clicking away or Enter
+  // exits editing), but it's all the expected shortcut, so wired up
+  // explicitly, each step only reached once the one before it doesn't
+  // apply: leave text-editing first (matching how Enter/click-away
+  // already behave) or deselect a selected object outright; with nothing
+  // selected, close the Layers/Finish panel if one's open; with neither
+  // an object nor a panel, fall back to the Select tool (leaving
+  // whichever other tool was active).
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (isShapeSizeModalOpen()) {
@@ -3418,13 +3688,26 @@ if (fabricCanvasEl && window.fabric) {
       return;
     }
     const obj = fabricCanvas.getActiveObject();
-    if (!obj) return;
-    if (obj.isEditing) {
-      obj.exitEditing();
+    if (obj) {
+      if (obj.isEditing) {
+        obj.exitEditing();
+        return;
+      }
+      fabricCanvas.discardActiveObject();
+      fabricCanvas.requestRenderAll();
       return;
     }
-    fabricCanvas.discardActiveObject();
-    fabricCanvas.requestRenderAll();
+    if (finishModeActive) {
+      setFinishMode(false);
+      return;
+    }
+    if (sidePanel && sidePanel.classList.contains('is-open')) {
+      panelToggles.forEach((b) => b.classList.remove('is-active'));
+      sidePanel.classList.remove('is-open');
+      return;
+    }
+    const selectBtn = document.getElementById('tool-select');
+    if (selectBtn && !selectBtn.classList.contains('is-active')) selectBtn.click();
   });
 
   // ---- Delete the selected object(s) ----
@@ -3455,7 +3738,10 @@ if (fabricCanvasEl && window.fabric) {
       'send-back': sendActiveToBack,
       group: groupActiveSelection,
       ungroup: ungroupActiveObject,
-      'remove-from-group': () => removeFromGroup(fabricCanvas.getActiveObject()),
+      'remove-from-group': () => {
+        const active = fabricCanvas.getActiveObject();
+        removeFromGroup(active ? (active.type === 'activeSelection' ? active.getObjects() : [active]) : []);
+      },
       union: runUnion,
       subtract: runSubtract,
       delete: deleteActiveObjects,
@@ -3472,7 +3758,7 @@ if (fabricCanvasEl && window.fabric) {
         'send-back': !!active,
         group: !!active && active.type === 'activeSelection',
         ungroup: !!active && active.type === 'group',
-        'remove-from-group': !!active && active.type !== 'activeSelection' && isWithinGroupEditSession(active),
+        'remove-from-group': !!active && isWithinGroupEditSession(active),
         union: eligible.length >= 2,
         subtract: eligible.length === 2,
         delete: !!active,
@@ -3613,14 +3899,16 @@ if (fabricCanvasEl && window.fabric) {
   // members nested underneath; collapsed state is remembered here across
   // rebuilds since the list itself is rebuilt from scratch every time.
   const collapsedGroups = new Set();
-  // ---- Multi-selecting top-level rows from the Layers panel ----
+  // ---- Multi-selecting rows from the Layers panel ----
   // Shift-click selects the visual range between this row and the last
   // one clicked (like a file browser); Cmd/Ctrl-click toggles just this
   // row in or out of whatever's currently selected, stacking freely.
-  // Only for depth-0 rows — a nested row's "selection" is really a
-  // temporary dissolve of its ancestor group(s) (see selectNestedObject),
-  // which doesn't have a sensible way to combine with a second, unrelated
-  // multi-selected object, so modifier clicks there are ignored.
+  // Nested rows get the same treatment, but only among siblings already
+  // loose within the currently-open group-edit session (see the click
+  // handler below) — there's no sensible way to combine a dissolved
+  // group's member with some unrelated object outside the session, so
+  // that case still just falls back to entering/re-entering the row
+  // clicked.
   let layersRangeAnchor = null;
   function selectLayerObjects(arr) {
     suppressHistoryEvents = true;
@@ -3827,6 +4115,16 @@ if (fabricCanvasEl && window.fabric) {
   // each one still runs directly (unaffected by this), so the panel
   // still always ends up in sync — it just skips the churn in between.
   let suppressLayersRefresh = false;
+  // selectLayerObjects (used for multi-selecting siblings within an open
+  // session — see the Layers panel click handler below) calls
+  // discardActiveObject() before setting the new multi-selection, same as
+  // deleteActiveObjects has to work around elsewhere: that fires
+  // 'selection:cleared' synchronously, which would otherwise end the
+  // session and rebuild the group mid-call, out from under the new
+  // ActiveSelection about to be built from its (no-longer-loose) members.
+  // Set around that one call so the momentary discard doesn't end a
+  // session that's still legitimately in use.
+  let suppressGroupSessionEnd = false;
   function isWithinGroupEditSession(obj) {
     if (!groupEditSession || !obj) return false;
     const { ancestors, levels } = groupEditSession;
@@ -3876,26 +4174,41 @@ if (fabricCanvasEl && window.fabric) {
     if (!skipHistory) pushHistory();
     return rebuilt;
   }
-  // Pulls a member permanently out of the group it's currently loose
-  // from (see the group-edit session above) — unlike ending the session
-  // normally, this one member never gets folded back in. Removing it
-  // from the session's own bookkeeping before the rebuild runs means the
-  // rebuild's own "is this member still around" filter naturally leaves
-  // it out, same trick deleteActiveObjects relies on. Lands directly
-  // above the reformed group in the stack (skipHistory on the rebuild
-  // itself so the whole thing — rebuild + reposition — is one undo step,
-  // not two).
-  function removeFromGroup(obj) {
-    if (!groupEditSession || !obj) return;
-    const levelIdx = groupEditSession.levels.findIndex((members) => members.includes(obj));
-    if (levelIdx === -1) return;
-    groupEditSession.levels[levelIdx] = groupEditSession.levels[levelIdx].filter((o) => o !== obj);
+  // Pulls one or more members permanently out of the group they're
+  // currently loose from (see the group-edit session above) — unlike
+  // ending the session normally, these members never get folded back in.
+  // Removing them from the session's own bookkeeping before the rebuild
+  // runs means the rebuild's own "is this member still around" filter
+  // naturally leaves them out, same trick deleteActiveObjects relies on.
+  // Takes an array so a multi-selection (several members loose within
+  // the same session) can be pulled out together as one undo step, not
+  // one per member — lands them all directly above the reformed group,
+  // still selected as a group if there's more than one (skipHistory on
+  // the rebuild itself so the whole thing — rebuild + reposition — stays
+  // one step, not two).
+  function removeFromGroup(objs) {
+    const list = (Array.isArray(objs) ? objs : [objs]).filter(Boolean);
+    if (!groupEditSession || !list.length) return;
+    list.forEach((obj) => {
+      const levelIdx = groupEditSession.levels.findIndex((members) => members.includes(obj));
+      if (levelIdx !== -1) {
+        groupEditSession.levels[levelIdx] = groupEditSession.levels[levelIdx].filter((o) => o !== obj);
+      }
+    });
     const rebuilt = endGroupEditSession(true);
     if (rebuilt && fabricCanvas.getObjects().includes(rebuilt)) {
-      fabricCanvas.moveTo(obj, fabricCanvas.getObjects().indexOf(rebuilt) + 1);
+      const insertAt = fabricCanvas.getObjects().indexOf(rebuilt) + 1;
+      list.forEach((obj, i) => {
+        if (fabricCanvas.getObjects().includes(obj)) fabricCanvas.moveTo(obj, insertAt + i);
+      });
     }
-    fabricCanvas.setActiveObject(obj);
-    handleSelection({ selected: [obj] });
+    const stillPresent = list.filter((obj) => fabricCanvas.getObjects().includes(obj));
+    if (stillPresent.length === 1) {
+      fabricCanvas.setActiveObject(stillPresent[0]);
+    } else if (stillPresent.length > 1) {
+      fabricCanvas.setActiveObject(new fabric.ActiveSelection(stillPresent, { canvas: fabricCanvas }));
+    }
+    handleSelection({ selected: stillPresent });
     fabricCanvas.requestRenderAll();
     refreshLayersList();
     pushHistory();
@@ -4048,7 +4361,39 @@ if (fabricCanvasEl && window.fabric) {
           return;
         }
         if (depth > 0) {
+          // A modifier-click on a row that's already loose within the
+          // currently-open group-edit session multi-selects among those
+          // siblings — same shift-range/cmd-toggle behavior as top-level
+          // rows, just scoped to this one dissolved group instead of the
+          // whole canvas (there's no sensible way to combine it with an
+          // unrelated object outside the session). Anything else (no
+          // session open yet, or this row belongs to a different group)
+          // falls back to entering/re-entering it for just this object.
+          const withinSession = groupEditSession && isWithinGroupEditSession(obj);
+          if (withinSession && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+            const current = fabricCanvas.getActiveObject();
+            const currentMembers = current ? (current.type === 'activeSelection' ? current.getObjects() : [current]) : [];
+            suppressGroupSessionEnd = true;
+            if (e.shiftKey && layersRangeAnchor && isWithinGroupEditSession(layersRangeAnchor)) {
+              const level = groupEditSession.levels.find((members) => members.includes(obj) && members.includes(layersRangeAnchor));
+              if (level) {
+                const iA = level.indexOf(layersRangeAnchor);
+                const iB = level.indexOf(obj);
+                const [lo, hi] = iA < iB ? [iA, iB] : [iB, iA];
+                selectLayerObjects(level.slice(lo, hi + 1));
+              } else {
+                selectLayerObjects([obj]);
+              }
+            } else {
+              const next = currentMembers.includes(obj) ? currentMembers.filter((o) => o !== obj) : [...currentMembers, obj];
+              selectLayerObjects(next);
+            }
+            suppressGroupSessionEnd = false;
+            layersRangeAnchor = obj;
+            return;
+          }
           selectNestedObject(obj);
+          layersRangeAnchor = obj;
           return;
         }
         // Top-of-stack first, matching the row order actually rendered.

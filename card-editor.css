@@ -310,12 +310,15 @@
      overflowing/scrolling, since nothing actually exceeds an
      ever-growing track. */
   min-width: 0;
+  /* Anchors the text/finish toolbar below, which overlays this area
+     instead of taking up its own row. */
+  position: relative;
 }
 /* Contextual text-formatting toolbar — only active while a text object is
-   selected/being edited (see card-editor.js). Always laid out (display:
-   flex, never `none`) and hidden via visibility instead, so its row keeps
-   reserving its height — the canvas below it doesn't shift when the
-   toolbar appears/disappears. */
+   selected/being edited (see card-editor.js). Overlays the top of the
+   canvas area (rather than reserving its own row) so the canvas gets the
+   full height when no toolbar is showing — no permanent empty strip up
+   top. Hidden via visibility (not display) so it can still fade/slide in. */
 .editor-text-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -325,7 +328,11 @@
   gap: 10px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--line);
-  flex: none;
+  background: var(--bg);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   /* The transform below (needed for the slide/fade animation) makes this
      a stacking context of its own, which traps its dropdown panels'
      z-index inside it — without a z-index here too, that whole context
@@ -626,6 +633,7 @@
 #finish-help-modal .editor-modal { width: 320px; }
 .editor-text-toolbar #text-rotation {
   width: 52px;
+  -moz-appearance: textfield;
 }
 /* Position/size fields: wide enough for a full value like "123.45", and
    no spin arrows — with 2-decimal-mm precision the up/down step is more
@@ -642,6 +650,8 @@
 .editor-text-toolbar #shape-corner-radius {
   -moz-appearance: textfield;
 }
+.editor-text-toolbar #text-rotation::-webkit-outer-spin-button,
+.editor-text-toolbar #text-rotation::-webkit-inner-spin-button,
 .editor-text-toolbar #text-pos-x::-webkit-outer-spin-button,
 .editor-text-toolbar #text-pos-x::-webkit-inner-spin-button,
 .editor-text-toolbar #text-pos-y::-webkit-outer-spin-button,
@@ -866,6 +876,62 @@
   color: var(--fg);
   white-space: nowrap;
 }
+.editor-price-qty {
+  color: var(--muted);
+}
+.editor-price-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.editor-price-help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.editor-price-help:hover { color: var(--fg); }
+.editor-price-help svg { width: 14px; height: 14px; flex: none; }
+#price-help-modal .editor-modal { width: 340px; }
+.editor-price-help-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.editor-price-help-list li {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.16s ease-out, transform 0.16s ease-out;
+}
+.editor-price-help-list li strong {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+  margin-bottom: 3px;
+}
+/* Each line steps in a beat after the last, same staggered-entrance
+   convention as the Help mode callouts. */
+.editor-modal-overlay.is-open .editor-price-help-list li {
+  opacity: 1;
+  transform: translateY(0);
+}
+.editor-price-help-list li:nth-child(1) { transition-delay: 0.1s; }
+.editor-price-help-list li:nth-child(2) { transition-delay: 0.16s; }
+.editor-price-help-list li:nth-child(3) { transition-delay: 0.22s; }
 .editor-side-thumb,
 .editor-side-add {
   display: flex;
@@ -878,10 +944,12 @@
   cursor: pointer;
 }
 .editor-side-thumb-card {
+  display: block;
   width: 54px;
   height: 34px;
   background: #3a3a3a;
   border: 1.5px solid var(--line);
+  border-radius: 3px;
   transition: border-color 0.15s, background 0.15s;
 }
 .editor-side-thumb:hover:not(.is-active) .editor-side-thumb-card {
@@ -913,10 +981,12 @@
 .editor-side-add:hover .editor-side-add-box { border-color: var(--fg); color: var(--fg); }
 
 /* ---- Renderings panel ---- */
-/* Fixed width, not user-resizable — click a rendering to view it much
-   bigger in the fullscreen modal instead (see .editor-render-modal-*). */
+/* Scales with viewport width (not user-resizable directly — click a
+   rendering to view it much bigger in the fullscreen modal instead, see
+   .editor-render-modal-*) so it doesn't stay a cramped fixed size on a
+   large screen or overflow on a small one. */
 .editor-renderings {
-  width: 500px;
+  width: clamp(320px, 24vw, 520px);
   flex: none;
   border-left: 1px solid var(--line);
   padding: 24px 20px;
@@ -956,7 +1026,7 @@
   display: block;
   aspect-ratio: 86 / 54;
   width: 100%;
-  max-width: 456px;
+  max-width: clamp(260px, 20vw, 440px);
   flex: none;
   border-radius: 8px;
   cursor: zoom-in;
@@ -1214,16 +1284,29 @@
 .editor-settings-unit-btn.is-active { color: var(--bg); background: var(--fg); border-color: var(--fg); }
 
 /* ---- Shape-size modal (plain click with the Shapes tool) ---- */
+/* display stays flex at all times (this is position:fixed, so it never
+   affects layout) — visibility/opacity is what actually shows/hides it,
+   same convention as .editor-help-overlay, since only those (not
+   display) can be transitioned for a real fade/darken animation. */
 .editor-modal-overlay {
-  display: none;
+  display: flex;
   position: fixed;
   inset: 0;
   z-index: 200;
   background: rgba(0, 0, 0, 0.5);
   align-items: center;
   justify-content: center;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-out, visibility 0s linear 0.2s;
 }
-.editor-modal-overlay.is-open { display: flex; }
+.editor-modal-overlay.is-open {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.2s ease-out;
+}
 .editor-modal {
   background: var(--bg);
   border: 1px solid var(--line);
@@ -1231,6 +1314,14 @@
   width: 220px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   font-family: var(--mono);
+  transform: translateY(10px);
+  opacity: 0;
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+.editor-modal-overlay.is-open .editor-modal {
+  transform: translateY(0);
+  opacity: 1;
+  transition-delay: 0.03s;
 }
 .editor-modal-title {
   font-size: 0.8rem;

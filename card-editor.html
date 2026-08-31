@@ -450,7 +450,7 @@
       <div class="editor-bottombar">
         <div class="editor-sides" id="editor-sides">
           <button type="button" class="editor-side-thumb is-active" data-side="front">
-            <span class="editor-side-thumb-card"></span>
+            <canvas class="editor-side-thumb-card" width="108" height="68"></canvas>
             <span class="editor-side-thumb-label">Front</span>
           </button>
           <button type="button" class="editor-side-add" id="add-back-side">
@@ -458,7 +458,13 @@
             <span class="editor-side-thumb-label">Add Back Side</span>
           </button>
         </div>
-        <div class="editor-price" id="editor-price">Estimated Price: $1.90 ea.</div>
+        <div class="editor-price-block">
+          <div class="editor-price" id="editor-price">Estimated Price: n/a</div>
+          <button type="button" class="editor-price-help" id="price-help-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="12" x2="3" y2="12"/><polyline points="9,6 3,12 9,18"/></svg>
+            <span>How we calculate price</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -612,6 +618,22 @@
       <div class="editor-finish-help-placeholder">Image coming soon</div>
       <div class="editor-modal-actions">
         <button type="button" class="btn btn-sm" id="finish-help-modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- "How we calculate price" popup — plain-language explanation, no
+       numbers, next to the Estimated Price readout. -->
+  <div class="editor-modal-overlay" id="price-help-modal" aria-hidden="true">
+    <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="price-help-modal-title">
+      <h2 class="editor-modal-title" id="price-help-modal-title">How we calculate price</h2>
+      <ul class="editor-price-help-list">
+        <li><strong>Coverage</strong> How much of the card your design actually fills. A fuller design takes longer to engrave, so it costs a bit more — a lighter, simpler one costs less.</li>
+        <li><strong>Finish</strong> Which finish each part of your design uses. Some finishes take more work to produce than others.</li>
+        <li><strong>Quantity</strong> How many cards you order at once. A bigger order spreads the setup work across more cards, so the price per card comes down.</li>
+      </ul>
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-sm" id="price-help-modal-close">Close</button>
       </div>
     </div>
   </div>
