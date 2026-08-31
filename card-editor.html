@@ -63,10 +63,6 @@
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><polygon points="12,3 21,8 12,13 3,8"/><polyline points="3,14 12,19 21,14"/></svg>
             <span class="editor-tool-label">Layers</span>
           </button>
-          <button type="button" class="editor-tool editor-standalone-toggle" id="toggle-guides">
-            <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="22" stroke-dasharray="2 2.4"/><line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="2 2.4"/><circle cx="12" cy="12" r="3"/></svg>
-            <span class="editor-tool-label">Guides</span>
-          </button>
           <button type="button" class="editor-tool editor-standalone-toggle" id="toggle-finish">
             <svg class="editor-tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
               <g transform="rotate(180 12 12)">
@@ -193,6 +189,15 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"/></svg>
             </button>
           </div>
+
+          <!-- Corner radius — rounds a rect's corners, a triangle's
+               corners, or a line's end caps. Only shown for those three
+               shape types (see refreshCornerRadiusUI). -->
+          <label class="editor-field editor-mode-shape" id="corner-radius-field" title="Corner radius">
+            <span class="editor-field-label editor-field-label--wide">Radius</span>
+            <input type="number" id="shape-corner-radius" aria-label="Corner radius" step="0.1" min="0" value="0" />
+            <span class="editor-field-unit">mm</span>
+          </label>
 
           <!-- Stroke settings — width and inside/center/outside placement
                along the shape's path. Only shown while in stroke mode;
@@ -335,9 +340,9 @@
             <input type="checkbox" id="text-nonuniform-scale" aria-label="Non-uniform scaling" />
             <span>Non-uniform scale</span>
           </label>
-          <label class="editor-checkbox-field editor-mode-shape" title="Lock width and height to scale together — on by default; uncheck to let a shape be stretched freely">
-            <input type="checkbox" id="shape-uniform-scale" aria-label="Uniform scaling" checked />
-            <span>Uniform scale</span>
+          <label class="editor-checkbox-field editor-mode-shape" title="Allow width and height to be scaled independently — off by default, which keeps corner-drag and W/H edits proportional">
+            <input type="checkbox" id="shape-nonuniform-scale" aria-label="Non-uniform scaling" />
+            <span>Non-uniform scale</span>
           </label>
         </div>
 
@@ -375,8 +380,13 @@
           </div>
 
           <div class="editor-finish-texture-slider" id="finish-texture-slider">
-            <input type="range" id="finish-texture-range" aria-label="Texture amount" min="1" max="50" value="25" />
-            <input type="number" class="editor-finish-texture-value" id="finish-texture-value" aria-label="Texture amount" min="1" max="50" value="25" />
+            <input type="range" id="finish-texture-range" aria-label="Texture density in lines per centimeter" min="1" max="50" value="25" />
+            <input type="number" class="editor-finish-texture-value" id="finish-texture-value" aria-label="Texture density in lines per centimeter" min="1" max="50" value="25" />
+            <span class="editor-field-unit">L/cm</span>
+            <label class="editor-checkbox-field" title="Add a stroke outline around the texture fill">
+              <input type="checkbox" id="finish-texture-outline" aria-label="Add outline" />
+              <span>Outline</span>
+            </label>
           </div>
 
           <div class="editor-text-toolbar-divider"></div>
@@ -409,8 +419,6 @@
                       <rect x="1" y="1" width="754" height="466" rx="27" ry="27" />
                     </svg>
                   </span>
-                  <span class="editor-guide-h" aria-hidden="true"></span>
-                  <span class="editor-guide-v" aria-hidden="true"></span>
                   <span class="editor-shape-draw-label" id="shape-draw-label" aria-hidden="true"></span>
                 </div>
               </div>
@@ -421,11 +429,10 @@
 
       <!-- Renderings (blank for now) -->
       <aside class="editor-renderings" id="renderings-panel">
-        <div class="editor-renderings-resize" id="renderings-resize" aria-hidden="true"></div>
-        <h2>Renderings</h2>
-        <p class="editor-renderings-hint">See how each finish will look here.</p>
+        <h2>Mockup</h2>
+        <p class="editor-renderings-hint">Note* This is a simplified representation of the final product</p>
         <div class="editor-renderings-body" id="renderings-body">
-          <div class="editor-renderings-empty" data-side="front"></div>
+          <canvas class="editor-renderings-canvas" data-side="front" width="860" height="540"></canvas>
         </div>
       </aside>
 
@@ -456,6 +463,7 @@
     <div class="editor-context-menu-divider"></div>
     <button type="button" class="editor-context-menu-item" data-action="group">Group</button>
     <button type="button" class="editor-context-menu-item" data-action="ungroup">Ungroup</button>
+    <button type="button" class="editor-context-menu-item" data-action="remove-from-group">Remove from Group</button>
     <div class="editor-context-menu-divider"></div>
     <button type="button" class="editor-context-menu-item" data-action="union">
       <svg class="editor-context-menu-icon" viewBox="0 0 24 24"><circle cx="9" cy="12" r="7" fill="currentColor"/><circle cx="15" cy="12" r="7" fill="currentColor"/></svg>
@@ -522,6 +530,14 @@
         <button type="button" class="btn btn-sm" id="finish-help-modal-close">Close</button>
       </div>
     </div>
+  </div>
+
+  <!-- Fullscreen renderings preview — opened by clicking a thumbnail in
+       the Renderings panel; redrawn at a much larger fixed resolution
+       rather than just CSS-stretching the small canvas. -->
+  <div class="editor-modal-overlay editor-render-modal-overlay" id="render-modal" aria-hidden="true">
+    <button type="button" class="editor-render-modal-close" id="render-modal-close" aria-label="Close">&times;</button>
+    <canvas class="editor-render-modal-canvas" id="render-modal-canvas" width="1720" height="1080"></canvas>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>

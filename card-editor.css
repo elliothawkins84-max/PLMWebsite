@@ -224,9 +224,22 @@
   color: var(--muted);
   font-size: 0.75rem;
   cursor: pointer;
+  /* Selected label text would otherwise turn a drag attempt into a text
+     -selection drag instead of triggering the row's own native element
+     drag (see draggable="true" in card-editor.js). */
+  user-select: none;
 }
 .editor-layer-item:hover { background: rgba(255, 255, 255, 0.06); color: var(--fg); }
 .editor-layer-item.is-active { background: rgba(255, 255, 255, 0.1); color: var(--fg); }
+.editor-layer-item[draggable="true"] { cursor: grab; }
+/* Drag-and-drop feedback while dragging one top-level row over another
+   (see the drag handlers in card-editor.js) — a line on the row's own
+   top/bottom edge for "reorder to sit here", or an outline around the
+   whole row for "group with this". Inset box-shadow rather than
+   border/outline so it never shifts the row's own layout. */
+.editor-layer-item.is-drop-above { box-shadow: inset 0 2px 0 0 #fff; }
+.editor-layer-item.is-drop-below { box-shadow: inset 0 -2px 0 0 #fff; }
+.editor-layer-item.is-drop-group { box-shadow: inset 0 0 0 2px #fff; }
 .editor-layer-item-icon { width: 16px; height: 16px; flex: none; }
 .editor-layer-item-thumb { width: 16px; height: 16px; flex: none; object-fit: contain; }
 .editor-layer-item-label {
@@ -317,7 +330,8 @@
   border: 1px solid var(--line);
   color: var(--fg);
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
   padding: 6px 8px;
 }
 .editor-text-toolbar input[type="number"] { width: 56px; }
@@ -438,8 +452,8 @@
   flex: none;
 }
 .editor-field-icon { width: 15px; height: 15px; flex: none; }
-.editor-field-label { font-size: 0.68rem; font-family: var(--mono); width: 9px; flex: none; }
-.editor-field-unit { font-size: 0.62rem; font-family: var(--mono); flex: none; }
+.editor-field-label { font-size: 0.8rem; font-family: var(--mono); width: 11px; flex: none; }
+.editor-field-unit { font-size: 0.75rem; letter-spacing: 0.03em; font-family: var(--mono); flex: none; }
 .editor-checkbox-field {
   display: flex;
   align-items: center;
@@ -471,6 +485,8 @@
 #shape-fill-mode-group.is-hidden { display: none !important; }
 /* Dash style only applies to Line — every other shape type hides it. */
 #line-style-group.is-hidden { display: none !important; }
+/* Corner radius only applies to rect/triangle/line — circle hides it. */
+#corner-radius-field.is-hidden { display: none !important; }
 .editor-line-style-btn svg { width: 18px; height: 12px; }
 /* Wide enough for the spelled-out "Width" label, unlike the single-letter
    X/Y/W/H labels' fixed 9px. */
@@ -589,7 +605,8 @@
   width: 72px;
   -moz-appearance: textfield;
 }
-.editor-text-toolbar #shape-stroke-width {
+.editor-text-toolbar #shape-stroke-width,
+.editor-text-toolbar #shape-corner-radius {
   -moz-appearance: textfield;
 }
 .editor-text-toolbar #text-pos-x::-webkit-outer-spin-button,
@@ -601,7 +618,9 @@
 .editor-text-toolbar #text-size-h::-webkit-outer-spin-button,
 .editor-text-toolbar #text-size-h::-webkit-inner-spin-button,
 .editor-text-toolbar #shape-stroke-width::-webkit-outer-spin-button,
-.editor-text-toolbar #shape-stroke-width::-webkit-inner-spin-button {
+.editor-text-toolbar #shape-stroke-width::-webkit-inner-spin-button,
+.editor-text-toolbar #shape-corner-radius::-webkit-outer-spin-button,
+.editor-text-toolbar #shape-corner-radius::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
@@ -699,7 +718,8 @@
 .ruler-label {
   position: absolute;
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
   line-height: 1;
   color: var(--muted);
 }
@@ -724,9 +744,10 @@
   left: 0;
   width: 100%;
   height: 100%;
-  /* No background fill here anymore — the card's visual fill is a real
-     (permanent, non-interactive) Fabric object on the canvas now, since
-     a canvas's own background color can't vary by region. This is a
+  /* No background fill here (or anywhere behind the canvas) — the
+     pasteboard's own grid-pattern background (.editor-canvas-scroll)
+     shows through everywhere, pasteboard and card region alike. This
+     outline is the only visual marker of the card's boundary. This is a
      purely decorative overlay sitting on top of the canvas, so clicks
      need to pass through it to reach the canvas underneath. */
   pointer-events: none;
@@ -738,9 +759,7 @@
   outline: 1.5px solid var(--line-strong);
   /* 3mm fillet on the physical card's corners (27px at this editor's
      fixed 9px/mm scale) — outlines follow border-radius the same way a
-     border would. Matches the same radius baked into the Fabric
-     background rect (see card-editor.js), so the outline and the fill
-     line up exactly. Artwork itself is no longer clipped to this shape
+     border would. Artwork itself is no longer clipped to this shape
      live in the editor (the canvas is shared with the whole pasteboard,
      so it can't be CSS-clipped to just this region without hiding the
      rest of it too) — same as Illustrator/Figma, where the artboard
@@ -792,36 +811,6 @@
   stroke-width: 1;
   stroke-dasharray: 20 12;
 }
-
-/* Guides — toggled by the Guides button: a center crosshair (horizontal
-   + vertical) for aligning design elements to the middle of the card.
-   Uses a repeating-gradient dash pattern rather than border-style:dashed
-   so the dash/gap length is actually controllable (longer and sparser
-   than a typical thin native dashed line). */
-.editor-guide-h,
-.editor-guide-v {
-  display: none;
-  position: absolute;
-  pointer-events: none;
-}
-.editor-guide-h {
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 1px;
-  transform: translateY(-50%);
-  background-image: repeating-linear-gradient(to right, rgba(255, 255, 255, 0.65) 0 10px, transparent 10px 20px);
-}
-.editor-guide-v {
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  transform: translateX(-50%);
-  background-image: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.65) 0 10px, transparent 10px 20px);
-}
-.editor-card.show-guides .editor-guide-h,
-.editor-card.show-guides .editor-guide-v { display: block; }
 
 /* ---- Bottom bar: side switcher (left) + price (right) ---- */
 .editor-bottombar {
@@ -891,28 +880,16 @@
 .editor-side-add:hover .editor-side-add-box { border-color: var(--fg); color: var(--fg); }
 
 /* ---- Renderings panel ---- */
+/* Fixed width, not user-resizable — click a rendering to view it much
+   bigger in the fullscreen modal instead (see .editor-render-modal-*). */
 .editor-renderings {
-  position: relative;
-  width: 340px;
-  min-width: 260px;
-  max-width: 66.666vw;
+  width: 500px;
+  flex: none;
   border-left: 1px solid var(--line);
   padding: 24px 20px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-/* Wide hit target straddling the left border, drag to resize. */
-.editor-renderings-resize {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 7px;
-  transform: translateX(-3.5px);
-  cursor: col-resize;
-  z-index: 5;
-  touch-action: none;
 }
 .editor-renderings h2 {
   font-size: 1rem;
@@ -932,13 +909,61 @@
   gap: 16px;
   min-height: 0;
   overflow-y: auto;
+  /* Setting overflow-x to 'visible' here wouldn't actually help — per the
+     CSS overflow spec, pairing 'visible' on one axis with a non-visible
+     value (overflow-y: auto) forces both to compute as 'auto', so the
+     hover ring's box-shadow still clips right at this edge either way.
+     A few px of side padding instead keeps the ring inside that boundary. */
+  padding: 0 4px;
 }
-.editor-renderings-empty {
-  border: 1px dashed var(--line);
+.editor-renderings-canvas {
+  display: block;
   aspect-ratio: 86 / 54;
   width: 100%;
-  max-width: 320px;
+  max-width: 456px;
   flex: none;
+  border-radius: 8px;
+  cursor: zoom-in;
+  transition: box-shadow 0.15s;
+}
+.editor-renderings-canvas:hover {
+  box-shadow: 0 0 0 2px var(--fg);
+}
+
+/* ---- Fullscreen renderings modal ---- */
+.editor-render-modal-overlay {
+  z-index: 300;
+  flex-direction: column;
+  gap: 20px;
+}
+.editor-render-modal-canvas {
+  display: block;
+  aspect-ratio: 86 / 54;
+  width: auto;
+  height: auto;
+  max-width: min(80vw, 1200px);
+  max-height: 75vh;
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+.editor-render-modal-close {
+  position: fixed;
+  top: 24px;
+  right: 32px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.editor-render-modal-close:hover {
+  border-color: var(--fg);
 }
 
 /* ---- Right-click context menu ---- */

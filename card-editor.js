@@ -56,17 +56,6 @@ if (sidePanel && panelToggles.length) {
   });
 }
 
-// ---- Guides toggle — shows/hides the center-crosshair guide lines on
-// the card. (The safe zone is separate and always visible.) ----
-const guidesBtn = document.getElementById('toggle-guides');
-const editorCardEl = document.getElementById('editor-card');
-if (guidesBtn && editorCardEl) {
-  guidesBtn.addEventListener('click', () => {
-    guidesBtn.classList.toggle('is-active');
-    editorCardEl.classList.toggle('show-guides');
-  });
-}
-
 // ---- Rulers ----
 function buildRuler(el, lengthMm, isVertical) {
   const MAJOR_EVERY = 10; // mm
@@ -248,49 +237,24 @@ if (canvasScroll) {
 // placeholder until this runs.
 applyZoom();
 
-// ---- Renderings panel resize (drag the left edge) ----
-// The panel has its own explicit width (see card-editor.css); the panel
-// itself recentering its contents when resized comes for free from
-// .editor-renderings-body's flex centering — nothing extra needed here.
-const renderingsPanel = document.getElementById('renderings-panel');
-const renderingsResize = document.getElementById('renderings-resize');
-const editorMainEl = document.querySelector('.editor-main');
-if (renderingsPanel && renderingsResize && editorMainEl) {
-  const RENDERINGS_MIN = 260;
-  let isResizingRenderings = false;
-
-  renderingsResize.addEventListener('pointerdown', (e) => {
-    isResizingRenderings = true;
-    renderingsResize.setPointerCapture(e.pointerId);
-    document.body.style.cursor = 'col-resize';
-  });
-
-  renderingsResize.addEventListener('pointermove', (e) => {
-    if (!isResizingRenderings) return;
-    const mainRect = editorMainEl.getBoundingClientRect();
-    const maxWidth = window.innerWidth * (2 / 3); // matches the CSS max-width: 66.666vw cap
-    const newWidth = Math.max(RENDERINGS_MIN, Math.min(maxWidth, mainRect.right - e.clientX));
-    renderingsPanel.style.width = `${newWidth}px`;
-  });
-
-  const stopResizingRenderings = (e) => {
-    if (!isResizingRenderings) return;
-    isResizingRenderings = false;
-    document.body.style.cursor = '';
-    if (renderingsResize.hasPointerCapture(e.pointerId)) renderingsResize.releasePointerCapture(e.pointerId);
-  };
-  renderingsResize.addEventListener('pointerup', stopResizingRenderings);
-  renderingsResize.addEventListener('pointercancel', stopResizingRenderings);
-}
-
 // ---- Fabric.js canvas — the first real (non-placeholder) tool: Text ----
 const fabricCanvasEl = document.getElementById('fabric-canvas');
 let fabricCanvas = null;
 if (fabricCanvasEl && window.fabric) {
+  // Lets Fabric's own hit-testing look inside a group instead of stopping
+  // at its outer bounding box — needed so double-click-to-edit-a-member
+  // (see the mouse:dblclick handler below) can find out which actual
+  // member was clicked. Doesn't change single-click selection at all:
+  // that still always resolves to the outermost group, same as before —
+  // this only adds the extra (otherwise unused) subTargets data alongside it.
+  fabric.Group.prototype.subTargetCheck = true;
   fabricCanvas = new fabric.Canvas('fabric-canvas', {
     width: PASTEBOARD_W,
     height: PASTEBOARD_H,
-    backgroundColor: '#000',
+    // Transparent — the CSS grid pattern behind the canvas (see
+    // .editor-canvas-scroll) shows through everywhere now, pasteboard and
+    // card region alike, rather than painting either an opaque pasteboard
+    // color or a separate card-shaped fill on top of it.
     selection: true,
     // Fabric's default (false) always draws the active object on top of
     // everything else while it's selected, regardless of its real
@@ -314,28 +278,6 @@ if (fabricCanvasEl && window.fabric) {
     fabricCanvas.wrapperEl.style.left = `${-CARD_OFFSET_X}px`;
     fabricCanvas.wrapperEl.style.top = `${-CARD_OFFSET_Y}px`;
   }
-
-  // The card's own visual fill can no longer be a plain CSS background
-  // once the canvas covers the whole pasteboard (a canvas background
-  // color is uniform across its whole area) — it's a real, permanent
-  // Fabric object instead: non-interactive, excluded from the Layers
-  // panel and history-worthiness checks by evented:false (same as any
-  // other helper overlay), but still round-tripped through undo/redo and
-  // side-switching like real content, since it needs to survive those.
-  // It must never drift off the very back of the stack — see the
-  // sendToBack call at the top of pushHistory() below, which is the one
-  // place that enforces that regardless of which operation moved it.
-  // `let`, not `const`: loadFromJSON (undo/redo, side-switching) replaces
-  // every object with a freshly deserialized instance, so this reference
-  // gets stale the moment any restore happens — isCardBackground (passed
-  // to toJSON via HISTORY_PROPS below) is how it's found again afterward.
-  let cardBackgroundRect = new fabric.Rect({
-    left: CARD_OFFSET_X, top: CARD_OFFSET_Y, width: CARD_W_PX, height: CARD_H_PX,
-    rx: 27, ry: 27, fill: '#3a3a3a',
-    selectable: false, evented: false, hoverCursor: 'default',
-    isCardBackground: true,
-  });
-  fabricCanvas.add(cardBackgroundRect);
 
   const textBtn = document.getElementById('tool-text');
   const shapesBtn = document.getElementById('tool-shapes');
@@ -450,6 +392,60 @@ if (fabricCanvasEl && window.fabric) {
     if (type === 'circle') return new fabric.Circle({ ...base, radius: 1 });
     if (type === 'triangle') return new fabric.Triangle({ ...base, width: 1, height: 1 });
     return new fabric.Rect({ ...base, width: 1, height: 1 });
+  }
+  // A triangle's three corners, top-left-origin like fabric.Triangle's own
+  // default layout, so a rounded version built from these lines up exactly
+  // where the plain triangle it's replacing was.
+  function triangleVertices(width, height) {
+    return [
+      { x: width / 2, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height },
+    ];
+  }
+  // Rounds every corner of a closed polygon by `radius`, returning an SVG
+  // path 'd' string: at each vertex, retreat along both adjacent edges by
+  // the radius and join those two points with a quadratic curve using the
+  // original vertex as the control point (the standard construction for a
+  // rounded polygon corner). Per-vertex radius is clamped to half the
+  // shorter of its two adjacent edges so corners can never overlap or
+  // invert the shape, however large a radius is requested.
+  function roundedPolygonPathD(points, radius) {
+    const n = points.length;
+    const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+    const corners = points.map((p, i) => {
+      const prev = points[(i - 1 + n) % n];
+      const next = points[(i + 1) % n];
+      const dPrev = dist(p, prev);
+      const dNext = dist(p, next);
+      const r = Math.min(radius, dPrev / 2, dNext / 2);
+      return {
+        start: { x: p.x + ((prev.x - p.x) / dPrev) * r, y: p.y + ((prev.y - p.y) / dPrev) * r },
+        end: { x: p.x + ((next.x - p.x) / dNext) * r, y: p.y + ((next.y - p.y) / dNext) * r },
+        control: p,
+      };
+    });
+    let d = `M ${corners[0].start.x} ${corners[0].start.y} `;
+    for (let i = 0; i < n; i++) {
+      const c = corners[i];
+      const nextStart = corners[(i + 1) % n].start;
+      d += `Q ${c.control.x} ${c.control.y} ${c.end.x} ${c.end.y} L ${nextStart.x} ${nextStart.y} `;
+    }
+    return `${d}Z`;
+  }
+  // Builds (or rebuilds) a rounded-corner triangle as a fabric.Path — the
+  // only way to get rounded corners, since fabric.Triangle has no native
+  // radius. _shapeBaseType/_triWidth/_triHeight/_cornerRadiusPx ride along
+  // in HISTORY_PROPS so undo/redo and a later radius edit can find their
+  // way back to this same geometry.
+  function makeRoundedTrianglePath(width, height, radiusPx, props) {
+    const d = roundedPolygonPathD(triangleVertices(width, height), radiusPx);
+    const path = new fabric.Path(d, { ...props, originX: 'left', originY: 'top' });
+    path._shapeBaseType = 'triangle';
+    path._triWidth = width;
+    path._triHeight = height;
+    path._cornerRadiusPx = radiusPx;
+    return path;
   }
   // Rect/triangle size directly via width/height; a circle drawn from a
   // (possibly non-square) drag box becomes an ellipse — radius from the
@@ -837,7 +833,7 @@ if (fabricCanvasEl && window.fabric) {
   const sizeWInput = document.getElementById('text-size-w');
   const sizeHInput = document.getElementById('text-size-h');
   const nonUniformCheckbox = document.getElementById('text-nonuniform-scale');
-  const shapeUniformCheckbox = document.getElementById('shape-uniform-scale');
+  const shapeNonUniformCheckbox = document.getElementById('shape-nonuniform-scale');
   // 'path' covers the result of a Union/Subtract (see the boolean-ops
   // section below); 'group' is a plain Fabric group from the Group
   // context-menu action — both just need the shared transform toolbar
@@ -904,6 +900,27 @@ if (fabricCanvasEl && window.fabric) {
   const strokeSettingsDropdown = document.getElementById('stroke-settings-dropdown');
   const strokeWidthInput = document.getElementById('shape-stroke-width');
   const strokeAlignButtons = document.querySelectorAll('.editor-stroke-align-btn');
+  const cornerRadiusField = document.getElementById('corner-radius-field');
+  const cornerRadiusInput = document.getElementById('shape-corner-radius');
+  // Line has no fill area to round — "rounded edge" there means rounded
+  // end caps instead, so it's included even though the mechanism differs.
+  const ROUNDABLE_SHAPE_TYPES = ['rect', 'triangle', 'line'];
+  // A rounded triangle is a plain fabric.Triangle up until the first time
+  // a nonzero radius is applied, at which point it's rebuilt as a Path
+  // (Fabric has no native triangle corner-radius) — _shapeBaseType is how
+  // it's still recognized as "a roundable triangle" afterward.
+  function isRoundableShape(obj) {
+    if (!obj) return false;
+    if (ROUNDABLE_SHAPE_TYPES.includes(obj.type)) return true;
+    return obj.type === 'path' && obj._shapeBaseType === 'triangle';
+  }
+  function refreshCornerRadiusUI(obj) {
+    const applicable = isRoundableShape(obj);
+    if (cornerRadiusField) cornerRadiusField.classList.toggle('is-hidden', !applicable);
+    if (!applicable) return;
+    const px = obj._cornerRadiusPx || 0;
+    if (cornerRadiusInput) cornerRadiusInput.value = (px / PX_PER_MM).toFixed(2);
+  }
   function fillEligible(obj) {
     return SHAPE_FILL_TYPES.includes(obj.type) || obj.type === 'group';
   }
@@ -976,13 +993,20 @@ if (fabricCanvasEl && window.fabric) {
       return;
     }
     const align = obj.strokeAlign || 'center';
+    // _strokeWidthPx is a real physical width the user dialed in (mm, via
+    // the Stroke settings field) — it must render at that width regardless
+    // of the object's own scale, so strokeUniform is required here. Without
+    // it, an object with a large baked-in scale (e.g. an imported SVG whose
+    // tiny viewBox gets scaled way up to its real-world card size) turns
+    // this into a wildly oversized stroke, since Fabric otherwise multiplies
+    // strokeWidth by the object's full accumulated scale.
     const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
     if (align === 'center') {
-      obj.set({ strokeWidth: desired, clipPath: null });
+      obj.set({ strokeWidth: desired, strokeUniform: true, clipPath: null });
     } else {
       const clip = makeStrokeClipShapeFor(obj);
       clip.set({ inverted: align === 'outside' });
-      obj.set({ strokeWidth: desired * 2, clipPath: clip });
+      obj.set({ strokeWidth: desired * 2, strokeUniform: true, clipPath: clip });
     }
     obj.setCoords();
   }
@@ -1229,7 +1253,10 @@ if (fabricCanvasEl && window.fabric) {
   // everything else standard already serializes on its own. Helper
   // overlays (the edge indicator, snap guide lines) are excluded
   // automatically since they're marked excludeFromExport.
-  const HISTORY_PROPS = ['strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'isCardBackground', 'cardFinish', 'cardFinishTexture'];
+  const HISTORY_PROPS = [
+    'strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'cardFinish', 'cardFinishTexture', 'cardFinishOutline',
+    '_cornerRadiusPx', '_shapeBaseType', '_triWidth', '_triHeight',
+  ];
   const HISTORY_LIMIT = 50;
   const undoBtn = document.getElementById('undo-btn');
   const redoBtn = document.getElementById('redo-btn');
@@ -1249,6 +1276,34 @@ if (fabricCanvasEl && window.fabric) {
     if (undoBtn) undoBtn.disabled = undoStack.length < 2;
     if (redoBtn) redoBtn.disabled = redoStack.length === 0;
   }
+  // Declared here, ahead of pushHistory() below, specifically because
+  // its very first call happens synchronously during setup (the
+  // baseline snapshot, a few lines down) — a `let` referenced before
+  // this point in the file would still be in its temporal dead zone and
+  // throw, even though pushHistory itself is only actually invoked
+  // later. The rest of the front/back side-switching machinery that
+  // uses these is further down, unchanged.
+  const renderingsBody = document.getElementById('renderings-body');
+  const renderModal = document.getElementById('render-modal');
+  const renderModalCanvas = document.getElementById('render-modal-canvas');
+  const renderModalClose = document.getElementById('render-modal-close');
+  let renderModalSide = null;
+  let currentSide = 'front';
+  const sideHistories = {};
+  // Several distinct actions (adding an object, then assigning it a
+  // finish, for instance) can each trigger a rendering-preview render in
+  // quick succession — since drawing the traced-outline image back in is
+  // async (loading a group through Fabric, then decoding the resulting
+  // PNG), an earlier call's callback can still be pending when a newer
+  // one starts. Without tracking which call is actually the latest per
+  // canvas, a stale callback can paint its (now outdated) image on top of
+  // a newer call's freshly-drawn background after the fact. Each call
+  // (see paintCardPreview below) stamps its own generation number per
+  // target canvas; a callback that finds it's no longer current just
+  // discards its result. Keyed by canvas element (not side) since the
+  // same side's snapshot can paint into both its small thumbnail and the
+  // full-size modal at once.
+  const renderGenerationByCanvas = new WeakMap();
   // Called after every discrete edit settles (never mid-drag) — see the
   // individual call sites throughout this file. Harmless to call more
   // than once for the same edit: identical-to-the-top-of-stack snapshots
@@ -1256,18 +1311,13 @@ if (fabricCanvasEl && window.fabric) {
   // action don't create a duplicate undo step.
   function pushHistory() {
     if (isRestoringHistory) return;
-    // Cheap, central place to keep the card's background rect pinned to
-    // the very back of the stack — almost every mutation (z-order
-    // buttons, boolean ops, group/ungroup, delete, drags) ends up here,
-    // so this one call keeps the invariant true everywhere rather than
-    // needing a fixup at each individual call site.
-    if (cardBackgroundRect) fabricCanvas.sendToBack(cardBackgroundRect);
     const snapshot = JSON.stringify(fabricCanvas.toJSON(HISTORY_PROPS));
     if (undoStack.length && undoStack[undoStack.length - 1] === snapshot) return;
     undoStack.push(snapshot);
     if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
     redoStack = [];
     updateUndoRedoButtons();
+    renderCardPreview(currentSide);
   }
   function restoreHistorySnapshot(snapshot) {
     isRestoringHistory = true;
@@ -1281,17 +1331,12 @@ if (fabricCanvasEl && window.fabric) {
     hideEdgeIndicator();
     clearSnapGuides();
     fabricCanvas.loadFromJSON(snapshot, () => {
-      // loadFromJSON replaces every object with a freshly deserialized
-      // instance, orphaning the old cardBackgroundRect reference — find
-      // the new one (tagged via isCardBackground, round-tripped through
-      // HISTORY_PROPS) so pushHistory()'s sendToBack keeps targeting a
-      // real, current object instead of resurrecting a stale one.
-      cardBackgroundRect = fabricCanvas.getObjects().find((o) => o.isCardBackground) || null;
       fabricCanvas.requestRenderAll();
       isRestoringHistory = false;
       hideObjectToolbar();
       refreshLayersList();
       updateUndoRedoButtons();
+      renderCardPreview(currentSide);
     });
   }
   function undo() {
@@ -1361,9 +1406,6 @@ if (fabricCanvasEl && window.fabric) {
   const sidesEl = document.getElementById('editor-sides');
   const addBackBtn = document.getElementById('add-back-side');
   const cardLabel = document.getElementById('editor-card-label');
-  const renderingsBody = document.getElementById('renderings-body');
-  let currentSide = 'front';
-  const sideHistories = {};
 
   function setActiveSideUI(sideName) {
     if (sidesEl) {
@@ -1416,13 +1458,362 @@ if (fabricCanvasEl && window.fabric) {
       // A back side now exists, so the renderings panel should preview
       // both sides — add a second card box alongside the front one.
       if (renderingsBody && !renderingsBody.querySelector('[data-side="back"]')) {
-        const backPreview = document.createElement('div');
-        backPreview.className = 'editor-renderings-empty';
+        const backPreview = document.createElement('canvas');
+        backPreview.className = 'editor-renderings-canvas';
         backPreview.dataset.side = 'back';
+        backPreview.width = 860;
+        backPreview.height = 540;
         renderingsBody.appendChild(backPreview);
+        renderCardPreview('back');
       }
     });
   }
+
+  // ---- Renderings preview ----
+  // A rough "what the laser will actually produce" preview per side — a
+  // black anodized-aluminum card on a wood backdrop, with each finish
+  // eventually drawn as its own real engraving pattern rather than a
+  // flat proofing color. Starting with just Stroke: no density involved
+  // (it's a traced outline, not a fill), rendered as a near-white line —
+  // everything else is left blank for now until its own pattern is
+  // built. Real line-density values (mm) will replace RENDER_LINE_WIDTH_MM
+  // and friends once provided. Every representative/traced line drawn into
+  // the preview — a fixed-width Stroke fallback, texture's hatch, texture's
+  // own outline — shares this one width, since the laser cuts the same
+  // physical line regardless of which finish it's tracing.
+  const RENDER_LINE_WIDTH_MM = 0.08;
+  const RENDER_LINE_WIDTH_PX = RENDER_LINE_WIDTH_MM * PX_PER_MM;
+  function roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function drawWoodBackground(ctx, w, h) {
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#5a3d26');
+    grad.addColorStop(0.5, '#6b4a2e');
+    grad.addColorStop(1, '#4a3220');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    // A handful of soft, gently curved grain lines rather than a tiled
+    // texture — cheap, and reads fine at this small a preview size.
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = '#2e1d10';
+    for (let i = 0; i < 7; i++) {
+      const y = (h / 7) * i + h / 14;
+      ctx.lineWidth = 1 + (i % 3);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(w * 0.3, y + 10, w * 0.6, y - 10, w, y + 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // Returns the card's own rect (in preview-canvas px) so the caller can
+  // composite the actual engraved artwork into exactly that area.
+  function drawAluminumCard(ctx, w, h) {
+    const margin = Math.min(w, h) * 0.08;
+    const cardW = w - margin * 2;
+    const cardH = cardW * (CARD_H_PX / CARD_W_PX);
+    const rect = { x: margin, y: (h - cardH) / 2, w: cardW, h: cardH, r: cardW * (27 / CARD_W_PX) };
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 6;
+    roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+    ctx.fillStyle = '#0c0c0c';
+    ctx.fill();
+    ctx.restore();
+
+    // Brushed-aluminum sheen — a soft diagonal highlight band, clipped to
+    // the card's own rounded shape.
+    ctx.save();
+    roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+    ctx.clip();
+    const sheen = ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
+    sheen.addColorStop(0, 'rgba(255,255,255,0)');
+    sheen.addColorStop(0.45, 'rgba(255,255,255,0.05)');
+    sheen.addColorStop(0.5, 'rgba(255,255,255,0.16)');
+    sheen.addColorStop(0.55, 'rgba(255,255,255,0.05)');
+    sheen.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.restore();
+
+    ctx.save();
+    roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    return rect;
+  }
+  // Texture density (from the Finish toolbar's slider) is a real physical
+  // value — lines per centimeter, cross-hatched at 45 degrees both ways —
+  // so spacing converts directly, no representative curve needed here.
+  function textureSpacingPx(linesPerCm) {
+    const lpc = Math.max(1, linesPerCm || 25);
+    const mm = 10 / lpc;
+    return mm * PX_PER_MM;
+  }
+  // Builds a small tile with a 45-degree diagonal corner-to-corner —
+  // repeating that tile is the standard trick for a continuous diagonal
+  // hatch, since each tile's line meets its neighbors'. `crossed` adds the
+  // opposite diagonal too, crossing in an X (Texture's cross-hatch); left
+  // off, it's a single-direction brushed-grain line (White's own look).
+  function makeHatchPatternCanvas(tileSizePx, lineColor, lineWidthPx, crossed) {
+    const size = Math.max(1, tileSizePx);
+    const pc = document.createElement('canvas');
+    pc.width = size;
+    pc.height = size;
+    const pctx = pc.getContext('2d');
+    pctx.strokeStyle = lineColor;
+    pctx.lineWidth = lineWidthPx;
+    pctx.beginPath();
+    pctx.moveTo(0, size);
+    pctx.lineTo(size, 0);
+    if (crossed) {
+      pctx.moveTo(0, 0);
+      pctx.lineTo(size, size);
+    }
+    pctx.stroke();
+    return pc;
+  }
+  // Renders just this side's Stroke-finish objects (recursing into
+  // groups — each leaf's own cardFinish is authoritative, cascaded there
+  // already by the Finish toolbar) onto an offscreen, non-interactive
+  // Fabric canvas sized to the card's real px dimensions, restyled to a
+  // near-white traced outline with no fill. Everything else is hidden
+  // for now. Fabric handles all the real shape/group/transform math —
+  // far simpler than re-deriving each shape type's outline path by hand.
+  // resolutionScale renders at a higher (or lower) pixel density than the
+  // card's native 774x486 — e.g. 2x for the fullscreen modal, which is
+  // displayed roughly twice as large as the thumbnail. Without this, the
+  // thumbnail's fixed-resolution output gets upscaled to fill the much
+  // bigger modal canvas and everything reads soft/blurry. setZoom scales
+  // the whole scene through Fabric's own viewport transform, the same
+  // mechanism objects/patternTransform already scale through, so stroke
+  // widths and hatch spacing stay physically correct at any resolution.
+  function renderStrokeOutlinesToDataURL(snapshotJson, resolutionScale, callback) {
+    const off = document.createElement('canvas');
+    off.width = Math.round(CARD_W_PX * resolutionScale);
+    off.height = Math.round(CARD_H_PX * resolutionScale);
+    const staticCanvas = new fabric.StaticCanvas(off);
+    staticCanvas.setZoom(resolutionScale);
+    staticCanvas.loadFromJSON(snapshotJson, () => {
+      // A shape that already carries a real, painted stroke (an SVG import's
+      // own outline, or a shape given a border via the Shapes toolbar) gets
+      // traced at that actual width — keeping whatever strokeUniform the
+      // live object already has, so the preview matches the editor exactly:
+      // a raw, never-touched vector stroke scales with the object like any
+      // other geometry, while a width dialed in via the Stroke settings
+      // field (which sets strokeUniform itself, precisely so it stays put
+      // regardless of an imported SVG's own internal scale) stays constant
+      // here too. A shape with no real stroke (a filled path/donut shape)
+      // has no natural width to preserve, so it falls back to the fixed
+      // representative trace width, held constant regardless of scale.
+      function hasRealStroke(obj) {
+        return !!(obj.stroke && obj.stroke !== 'none' && obj.strokeWidth > 0);
+      }
+      // The pattern tile's own pixel resolution never changes (always a
+      // crisp, fixed HATCH_TILE_SOURCE_PX square) — the real spacing is
+      // controlled entirely through patternTransform's scale instead.
+      // Sizing the tile bitmap itself to the spacing (the previous
+      // approach) rounds to a whole pixel, and every spacing under ~4px
+      // (any Texture density past ~22 L/cm, and all of White's fixed
+      // 200 L/cm) rounded to the exact same 4px floor — collapsing every
+      // one of those densities into an identical, indistinguishable
+      // pattern. A fixed-resolution tile scaled by an arbitrary, unrounded
+      // factor has no such floor, so it keeps distinguishing densities
+      // right down to sub-pixel spacing (visually converging into a
+      // near-solid fill as spacing shrinks below the line width, which is
+      // physically correct — tightly-packed lines really do read as solid).
+      // patternTransform also carries the same avgScale correction as
+      // before, canceling out the object's (and its ancestor groups')
+      // own accumulated scale.
+      const HATCH_TILE_SOURCE_PX = 64;
+      function buildHatchFillPattern(obj, linesPerCm, crossed) {
+        const { scaleX, scaleY } = fabric.util.qrDecompose(obj.calcTransformMatrix());
+        const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2 || 1;
+        const spacing = textureSpacingPx(linesPerCm);
+        const tileScale = spacing / HATCH_TILE_SOURCE_PX;
+        const lineWidthInTile = RENDER_LINE_WIDTH_PX / tileScale;
+        const patternCanvas = makeHatchPatternCanvas(HATCH_TILE_SOURCE_PX, 'rgb(250,250,250)', lineWidthInTile, crossed);
+        const pattern = new fabric.Pattern({ source: patternCanvas, repeat: 'repeat' });
+        const finalScale = tileScale / avgScale;
+        pattern.patternTransform = [finalScale, 0, 0, finalScale, 0, 0];
+        return pattern;
+      }
+      // A diagonal silver gradient with a bright highlight band down the
+      // middle — the same sheen technique used on the aluminum card
+      // background, just applied to the shape's own fill. Percentage
+      // gradient units keep it scaled to each shape's own bounding box,
+      // so it holds up at any size, aspect ratio, or rotation.
+      function buildMetallicFill() {
+        return new fabric.Gradient({
+          type: 'linear',
+          gradientUnits: 'percentage',
+          coords: { x1: 0, y1: 0, x2: 1, y2: 1 },
+          colorStops: [
+            { offset: 0, color: '#3f4144' },
+            { offset: 0.12, color: '#6c6f72' },
+            { offset: 0.25, color: '#a8abad' },
+            { offset: 0.38, color: '#f7f7f7' },
+            { offset: 0.45, color: '#ffffff' },
+            { offset: 0.52, color: '#f7f7f7' },
+            { offset: 0.65, color: '#9a9d9f' },
+            { offset: 0.78, color: '#5c5f62' },
+            { offset: 0.88, color: '#8e9092' },
+            { offset: 1, color: '#3f4144' },
+          ],
+        });
+      }
+      function styleForRender(obj) {
+        if (obj.type === 'group') {
+          obj.getObjects().forEach(styleForRender);
+          return;
+        }
+        const finish = getFinish(obj);
+        if (finish === 'metallic') {
+          obj.set({ fill: buildMetallicFill(), stroke: null, opacity: 1 });
+          return;
+        }
+        if (finish === 'texture') {
+          // Outline traces the shape's own edge on top of the hatch fill —
+          // deliberately overriding strokeWidth (obj's real one is the
+          // Outline checkbox's own editor-visibility width, wider than the
+          // shared render line width) so every line in this preview reads
+          // as the same physical thickness, texture hatch included.
+          obj.set({
+            fill: buildHatchFillPattern(obj, obj.cardFinishTexture, true),
+            stroke: obj.cardFinishOutline ? 'rgb(250,250,250)' : null,
+            strokeWidth: RENDER_LINE_WIDTH_PX,
+            strokeUniform: true,
+            opacity: 1,
+          });
+          return;
+        }
+        if (finish === 'white') {
+          // Plain solid fill, a touch off pure white so Frosted White (the
+          // brighter, full-white finish) still reads as a distinct step up.
+          obj.set({ fill: 'rgb(240,240,240)', stroke: null, opacity: 1 });
+          return;
+        }
+        if (finish === 'frosted-white') {
+          // The brightest, fully smooth finish — plain full white, no line
+          // texture at all.
+          obj.set({ fill: '#ffffff', stroke: null, opacity: 1 });
+          return;
+        }
+        if (finish !== 'stroke') {
+          obj.set({ opacity: 0 });
+          return;
+        }
+        if (hasRealStroke(obj)) {
+          obj.set({ fill: null, stroke: 'rgb(250,250,250)', opacity: 1 });
+        } else {
+          obj.set({ fill: null, stroke: 'rgb(250,250,250)', strokeWidth: RENDER_LINE_WIDTH_PX, strokeUniform: true, opacity: 1 });
+        }
+      }
+      staticCanvas.getObjects().forEach((obj) => {
+        // Snapshots store pasteboard-absolute coordinates; this canvas
+        // is sized to just the card, so shift back to card-relative.
+        obj.set({ left: obj.left - CARD_OFFSET_X, top: obj.top - CARD_OFFSET_Y });
+        obj.setCoords();
+        styleForRender(obj);
+      });
+      staticCanvas.renderAll();
+      callback(staticCanvas.toDataURL({ format: 'png' }));
+      staticCanvas.dispose();
+    });
+  }
+  // Paints one full preview (wood backdrop, aluminum card, traced artwork)
+  // into whichever canvas element is passed in — the small thumbnail, the
+  // full-size modal view, or both, at whatever resolution that particular
+  // canvas happens to be. See renderGenerationByCanvas above for why the
+  // async callback re-checks staleness per canvas rather than per side.
+  function paintCardPreview(canvasEl, snapshot) {
+    const myGeneration = (renderGenerationByCanvas.get(canvasEl) || 0) + 1;
+    renderGenerationByCanvas.set(canvasEl, myGeneration);
+    const ctx = canvasEl.getContext('2d');
+    const w = canvasEl.width;
+    const h = canvasEl.height;
+    ctx.clearRect(0, 0, w, h);
+    drawWoodBackground(ctx, w, h);
+    const rect = drawAluminumCard(ctx, w, h);
+    const resolutionScale = rect.w / CARD_W_PX;
+    renderStrokeOutlinesToDataURL(snapshot, resolutionScale, (dataUrl) => {
+      if (renderGenerationByCanvas.get(canvasEl) !== myGeneration) return;
+      const img = new Image();
+      img.onload = () => {
+        if (renderGenerationByCanvas.get(canvasEl) !== myGeneration) return;
+        ctx.save();
+        roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+        ctx.clip();
+        ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+        ctx.restore();
+      };
+      img.src = dataUrl;
+    });
+  }
+  function renderCardPreview(side) {
+    const canvasEl = renderingsBody && renderingsBody.querySelector(`.editor-renderings-canvas[data-side="${side}"]`);
+    if (!canvasEl) return;
+    const snapshot = side === currentSide
+      ? undoStack[undoStack.length - 1]
+      : (sideHistories[side] ? sideHistories[side].undo[sideHistories[side].undo.length - 1] : blankCanvasSnapshot);
+    paintCardPreview(canvasEl, snapshot);
+    // Keep the fullscreen modal live too, if it's open and showing this
+    // same side, so an edit made without closing it doesn't go stale.
+    if (renderModal && renderModal.classList.contains('is-open') && renderModalSide === side) {
+      paintCardPreview(renderModalCanvas, snapshot);
+    }
+  }
+  renderCardPreview('front');
+
+  // ---- Fullscreen renderings modal ----
+  // Clicking a thumbnail preview opens the same rendering, redrawn at a
+  // much larger fixed resolution so it stays crisp blown up to fill most
+  // of the screen, rather than just CSS-stretching the small canvas.
+  // (Element lookups and renderModalSide live earlier, alongside
+  // renderingsBody — paintCardPreview/renderCardPreview above reference
+  // them, and those run before this point in the file.)
+  function openRenderModal(side) {
+    if (!renderModal || !renderModalCanvas) return;
+    renderModalSide = side;
+    renderModal.classList.add('is-open');
+    renderModal.setAttribute('aria-hidden', 'false');
+    renderCardPreview(side);
+  }
+  function closeRenderModal() {
+    if (!renderModal) return;
+    renderModal.classList.remove('is-open');
+    renderModal.setAttribute('aria-hidden', 'true');
+    renderModalSide = null;
+  }
+  if (renderingsBody) {
+    renderingsBody.addEventListener('click', (e) => {
+      const canvasEl = e.target.closest('.editor-renderings-canvas');
+      if (!canvasEl) return;
+      openRenderModal(canvasEl.dataset.side);
+    });
+  }
+  if (renderModalClose) renderModalClose.addEventListener('click', closeRenderModal);
+  if (renderModal) {
+    renderModal.addEventListener('mousedown', (e) => {
+      if (e.target === renderModal) closeRenderModal();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && renderModal && renderModal.classList.contains('is-open')) closeRenderModal();
+  });
 
   // ---- Boolean shape operations (Union / Subtract) ----
   // PolyBool's default epsilon (1e-10) assumes near-integer input; ours is
@@ -1622,6 +2013,7 @@ if (fabricCanvasEl && window.fabric) {
       style = {
         fill: styleSource.stroke, stroke: null, strokeWidth: 0,
         cardFinish: styleSource.cardFinish, cardFinishTexture: styleSource.cardFinishTexture,
+        cardFinishOutline: styleSource.cardFinishOutline,
       };
     } else if (styleSource.type === 'group') {
       style = firstFillableDescendant(styleSource) || { fill: '#000000', stroke: null, strokeWidth: 0 };
@@ -1641,6 +2033,7 @@ if (fabricCanvasEl && window.fabric) {
     // whatever finish it actually has.
     path.cardFinish = style.cardFinish;
     path.cardFinishTexture = style.cardFinishTexture;
+    path.cardFinishOutline = style.cardFinishOutline;
     fabricCanvas.discardActiveObject();
     suppressHistoryEvents = true;
     sourceObjects.forEach((o) => fabricCanvas.remove(o));
@@ -1709,14 +2102,13 @@ if (fabricCanvasEl && window.fabric) {
     replaceWithBooleanResult(ordered, result.regions, bottom);
   }
 
-  // Both default to uniform scaling — text's own checkbox, unchecked,
-  // means "keep it uniform"; shapes' checkbox is checked by default for
-  // the same effect (locked uniform), so either has to be deliberately
+  // Both default to uniform scaling — both checkboxes are "Non-uniform
+  // scale", unchecked by default, so either has to be deliberately
   // opted into non-uniform/free stretching.
   function isNonUniformAllowed(obj) {
     if (!obj) return false;
     if (obj.type === 'i-text') return !!(nonUniformCheckbox && nonUniformCheckbox.checked);
-    return !(shapeUniformCheckbox && shapeUniformCheckbox.checked);
+    return !!(shapeNonUniformCheckbox && shapeNonUniformCheckbox.checked);
   }
 
   // When non-uniform scaling isn't allowed, only corner handles are shown
@@ -1806,6 +2198,7 @@ if (fabricCanvasEl && window.fabric) {
       shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.shape === obj.type));
       refreshFillModeUI(obj);
       refreshLineStyleUI(obj);
+      refreshCornerRadiusUI(obj);
     }
     const isRealObject = typeof obj.getCenterPoint === 'function';
     if (isRealObject) refreshTransformFields(obj);
@@ -1881,6 +2274,7 @@ if (fabricCanvasEl && window.fabric) {
   const finishTextureSlider = document.getElementById('finish-texture-slider');
   const finishTextureRange = document.getElementById('finish-texture-range');
   const finishTextureValue = document.getElementById('finish-texture-value');
+  const finishTextureOutline = document.getElementById('finish-texture-outline');
   // Every object/group defaults to White until a finish is explicitly
   // chosen for it — reading through this one helper (instead of a raw
   // `obj.cardFinish`) everywhere means new objects never need to have
@@ -1895,6 +2289,7 @@ if (fabricCanvasEl && window.fabric) {
     none: '#ef4444',
     stroke: '#22c55e',
     texture: '#3b82f6',
+    'texture-outline': '#38bdf8',
     white: '#ffffff',
     metallic: '#9ca3af',
     'frosted-white': '#a855f7',
@@ -1914,17 +2309,41 @@ if (fabricCanvasEl && window.fabric) {
     // Whichever of fill/stroke is actually painting something gets the
     // finish color — a shape can have both (a filled shape with its own
     // outline), just one, or in principle neither, in which case fill is
-    // the sensible one to give it.
+    // the sensible one to give it. Truthy checks, not `!= null`: an
+    // imported SVG's `fill="none"`/`stroke="none"` comes through from
+    // Fabric's own SVG parser as an empty string, not null, and `!=
+    // null` doesn't catch that — silently painting a fill onto a path
+    // that was meant to be stroke-only.
+    const hasFill = !!obj.fill && obj.fill !== 'none';
+    const hasStroke = !!obj.stroke && obj.stroke !== 'none';
     const next = {};
-    if (obj.fill != null) next.fill = color;
-    if (obj.stroke != null) next.stroke = color;
-    if (!('fill' in next) && !('stroke' in next)) next.fill = color;
+    if (hasFill) next.fill = color;
+    if (hasStroke) next.stroke = color;
+    if (!hasFill && !hasStroke) next.fill = color;
     obj.set(next);
   }
-  function applyFinishToOne(obj, finish, textureAmount) {
+  // Texture's own outline stroke width, once turned on — a plain, real
+  // physical value (not the proofing color), same default as the Shapes
+  // toolbar's own stroke width field.
+  const TEXTURE_OUTLINE_WIDTH_PX = 0.5 * PX_PER_MM;
+  function applyFinishToOne(obj, finish, textureAmount, outline) {
     obj.cardFinish = finish;
     obj.cardFinishTexture = finish === 'texture' ? textureAmount : undefined;
-    applyFinishColor(obj, FINISH_COLORS[finish] || FINISH_COLORS.white);
+    obj.cardFinishOutline = finish === 'texture' ? !!outline : undefined;
+    const color = finish === 'texture' && obj.cardFinishOutline
+      ? FINISH_COLORS['texture-outline']
+      : (FINISH_COLORS[finish] || FINISH_COLORS.white);
+    applyFinishColor(obj, color);
+    // Outline is purely additive — a texture-finish shape otherwise only
+    // ever paints via fill, so the stroke channel is safe to own outright
+    // here rather than needing applyFinishColor's fill-vs-stroke guessing.
+    if (finish === 'texture') {
+      if (obj.cardFinishOutline) {
+        obj.set({ stroke: color, strokeWidth: obj.strokeWidth || TEXTURE_OUTLINE_WIDTH_PX, strokeUniform: true });
+      } else if (obj.type !== 'line') {
+        obj.set({ stroke: null });
+      }
+    }
   }
   // Applying a finish to a group (or a multi-object selection) sets it on
   // every object inside too, recursively — overriding whatever finish
@@ -1933,14 +2352,14 @@ if (fabricCanvasEl && window.fabric) {
   // its own (via the Layers panel — see selectNestedObject) and changing
   // it only ever reaches this with that one object, so it stays scoped
   // to just that object, same as any plain shape.
-  function applyFinishCascade(obj, finish, textureAmount) {
+  function applyFinishCascade(obj, finish, textureAmount, outline) {
     if (obj.type === 'activeSelection') {
-      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount));
+      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount, outline));
       return;
     }
-    applyFinishToOne(obj, finish, textureAmount);
+    applyFinishToOne(obj, finish, textureAmount, outline);
     if (obj.type === 'group') {
-      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount));
+      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount, outline));
     }
   }
   function refreshFinishUI(obj) {
@@ -1950,6 +2369,7 @@ if (fabricCanvasEl && window.fabric) {
     const textureAmount = (obj && obj.cardFinishTexture) || 25;
     if (finishTextureRange) finishTextureRange.value = textureAmount;
     if (finishTextureValue) finishTextureValue.value = textureAmount;
+    if (finishTextureOutline) finishTextureOutline.checked = !!(obj && obj.cardFinishOutline);
   }
   // Shared by the slider and the typed number box, which stay in sync
   // with each other. `commit` pushes history — used once dragging/typing
@@ -1961,9 +2381,18 @@ if (fabricCanvasEl && window.fabric) {
     if (finishTextureValue) finishTextureValue.value = clamped;
     const obj = fabricCanvas.getActiveObject();
     if (!obj || obj.cardFinish !== 'texture') return;
-    applyFinishCascade(obj, 'texture', clamped);
+    applyFinishCascade(obj, 'texture', clamped, obj.cardFinishOutline);
+    fabricCanvas.requestRenderAll();
     refreshLayersList();
     if (commit) pushHistory();
+  }
+  function setTextureOutline(checked) {
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj || obj.cardFinish !== 'texture') return;
+    applyFinishCascade(obj, 'texture', obj.cardFinishTexture, checked);
+    fabricCanvas.requestRenderAll();
+    refreshLayersList();
+    pushHistory();
   }
   function setFinishMode(active) {
     finishModeActive = active;
@@ -2008,7 +2437,9 @@ if (fabricCanvasEl && window.fabric) {
       const obj = fabricCanvas.getActiveObject();
       if (!obj) return;
       const textureAmount = finish === 'texture' ? (finishTextureRange ? parseInt(finishTextureRange.value, 10) : 25) : undefined;
-      applyFinishCascade(obj, finish, textureAmount);
+      const outline = finish === 'texture' && finishTextureOutline ? finishTextureOutline.checked : false;
+      applyFinishCascade(obj, finish, textureAmount, outline);
+      fabricCanvas.requestRenderAll();
       refreshLayersList();
       pushHistory();
     });
@@ -2023,6 +2454,9 @@ if (fabricCanvasEl && window.fabric) {
     finishTextureValue.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') finishTextureValue.blur();
     });
+  }
+  if (finishTextureOutline) {
+    finishTextureOutline.addEventListener('change', () => setTextureOutline(finishTextureOutline.checked));
   }
   // "What are these?" — placeholder popup until a real reference image
   // is dropped in.
@@ -2471,10 +2905,74 @@ if (fabricCanvasEl && window.fabric) {
     pushHistory();
   });
 
-  // ---- Scaling checkboxes (text's "Non-uniform scale", shapes' "Uniform
-  // scale") — only ever one is visible at a time, but both just need to
+  // ---- Corner radius (rect/triangle corners, or a line's end caps) ----
+  // Rect and Line round in place via their own native properties. A
+  // triangle has no native radius in Fabric, so rounding it (past the
+  // first, still-square state) rebuilds it as a Path with the rounded
+  // geometry baked in — same object identity concerns as the boolean-op
+  // result swap elsewhere in this file: remove the old object, insert the
+  // replacement at the same z-index, carry selection over.
+  function applyCornerRadius(obj, px) {
+    const clamped = Math.max(0, px);
+    if (obj.type === 'rect') {
+      const maxR = Math.min(obj.width, obj.height) / 2;
+      obj.set({ rx: Math.min(clamped, maxR), ry: Math.min(clamped, maxR) });
+      obj._cornerRadiusPx = clamped;
+      obj.setCoords();
+      fabricCanvas.requestRenderAll();
+      refreshCornerRadiusUI(obj);
+      pushHistory();
+      return;
+    }
+    if (obj.type === 'line') {
+      obj.set({ strokeLineCap: clamped > 0 ? 'round' : 'butt' });
+      obj._cornerRadiusPx = clamped;
+      fabricCanvas.requestRenderAll();
+      refreshCornerRadiusUI(obj);
+      pushHistory();
+      return;
+    }
+    if (obj.type === 'triangle' && clamped <= 0) {
+      // Already square-cornered and staying that way — no need to
+      // convert it into a Path at all.
+      obj._cornerRadiusPx = 0;
+      refreshCornerRadiusUI(obj);
+      return;
+    }
+    const width = obj.type === 'triangle' ? obj.width : obj._triWidth;
+    const height = obj.type === 'triangle' ? obj.height : obj._triHeight;
+    const newPath = makeRoundedTrianglePath(width, height, clamped, {
+      left: obj.left, top: obj.top, scaleX: obj.scaleX, scaleY: obj.scaleY, angle: obj.angle,
+      fill: obj.fill, stroke: obj.stroke, strokeWidth: obj.strokeWidth,
+      strokeAlign: obj.strokeAlign, _strokeWidthPx: obj._strokeWidthPx,
+      strokeDashArray: obj.strokeDashArray,
+      cardFinish: obj.cardFinish, cardFinishTexture: obj.cardFinishTexture, cardFinishOutline: obj.cardFinishOutline,
+    });
+    const index = fabricCanvas.getObjects().indexOf(obj);
+    fabricCanvas.remove(obj);
+    fabricCanvas.insertAt(newPath, index, false);
+    // Rebuilds the stroke-mode clip (if any) against the new rounded
+    // geometry — the old clip was shaped for the old, square corners.
+    if (shapeFillModeFor(newPath) === 'stroke') applyStrokeRender(newPath);
+    newPath.setCoords();
+    fabricCanvas.setActiveObject(newPath);
+    fabricCanvas.requestRenderAll();
+    refreshCornerRadiusUI(newPath);
+    refreshFillModeUI(newPath);
+    refreshTransformFields(newPath);
+    refreshLayersList();
+    pushHistory();
+  }
+  commitOnEnterOrBlur(cornerRadiusInput, (val) => {
+    const obj = fabricCanvas.getActiveObject();
+    if (!isRoundableShape(obj)) return;
+    applyCornerRadius(obj, val * PX_PER_MM);
+  });
+
+  // ---- Scaling checkboxes ("Non-uniform scale" for both text and
+  // shapes) — only ever one is visible at a time, but both just need to
   // refresh the active object's handle visibility when toggled. ----
-  [nonUniformCheckbox, shapeUniformCheckbox].forEach((checkbox) => {
+  [nonUniformCheckbox, shapeNonUniformCheckbox].forEach((checkbox) => {
     if (!checkbox) return;
     checkbox.addEventListener('change', () => {
       const obj = fabricCanvas.getActiveObject();
@@ -2592,6 +3090,7 @@ if (fabricCanvasEl && window.fabric) {
       'send-back': sendActiveToBack,
       group: groupActiveSelection,
       ungroup: ungroupActiveObject,
+      'remove-from-group': () => removeFromGroup(fabricCanvas.getActiveObject()),
       union: runUnion,
       subtract: runSubtract,
       delete: deleteActiveObjects,
@@ -2608,6 +3107,7 @@ if (fabricCanvasEl && window.fabric) {
         'send-back': !!active,
         group: !!active && active.type === 'activeSelection',
         ungroup: !!active && active.type === 'group',
+        'remove-from-group': !!active && active.type !== 'activeSelection' && isWithinGroupEditSession(active),
         union: eligible.length >= 2,
         subtract: eligible.length === 2,
         delete: !!active,
@@ -2688,6 +3188,10 @@ if (fabricCanvasEl && window.fabric) {
     white: '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16" fill="currentColor"/></svg>',
     metallic: '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16"/><line x1="8" y1="20" x2="20" y2="8" stroke-width="2.4"/></svg>',
     'frosted-white': '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16"/><circle cx="9" cy="9" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="0.9" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="0.9" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none"/></svg>',
+    // A group whose members don't all share one finish — four distinct
+    // little swatches instead of one, since no single finish icon would
+    // be accurate.
+    multiple: '<svg class="editor-layer-item-finish-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>',
   };
   function layerLabelFor(obj) {
     if (obj.type === 'i-text' || obj.type === 'text') return (obj.text && obj.text.trim()) || 'Text';
@@ -2765,6 +3269,178 @@ if (fabricCanvasEl && window.fabric) {
     handleSelection({ selected: arr });
     fabricCanvas.requestRenderAll();
   }
+  // ---- Reordering/grouping rows by dragging in the Layers panel ----
+  // Any real row can be dragged or dropped on, at any depth — a nested
+  // object can be reordered against a sibling, dragged out to the top
+  // level (removing it from its group), or dragged into a different
+  // group entirely. A "container" below is either the top-level canvas
+  // or a fabric.Group; every object lives in exactly one. Disabled
+  // outright while a group-edit session is open (see below) — that
+  // temporarily dissolves a group's real structure on the canvas, and
+  // reading a dissolved object's true container mid-drag would be
+  // unreliable, so the simple rule is: close the session first (click
+  // elsewhere), then drag.
+  // Each row is split into three drop zones by vertical position: the
+  // top and bottom quarters mean "reorder to sit right there" (shown
+  // with a white line on that edge); the middle half means "group with
+  // this" (shown with a white outline around the whole row).
+  let draggedLayerObject = null;
+  function getLayerDropZone(li, clientY) {
+    const rect = li.getBoundingClientRect();
+    const rel = (clientY - rect.top) / rect.height;
+    if (rel < 0.25) return 'above';
+    if (rel > 0.75) return 'below';
+    return 'group';
+  }
+  function clearLayerDropIndicators() {
+    layersList.querySelectorAll('.is-drop-above, .is-drop-below, .is-drop-group').forEach((el) => {
+      el.classList.remove('is-drop-above', 'is-drop-below', 'is-drop-group');
+    });
+  }
+  function containerObjectsOf(container) {
+    return container === fabricCanvas ? fabricCanvas.getObjects() : container._objects;
+  }
+  // Pulls obj out of whatever container it's actually in right now. If
+  // that was a group and removing obj leaves it with fewer than 2
+  // members, the group doesn't earn its keep anymore either — it's
+  // dissolved the same way, promoting its lone survivor up into ITS OWN
+  // container at the group's old spot, recursively (a group nested
+  // inside a group that also shrinks to one member keeps unwinding).
+  // After this, obj belongs to nothing; the caller reinserts it.
+  function detachLayerObject(obj) {
+    const group = obj.group;
+    if (!group) {
+      if (fabricCanvas.getObjects().includes(obj)) fabricCanvas.remove(obj);
+      return;
+    }
+    group.removeWithUpdate(obj);
+    let dying = group;
+    while (dying && dying.type === 'group' && dying._objects.length < 2) {
+      const survivor = dying._objects[0] || null;
+      const parent = dying.group || null;
+      const parentObjs = parent ? parent._objects : fabricCanvas.getObjects();
+      const idx = parentObjs.indexOf(dying);
+      if (survivor) dying.removeWithUpdate(survivor);
+      if (parent) parent.removeWithUpdate(dying);
+      else fabricCanvas.remove(dying);
+      if (survivor) insertLayerObjectAt(survivor, parent || fabricCanvas, idx);
+      dying = parent;
+    }
+  }
+  // Inserts obj into a group at a specific index — the exact same
+  // transform-safe dance Fabric's own addWithUpdate uses (un-bake every
+  // current member back to absolute canvas coordinates, reset the
+  // group's own transform to identity, splice the new member in, then
+  // recompute the group's bounds and re-bake everything relative to
+  // that), just with splice(index, ...) in place of addWithUpdate's
+  // always-append push(...). Skipping that dance and only calling
+  // _calcBounds()/_updateObjectsCoords() on top of a splice — which is
+  // what this used to do — computes bounds from children still baked
+  // relative to the OLD transform, corrupting the group's position
+  // (confirmed while building this: it left the group at some nonsense
+  // coordinate like -55,-15 instead of its real spot on the card).
+  function groupInsertAt(group, obj, index) {
+    const nested = !!group.group;
+    group._restoreObjectsState();
+    fabric.util.resetObjectTransform(group);
+    if (nested) {
+      fabric.util.removeTransformFromObject(obj, group.group.calcTransformMatrix());
+    }
+    const clamped = Math.max(0, Math.min(index, group._objects.length));
+    group._objects.splice(clamped, 0, obj);
+    obj.group = group;
+    obj._set('canvas', group.canvas);
+    group._calcBounds();
+    group._updateObjectsCoords();
+    group.dirty = true;
+    if (nested) group.group.addWithUpdate();
+    else group.setCoords();
+  }
+  // Inserts an already-detached object into a container at a specific
+  // index within that container's own member order.
+  function insertLayerObjectAt(obj, container, index) {
+    if (container === fabricCanvas) {
+      fabricCanvas.add(obj);
+      fabricCanvas.moveTo(obj, Math.max(0, Math.min(index, fabricCanvas.getObjects().length - 1)));
+      return;
+    }
+    groupInsertAt(container, obj, index);
+  }
+  // Fabric's own object array is back-to-front, but the panel lists
+  // front-most first — "above" in the list (closer to the top row) means
+  // closer to the front (a higher index) than the target, and "below"
+  // means sharing the target's own index once it's out of the way.
+  // Reordering within the SAME container is a pure reposition (dragged
+  // never actually leaves, so there's no risk of collapsing anything
+  // along the way); moving into a DIFFERENT container detaches first,
+  // then reads the target's freshly-current index right before
+  // inserting, since detaching can itself have just reshuffled that
+  // very container (a dissolving group promoting a survivor into it).
+  function moveLayerObjectRelativeTo(dragged, target, position) {
+    const draggedContainer = dragged.group || fabricCanvas;
+    const targetContainer = target.group || fabricCanvas;
+    if (draggedContainer === targetContainer) {
+      const objs = containerObjectsOf(targetContainer);
+      const targetIndex = objs.indexOf(target);
+      const draggedIndex = objs.indexOf(dragged);
+      let newIndex = position === 'above' ? targetIndex + 1 : targetIndex;
+      if (draggedIndex < targetIndex) newIndex -= 1;
+      if (targetContainer === fabricCanvas) {
+        fabricCanvas.moveTo(dragged, newIndex);
+      } else {
+        // Not detachLayerObject() — that also checks whether removing
+        // dragged leaves the group too small to keep existing, which
+        // would be wrong here: dragged is about to go right back into
+        // this very group, not leave it.
+        targetContainer.removeWithUpdate(dragged);
+        groupInsertAt(targetContainer, dragged, Math.max(0, Math.min(newIndex, targetContainer._objects.length)));
+      }
+      return;
+    }
+    detachLayerObject(dragged);
+    const liveObjs = containerObjectsOf(targetContainer);
+    const liveTargetIndex = liveObjs.indexOf(target);
+    insertLayerObjectAt(dragged, targetContainer, position === 'above' ? liveTargetIndex + 1 : liveTargetIndex);
+  }
+  // Dropping "on" a group joins it as a new direct member (in front of
+  // its current ones); dropping on a plain object wraps the two of them
+  // in a brand new group, taking the lower of their two original spots
+  // in the stack so it doesn't jump to the front of unrelated objects.
+  // Target's index is read fresh, after dragged is already detached,
+  // for the same reason as above.
+  function groupLayerObjectsTogether(dragged, target) {
+    if (target.type === 'group') {
+      detachLayerObject(dragged);
+      target.addWithUpdate(dragged);
+      fabricCanvas.setActiveObject(target);
+      return;
+    }
+    const targetContainer = target.group || fabricCanvas;
+    detachLayerObject(dragged);
+    const insertIndex = containerObjectsOf(targetContainer).indexOf(target);
+    detachLayerObject(target);
+    const newGroup = new fabric.Group([target, dragged]);
+    insertLayerObjectAt(newGroup, targetContainer, insertIndex);
+    fabricCanvas.setActiveObject(newGroup);
+  }
+  function handleLayerDrop(dragged, target, zone) {
+    if (!dragged || !target || dragged === target) return;
+    // Already directly grouped together — nothing meaningful for
+    // "group with this" to do (and attempting it risks pulling the
+    // rug out from under target's own position mid-operation).
+    if (zone === 'group' && (dragged.group === target || (dragged.group && dragged.group === target.group))) return;
+    hideEdgeIndicator();
+    suppressHistoryEvents = true;
+    if (zone === 'group') {
+      groupLayerObjectsTogether(dragged, target);
+    } else {
+      moveLayerObjectRelativeTo(dragged, target, zone);
+    }
+    suppressHistoryEvents = false;
+    fabricCanvas.requestRenderAll();
+    refreshLayersList();
+    pushHistory();
+  }
   // ---- Editing a member nested inside a group, without breaking it up ----
   // Fabric has no way to make a group's child independently selectable
   // while it stays a member, so selecting one from the Layers panel
@@ -2802,7 +3478,7 @@ if (fabricCanvasEl && window.fabric) {
   // in) — without disturbing whatever's actually selected right now, so
   // ending the session doesn't hijack a selection made by clicking a
   // completely different object while a piece was still loose.
-  function endGroupEditSession() {
+  function endGroupEditSession(skipHistory) {
     if (!groupEditSession) return null;
     const { ancestors, levels } = groupEditSession;
     groupEditSession = null;
@@ -2832,8 +3508,32 @@ if (fabricCanvasEl && window.fabric) {
     suppressLayersRefresh = false;
     fabricCanvas.requestRenderAll();
     refreshLayersList();
-    pushHistory();
+    if (!skipHistory) pushHistory();
     return rebuilt;
+  }
+  // Pulls a member permanently out of the group it's currently loose
+  // from (see the group-edit session above) — unlike ending the session
+  // normally, this one member never gets folded back in. Removing it
+  // from the session's own bookkeeping before the rebuild runs means the
+  // rebuild's own "is this member still around" filter naturally leaves
+  // it out, same trick deleteActiveObjects relies on. Lands directly
+  // above the reformed group in the stack (skipHistory on the rebuild
+  // itself so the whole thing — rebuild + reposition — is one undo step,
+  // not two).
+  function removeFromGroup(obj) {
+    if (!groupEditSession || !obj) return;
+    const levelIdx = groupEditSession.levels.findIndex((members) => members.includes(obj));
+    if (levelIdx === -1) return;
+    groupEditSession.levels[levelIdx] = groupEditSession.levels[levelIdx].filter((o) => o !== obj);
+    const rebuilt = endGroupEditSession(true);
+    if (rebuilt && fabricCanvas.getObjects().includes(rebuilt)) {
+      fabricCanvas.moveTo(obj, fabricCanvas.getObjects().indexOf(rebuilt) + 1);
+    }
+    fabricCanvas.setActiveObject(obj);
+    handleSelection({ selected: [obj] });
+    fabricCanvas.requestRenderAll();
+    refreshLayersList();
+    pushHistory();
   }
   function selectNestedObject(obj) {
     endGroupEditSession(); // close out any previous loose piece first
@@ -2869,6 +3569,19 @@ if (fabricCanvasEl && window.fabric) {
     // edited in between, that snapshot is identical to the one before
     // selecting and gets deduped away entirely.
   }
+  // Double-clicking a member inside a group selects just that member —
+  // same entry point the Layers panel uses (selectNestedObject), so it
+  // gets the same "still grouped once you deselect" behavior for free.
+  // opt.target is always the outermost group hit (subTargetCheck doesn't
+  // change that); opt.subTargets — populated because of subTargetCheck
+  // above — is ordered innermost-first, so [0] is the actual member
+  // under the cursor, however deep it's nested.
+  fabricCanvas.on('mouse:dblclick', (opt) => {
+    if (!opt.target || opt.target.type !== 'group') return;
+    const leaf = opt.subTargets && opt.subTargets[0];
+    if (!leaf) return;
+    selectNestedObject(leaf);
+  });
   function refreshLayersList() {
     if (!layersList) return;
     const active = fabricCanvas.getActiveObject();
@@ -2889,6 +3602,25 @@ if (fabricCanvasEl && window.fabric) {
         if (idx !== -1) return session.levels[idx];
       }
       return obj.getObjects();
+    }
+    // A group's own row shows its members' finish only while they all
+    // agree — the moment one member's finish diverges from the rest
+    // (via selectNestedObject overriding just that one), the group's own
+    // cardFinish is stale (still whatever it was cascaded to last), so
+    // this derives the real answer directly from the current leaves
+    // instead of trusting that property. Uses childrenOf(), not
+    // obj.getObjects(), so it stays correct for a group that's currently
+    // mid-edit-session (see above).
+    function finishIconKeyFor(obj) {
+      if (obj.type !== 'group') return getFinish(obj);
+      const finishes = new Set();
+      (function walk(o) {
+        if (o.type === 'group') childrenOf(o).forEach(walk);
+        else finishes.add(getFinish(o));
+      })(obj);
+      if (finishes.size > 1) return 'multiple';
+      const [only] = finishes;
+      return only || getFinish(obj);
     }
     let objects = fabricCanvas.getObjects().filter((o) => o.evented !== false);
     if (session) {
@@ -2912,6 +3644,11 @@ if (fabricCanvasEl && window.fabric) {
       objects.splice(insertAt, 0, session.ancestors[0]);
     }
     if (layersEmpty) layersEmpty.style.display = objects.length ? 'none' : '';
+    // The list is rebuilt from scratch below (innerHTML wipe + re-append)
+    // on most selection changes, which would otherwise reset scroll to
+    // the top every time — jarring when selecting something further down
+    // a long list. Restore whatever it was right after.
+    const scrollTop = layersList.scrollTop;
     layersList.innerHTML = '';
     function renderRow(obj, depth) {
       const li = document.createElement('li');
@@ -2931,9 +3668,9 @@ if (fabricCanvasEl && window.fabric) {
       const isDissolvedAncestor = !!(session && session.ancestors.includes(obj));
       const thumbUrl = isDissolvedAncestor ? null : getLayerThumbDataUrl(obj);
       const thumbHtml = thumbUrl
-        ? `<img class="editor-layer-item-thumb" src="${thumbUrl}" alt="" />`
+        ? `<img class="editor-layer-item-thumb" src="${thumbUrl}" alt="" draggable="false" />`
         : (LAYER_ICONS[obj.type] || '');
-      li.innerHTML = `${toggle}${thumbHtml}<span class="editor-layer-item-label"></span>${FINISH_ICONS[getFinish(obj)] || ''}`;
+      li.innerHTML = `${toggle}${thumbHtml}<span class="editor-layer-item-label"></span>${FINISH_ICONS[finishIconKeyFor(obj)] || ''}`;
       li.querySelector('.editor-layer-item-label').textContent = layerLabelFor(obj);
       li.addEventListener('click', (e) => {
         if (e.target.closest('.editor-layer-toggle')) return;
@@ -2967,6 +3704,43 @@ if (fabricCanvasEl && window.fabric) {
           layersRangeAnchor = obj;
         }
       });
+      // Drag-reorder/group — any real row, any depth; only a dissolved
+      // (virtual) ancestor row sits out, since there's no real object
+      // behind it to drag or drop onto. A drag is also refused outright
+      // while a group-edit session is open elsewhere — see the note
+      // above moveLayerObjectRelativeTo.
+      if (!isDissolvedAncestor) {
+        li.draggable = true;
+        li.addEventListener('dragstart', (e) => {
+          if (groupEditSession) {
+            e.preventDefault();
+            return;
+          }
+          draggedLayerObject = obj;
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', '');
+        });
+        li.addEventListener('dragover', (e) => {
+          if (!draggedLayerObject || draggedLayerObject === obj) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const zone = getLayerDropZone(li, e.clientY);
+          clearLayerDropIndicators();
+          li.classList.add(zone === 'above' ? 'is-drop-above' : zone === 'below' ? 'is-drop-below' : 'is-drop-group');
+        });
+        li.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const zone = getLayerDropZone(li, e.clientY);
+          clearLayerDropIndicators();
+          handleLayerDrop(draggedLayerObject, obj, zone);
+          draggedLayerObject = null;
+        });
+        li.addEventListener('dragend', () => {
+          clearLayerDropIndicators();
+          draggedLayerObject = null;
+        });
+      }
       layersList.appendChild(li);
       const toggleBtn = li.querySelector('.editor-layer-toggle');
       if (toggleBtn) {
@@ -2983,6 +3757,7 @@ if (fabricCanvasEl && window.fabric) {
     }
     // Front-most (top of the visual stack) listed first.
     objects.slice().reverse().forEach((obj) => renderRow(obj, 0));
+    layersList.scrollTop = scrollTop;
   }
   // Helper overlays (the edge indicator, snap guide lines) are
   // evented:false and never shown in the list anyway, so skip the
