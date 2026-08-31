@@ -101,7 +101,7 @@
           </button>
         </div>
 
-        <button type="button" class="editor-help-btn" disabled aria-label="Help">?</button>
+        <button type="button" class="editor-help-btn" id="help-btn" aria-label="Help" aria-haspopup="true" aria-expanded="false" title="Help">?</button>
       </nav>
 
       <!-- Layers side panel — opened by the Layers toolbar button,
@@ -458,7 +458,7 @@
             <span class="editor-side-thumb-label">Add Back Side</span>
           </button>
         </div>
-        <div class="editor-price">Estimated Price: $1.90 ea.</div>
+        <div class="editor-price" id="editor-price">Estimated Price: $1.90 ea.</div>
       </div>
     </div>
   </div>
@@ -502,6 +502,49 @@
        instead. Centered on screen (see card-editor.js for the shape
        itself, which lands centered on the click point); Cancel removes
        the placeholder shape, Done commits it at the entered size. -->
+  <!-- Help mode — darkens the whole editor and shows a few callouts
+       pointing at the left toolbar, the top-right file actions, and the
+       bottom side-switcher bar. Positioned via JS (see positionHelpCallouts)
+       since it has to track those elements' real on-screen location.
+       Clicking anywhere (including a callout) or Escape closes it. -->
+  <div class="editor-help-overlay" id="help-overlay" aria-hidden="true">
+    <div class="editor-help-callout editor-help-callout--left" id="help-callout-left">
+      <h3>Tools</h3>
+      <ul>
+        <li><strong>Select</strong> — pick, move, and resize things on the card.</li>
+        <li><strong>Text</strong> — add a text box.</li>
+        <li><strong>Shapes</strong> — draw lines, rectangles, circles, and triangles.</li>
+        <li><strong>Upload</strong> — import an SVG file.</li>
+        <li><strong>Layers</strong> — see and reorder everything on the card.</li>
+        <li><strong>Finish</strong> — assign an engraving finish to each object.</li>
+        <li><strong>Settings</strong> — switch between mm and inches.</li>
+      </ul>
+    </div>
+    <div class="editor-help-callout editor-help-callout--top-right" id="help-callout-top-right">
+      <h3>File</h3>
+      <ul>
+        <li><strong>Undo / Redo</strong> — step backward or forward through your edits.</li>
+        <li><strong>Import</strong> — open a design file saved earlier.</li>
+        <li><strong>Save</strong> — download your design as a file you can import again later.</li>
+        <li><strong>Export / Submit Design</strong> — coming soon.</li>
+      </ul>
+    </div>
+    <div class="editor-help-callout editor-help-callout--bottom" id="help-callout-bottom">
+      <h3>Sides</h3>
+      <ul>
+        <li><strong>Front / Back</strong> — switch which side of the card you're editing.</li>
+        <li><strong>Add Back Side</strong> — give the card a second, independent side.</li>
+      </ul>
+    </div>
+    <div class="editor-help-callout editor-help-callout--price" id="help-callout-price">
+      <h3>Price</h3>
+      <ul>
+        <li>Estimated cost per card will appear here, in the next page, selecting a larger quantity will decrease price as well.</li>
+      </ul>
+    </div>
+    <p class="editor-help-hint">Click anywhere to close</p>
+  </div>
+
   <!-- Lets the filename be chosen before the project downloads — the
        browser's own save dialog only reliably offers that if the user has
        "ask where to save each file" turned on, so this makes it work the

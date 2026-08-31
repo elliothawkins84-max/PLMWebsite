@@ -1386,8 +1386,37 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   color: var(--muted);
 }
 
-/* ---- Products (reuses .gallery grid) ---- */
-.product-item figcaption {
+/* ---- Products (one full-width row per product) ---- */
+.product-list {
+  display: flex;
+  flex-direction: column;
+}
+.product-row {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+  padding: 32px 0;
+  border-bottom: 1px solid var(--line);
+}
+.product-list .product-row:first-child { padding-top: 0; }
+.product-list .product-row:last-child { border-bottom: none; }
+.product-list .product-row:nth-child(even) .product-row-photo { order: 2; }
+.product-list .product-row:nth-child(even) .product-row-info {
+  order: 1;
+  align-items: flex-end;
+  text-align: right;
+}
+.product-row-photo {
+  flex: 0 0 360px;
+  aspect-ratio: 16 / 9;
+}
+.product-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.product-row-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -1395,7 +1424,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 }
 .product-name {
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   letter-spacing: 0.02em;
   color: var(--fg);
 }
@@ -1405,7 +1434,37 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   color: var(--muted);
   white-space: nowrap;
 }
-.btn-sm { padding: 10px 18px; font-size: 0.68rem; margin-top: 14px; }
+.product-desc {
+  font-size: 0.85rem;
+  color: var(--muted);
+  max-width: 60ch;
+}
+.product-row-info .btn { align-self: flex-start; margin-top: 4px; }
+.product-list .product-row:nth-child(even) .product-row-info .btn { align-self: flex-end; }
+.product-list .product-row:nth-child(even) .product-row-head {
+  flex-direction: row-reverse;
+  align-self: stretch;
+}
+.btn-sm { padding: 10px 18px; font-size: 0.68rem; }
+
+@media (max-width: 640px) {
+  .product-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .product-row-photo { flex-basis: auto; }
+  .product-list .product-row:nth-child(even) .product-row-photo,
+  .product-list .product-row:nth-child(even) .product-row-info {
+    order: initial;
+  }
+  .product-list .product-row:nth-child(even) .product-row-info {
+    align-items: stretch;
+    text-align: left;
+  }
+  .product-list .product-row:nth-child(even) .product-row-info .btn { align-self: flex-start; }
+  .product-list .product-row:nth-child(even) .product-row-head { flex-direction: row; }
+}
 
 /* ---- About ---- */
 .about { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 60px; align-items: center; }

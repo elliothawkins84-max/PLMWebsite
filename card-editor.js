@@ -1292,6 +1292,12 @@ if (fabricCanvasEl && window.fabric) {
   let undoStack = [];
   let redoStack = [];
   let isRestoringHistory = false;
+  // Drives the reload/close warning below — true from the first real edit
+  // until the next successful Save (or a fresh Import, which itself
+  // becomes the new "saved" baseline). Deliberately simple (any edit at
+  // all vs. none since the last save) rather than a precise diff against
+  // the last-saved snapshot, same tradeoff most web apps make here.
+  let hasUnsavedChanges = false;
   // Some single "logical" edits do their work as several separate
   // canvas.add()/remove() calls under the hood (toGroup/toActiveSelection,
   // and this file's own boolean-op/delete helpers removing multiple
@@ -1342,6 +1348,7 @@ if (fabricCanvasEl && window.fabric) {
     if (isRestoringHistory) return;
     const snapshot = JSON.stringify(fabricCanvas.toJSON(HISTORY_PROPS));
     if (undoStack.length && undoStack[undoStack.length - 1] === snapshot) return;
+    hasUnsavedChanges = true;
     undoStack.push(snapshot);
     if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
     redoStack = [];
@@ -1416,8 +1423,10 @@ if (fabricCanvasEl && window.fabric) {
     if (isHistoryWorthy(opt.target)) pushHistory();
   });
   // Baseline snapshot so undo from the very first edit returns to a
-  // truly empty card, instead of having nothing before it to land on.
+  // truly empty card, instead of having nothing before it to land on —
+  // not a real edit, so it shouldn't count as "unsaved work" on its own.
   pushHistory();
+  hasUnsavedChanges = false;
   // Captured now, before anything real can have been drawn — reused
   // below as the starting content for a side the first time it's ever
   // switched to, since a plain fabricCanvas.clear() wouldn't restore any
@@ -1553,6 +1562,7 @@ if (fabricCanvasEl && window.fabric) {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+    hasUnsavedChanges = false;
   }
   // ---- Save As modal ----
   // Most browsers only prompt for a filename/location on download if the
@@ -1637,6 +1647,9 @@ if (fabricCanvasEl && window.fabric) {
     const targetSide = payload.currentSide === 'back' && payload.back ? 'back' : 'front';
     loadSideAndSwitch(targetSide);
     if (payload.back) renderCardPreview('back');
+    // The just-loaded file is now what's on screen — nothing to warn
+    // about losing until it's actually edited again.
+    hasUnsavedChanges = false;
   }
   if (importBtn && importProjectInput) {
     importBtn.addEventListener('click', () => {
@@ -1662,6 +1675,18 @@ if (fabricCanvasEl && window.fabric) {
       reader.readAsText(file);
     });
   }
+
+  // ---- Warn before leaving with unsaved changes ----
+  // Browsers ignore any custom text here and show their own fixed wording
+  // (a security measure, not something this file can control) — setting
+  // returnValue/calling preventDefault is just what actually triggers that
+  // built-in "leave site?" prompt at all, for a reload, tab close, or
+  // navigating away.
+  window.addEventListener('beforeunload', (e) => {
+    if (!hasUnsavedChanges) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
 
   // ---- Renderings preview ----
   // A rough "what the laser will actually produce" preview per side — a
@@ -2687,6 +2712,81 @@ if (fabricCanvasEl && window.fabric) {
       btn.addEventListener('click', () => setUnitSystem(btn.dataset.unit));
     });
   }
+
+  // ---- Help mode ----
+  // Darkens the whole editor and shows a few callouts pointing at the
+  // left toolbar, the top-right file actions, and the bottom side-
+  // switcher bar — positions are computed from those elements' actual
+  // on-screen location each time it opens, rather than hardcoded, so it
+  // stays correct regardless of window size.
+  const helpBtn = document.getElementById('help-btn');
+  const helpOverlay = document.getElementById('help-overlay');
+  const helpCalloutLeft = document.getElementById('help-callout-left');
+  const helpCalloutTopRight = document.getElementById('help-callout-top-right');
+  const helpCalloutBottom = document.getElementById('help-callout-bottom');
+  const helpCalloutPrice = document.getElementById('help-callout-price');
+  function positionHelpCallouts() {
+    const toolbarEl = document.querySelector('.editor-toolbar');
+    const toolGroups = document.querySelectorAll('.editor-toolbar .editor-tool-group');
+    const topbarActionsEl = document.querySelector('.editor-topbar-actions');
+    const sidesEl = document.getElementById('editor-sides');
+    const priceEl = document.getElementById('editor-price');
+    if (toolbarEl && helpCalloutLeft) {
+      const toolbarRect = toolbarEl.getBoundingClientRect();
+      // Centered on just the actual tool buttons (both groups: Select
+      // through Upload, then Layers through Settings) rather than the
+      // toolbar's full height, which includes a lot of empty space plus
+      // the zoom controls near the bottom — centering on the whole thing
+      // put this callout much lower than the tools it's explaining.
+      let anchorTop = toolbarRect.top + toolbarRect.height / 2;
+      if (toolGroups.length) {
+        const firstRect = toolGroups[0].getBoundingClientRect();
+        const lastRect = toolGroups[toolGroups.length - 1].getBoundingClientRect();
+        anchorTop = (firstRect.top + lastRect.bottom) / 2;
+      }
+      helpCalloutLeft.style.left = `${toolbarRect.right + 16}px`;
+      helpCalloutLeft.style.top = `${anchorTop}px`;
+    }
+    if (topbarActionsEl && helpCalloutTopRight) {
+      const r = topbarActionsEl.getBoundingClientRect();
+      helpCalloutTopRight.style.left = `${r.left + r.width / 2}px`;
+      helpCalloutTopRight.style.top = `${r.bottom + 12}px`;
+    }
+    if (sidesEl && helpCalloutBottom) {
+      // Anchored to the Front/Back thumbnail row specifically, not the
+      // whole bottom bar (which also spans the Estimated Price area on
+      // the right) — keeps this callout above the buttons it explains.
+      const r = sidesEl.getBoundingClientRect();
+      helpCalloutBottom.style.left = `${r.left + r.width / 2}px`;
+      helpCalloutBottom.style.bottom = `${window.innerHeight - r.top + 12}px`;
+    }
+    if (priceEl && helpCalloutPrice) {
+      const r = priceEl.getBoundingClientRect();
+      helpCalloutPrice.style.left = `${r.right - 240}px`;
+      helpCalloutPrice.style.bottom = `${window.innerHeight - r.top + 12}px`;
+    }
+  }
+  function isHelpModeOpen() {
+    return !!(helpOverlay && helpOverlay.classList.contains('is-open'));
+  }
+  function openHelpMode() {
+    if (!helpOverlay) return;
+    positionHelpCallouts();
+    helpOverlay.classList.add('is-open');
+    helpOverlay.setAttribute('aria-hidden', 'false');
+    if (helpBtn) helpBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closeHelpMode() {
+    if (!helpOverlay) return;
+    helpOverlay.classList.remove('is-open');
+    helpOverlay.setAttribute('aria-hidden', 'true');
+    if (helpBtn) helpBtn.setAttribute('aria-expanded', 'false');
+  }
+  if (helpBtn) helpBtn.addEventListener('click', openHelpMode);
+  if (helpOverlay) helpOverlay.addEventListener('click', closeHelpMode);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isHelpModeOpen()) closeHelpMode();
+  });
   finishButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       // Always respond, even with nothing selected — there's just
