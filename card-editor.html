@@ -28,10 +28,10 @@
       <div class="editor-topbar-actions">
         <button type="button" class="editor-icon-btn" id="undo-btn" disabled aria-label="Undo" title="Undo (&#8984;Z)">&#8630;</button>
         <button type="button" class="editor-icon-btn" id="redo-btn" disabled aria-label="Redo" title="Redo (&#8984;&#8679;Z)">&#8631;</button>
-        <input type="file" id="import-project-input" accept=".json,application/json" hidden />
+        <input type="file" id="import-project-input" accept=".plm" hidden />
         <button type="button" class="btn btn-ghost btn-sm" id="import-btn">Import</button>
         <button type="button" class="btn btn-ghost btn-sm" id="save-btn">Save</button>
-        <button type="button" class="btn btn-sm" disabled>Export / Submit Design</button>
+        <button type="button" class="btn btn-sm" id="next-btn">Next</button>
       </div>
     </header>
 
@@ -395,6 +395,10 @@
             <input type="range" id="finish-texture-range" aria-label="Texture density in lines per centimeter" min="1" max="50" value="25" />
             <input type="number" class="editor-finish-texture-value" id="finish-texture-value" aria-label="Texture density in lines per centimeter" min="1" max="50" value="25" />
             <span class="editor-field-unit">L/cm</span>
+            <select id="finish-texture-angle" aria-label="Texture pattern angle" title="Pattern angle">
+              <option value="45">45° (diagonal)</option>
+              <option value="90">90° (checkered)</option>
+            </select>
             <label class="editor-checkbox-field" title="Add a stroke outline around the texture fill">
               <input type="checkbox" id="finish-texture-outline" aria-label="Add outline" />
               <span>Outline</span>
@@ -462,6 +466,13 @@
             <span class="editor-side-thumb-label">Add Back Side</span>
           </button>
         </div>
+        <button type="button" class="editor-cardtype-btn" id="toggle-card-type">
+          <span class="editor-cardtype-btn-swatch" id="card-type-btn-swatch"></span>
+          <span class="editor-cardtype-btn-text">
+            <span class="editor-cardtype-btn-label">Card Type</span>
+            <span class="editor-cardtype-btn-value" id="card-type-btn-value">Choose color &amp; thickness</span>
+          </span>
+        </button>
         <div class="editor-price-block">
           <div class="editor-price" id="editor-price">Estimated Price: n/a</div>
           <button type="button" class="editor-price-help" id="price-help-btn">
@@ -539,7 +550,7 @@
         <li><strong>Undo / Redo</strong> — step backward or forward through your edits.</li>
         <li><strong>Import</strong> — open a design file saved earlier.</li>
         <li><strong>Save</strong> — download your design as a file you can import again later.</li>
-        <li><strong>Export / Submit Design</strong> — coming soon.</li>
+        <li><strong>Next</strong> — select quantity, fill out information, and request.</li>
       </ul>
     </div>
     <div class="editor-help-callout editor-help-callout--bottom" id="help-callout-bottom">
@@ -547,6 +558,12 @@
       <ul>
         <li><strong>Front / Back</strong> — switch which side of the card you're editing.</li>
         <li><strong>Add Back Side</strong> — give the card a second, independent side.</li>
+      </ul>
+    </div>
+    <div class="editor-help-callout editor-help-callout--cardtype" id="help-callout-cardtype">
+      <h3>Card Type</h3>
+      <ul>
+        <li>Pick the aluminum color and thickness your card will be engraved on.</li>
       </ul>
     </div>
     <div class="editor-help-callout editor-help-callout--price" id="help-callout-price">
@@ -569,7 +586,7 @@
         <label class="editor-field" title="File name">
           <span class="editor-field-label editor-field-label--wide">Name</span>
           <input type="text" id="save-as-filename" aria-label="File name" />
-          <span class="editor-field-unit">.json</span>
+          <span class="editor-field-unit">.plm</span>
         </label>
       </div>
       <div class="editor-modal-actions">
@@ -661,6 +678,22 @@
     </div>
   </div>
 
+  <!-- Card type gallery — opened by the bottom bar's Card Type button.
+       Rows are built in JS from window.CARD_TYPES (card-types/card-types-
+       data.js): one aluminum color/thickness combination per row, each
+       with a single photo slot (unlike the templates gallery's front +
+       back pair, since a blank only has the one side to show). -->
+  <div class="editor-modal-overlay" id="card-type-modal" aria-hidden="true">
+    <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="card-type-modal-title">
+      <h2 class="editor-modal-title" id="card-type-modal-title">Choose a Card Type</h2>
+      <p class="editor-modal-message">Pick the aluminum color and thickness your card will be engraved on.</p>
+      <div class="editor-cardtype-list" id="card-type-grid"></div>
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="card-type-modal-close">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Fullscreen renderings preview — opened by clicking a thumbnail in
        the Renderings panel; redrawn at a much larger fixed resolution
        rather than just CSS-stretching the small canvas. -->
@@ -669,10 +702,87 @@
     <canvas class="editor-render-modal-canvas" id="render-modal-canvas" width="1720" height="1080"></canvas>
   </div>
 
+  <!-- Next / order review — opened by the top bar's Next button. Sits on
+       top of the editor rather than navigating away, so closing it (the
+       × button, clicking outside, or Escape) always returns to the design
+       exactly as it was, nothing lost. Left side shows both sides'
+       renderings stacked; right side is quantity + pricing, then the same
+       request-a-quote fields/framework as the marketing site's own
+       contact form (index.html #rfq-form) — same field names and the same
+       Worker endpoint, minus that form's own manual file-attach field
+       (this modal auto-attaches the renderings instead, see the submit
+       handler in card-editor.js) — just reusing styles.css's
+       .contact-form styling since this page already loads that
+       stylesheet. -->
+  <div class="editor-modal-overlay editor-next-modal-overlay" id="next-modal" aria-hidden="true">
+    <div class="editor-modal editor-next-modal" role="dialog" aria-modal="true" aria-labelledby="next-modal-title">
+      <button type="button" class="editor-render-modal-close editor-next-modal-close" id="next-modal-close" aria-label="Close">&times;</button>
+      <h2 class="editor-modal-title" id="next-modal-title">Review &amp; Request a Quote</h2>
+      <p class="editor-next-modal-intro">Fill out the fields below and submit a quote request — we'll get back to you with your quote. The estimated cost per card will most likely not change, but shipping, handling, and tax will be added to the quote.</p>
+      <div class="editor-next-modal-body">
+        <div class="editor-next-modal-renderings" id="next-modal-renderings">
+          <canvas class="editor-next-modal-canvas" id="next-modal-canvas-front" width="860" height="540"></canvas>
+          <canvas class="editor-next-modal-canvas" id="next-modal-canvas-back" width="860" height="540"></canvas>
+        </div>
+        <div class="editor-next-modal-info">
+          <div class="editor-next-modal-section">
+            <span class="editor-next-modal-section-label">Quantity &amp; Price</span>
+            <div class="editor-next-modal-cardtype" id="next-modal-cardtype">
+              <span class="editor-next-modal-cardtype-swatch" id="next-modal-cardtype-swatch"></span>
+              <span id="next-modal-cardtype-label">Card type: n/a</span>
+            </div>
+            <label class="editor-next-modal-select-field" title="Quantity">
+              <span>Quantity</span>
+              <select id="next-modal-quantity" aria-label="Quantity"></select>
+            </label>
+            <div class="editor-next-modal-summary" id="next-modal-summary">Estimated total: n/a</div>
+          </div>
+          <form class="contact-form editor-next-modal-form" id="next-modal-rfq-form">
+            <span class="editor-next-modal-section-label">Your Information</span>
+            <input type="text" name="company" class="botcheck" tabindex="-1" autocomplete="off" />
+            <label>
+              <span>Name</span>
+              <input type="text" name="name" id="next-modal-name" placeholder="Your name" required />
+            </label>
+            <label>
+              <span>Email</span>
+              <input type="email" name="email" id="next-modal-email" placeholder="you@example.com" required />
+            </label>
+            <label>
+              <span>Shipping address <em>— for calculating shipping</em></span>
+              <input type="text" name="address" id="next-modal-address" placeholder="Street address" required />
+            </label>
+            <div class="editor-next-modal-form-row">
+              <label>
+                <span>City</span>
+                <input type="text" name="city" id="next-modal-city" placeholder="City" required />
+              </label>
+              <label>
+                <span>State</span>
+                <input type="text" name="state" id="next-modal-state" placeholder="State" required />
+              </label>
+              <label>
+                <span>ZIP code</span>
+                <input type="text" name="zip" id="next-modal-zip" placeholder="ZIP" inputmode="numeric" required />
+              </label>
+            </div>
+            <label>
+              <span>Anything else we should know? <em>— optional</em></span>
+              <textarea name="message" id="next-modal-message" rows="2" placeholder="Deadlines, special requests, questions..."></textarea>
+            </label>
+            <p class="form-status" id="next-modal-status" role="status" aria-live="polite"></p>
+            <button type="submit" class="btn btn-block" id="next-modal-request">Send Request &rarr;</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
   <script src="https://unpkg.com/polybooljs@1.2.2/dist/polybool.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js"></script>
   <script src="templates/templates-data.js"></script>
+  <script src="card-types/card-types-data.js"></script>
   <script src="card-editor.js"></script>
 </body>
 </html>

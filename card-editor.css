@@ -554,6 +554,14 @@
 .editor-finish-btn svg { width: 14px; height: 14px; flex: none; }
 .editor-finish-btn:hover:not(.is-active) { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
 .editor-finish-btn.is-active { color: var(--bg); background: var(--fg); }
+/* Metallic finish on a Silver card would just be metal-on-metal — same
+   color, invisible — so it's disabled outright while Silver is the
+   selected card type, rather than left clickable but pointless. */
+.editor-finish-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 .editor-finish-texture-slider { display: none; align-items: center; gap: 8px; }
 .editor-finish-texture-slider.is-visible { display: flex; }
 .editor-finish-texture-slider input[type="range"] {
@@ -859,14 +867,22 @@
 }
 
 /* ---- Bottom bar: side switcher (left) + price (right) ---- */
+/* Grid, not flex + space-between -- three unevenly-sized groups (sides,
+   card type, price) under space-between only push the middle one toward
+   whichever side is wider, not to the bar's true visual center. A
+   1fr/auto/1fr grid with the middle column's item centered pins it
+   there regardless of how wide its neighbors are. */
 .editor-bottombar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 20px;
   padding: 14px 32px;
   border-top: 1px solid var(--line);
 }
+.editor-bottombar .editor-sides { justify-self: start; }
+.editor-bottombar .editor-cardtype-btn { justify-self: center; }
+.editor-bottombar .editor-price-block { justify-self: end; }
 .editor-sides {
   flex: none;
   display: flex;
@@ -903,6 +919,137 @@
 .editor-price-help:hover { color: var(--fg); }
 .editor-price-help svg { width: 14px; height: 14px; flex: none; }
 #price-help-modal .editor-modal { width: 340px; }
+
+/* ---- Card type picker (bottom bar, between sides and price) ---- */
+.editor-cardtype-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.editor-cardtype-btn:hover,
+.editor-cardtype-btn:focus-visible {
+  border-color: var(--fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+.editor-cardtype-btn-swatch {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 5px;
+  border: 1.5px solid var(--line);
+  background: #3a3a3a;
+}
+.editor-cardtype-btn-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+.editor-cardtype-btn-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.editor-cardtype-btn-value {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+/* One block per color, same list convention as the templates gallery,
+   but stacked rather than side-by-side: the color name is a centered
+   title, with its two thickness options (0.4mm left, 0.8mm right)
+   centered as a row underneath — each option is its own clickable
+   swatch so either thickness can be picked independently. */
+#card-type-modal .editor-modal { width: 820px; }
+.editor-cardtype-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+}
+.editor-cardtype-list::-webkit-scrollbar { display: none; }
+.editor-cardtype-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+}
+.editor-cardtype-row-options {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+.editor-cardtype-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.editor-cardtype-option-preview {
+  width: 340px;
+  aspect-ratio: 86 / 54;
+  border-radius: 6px;
+  border: 1.5px solid var(--line);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.editor-cardtype-option:hover .editor-cardtype-option-preview,
+.editor-cardtype-option:focus-visible .editor-cardtype-option-preview {
+  border-color: var(--fg);
+}
+.editor-cardtype-option.is-selected .editor-cardtype-option-preview {
+  border-color: var(--fg);
+  box-shadow: 0 0 0 1.5px var(--fg);
+}
+.editor-cardtype-option-preview-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.editor-cardtype-option-thickness {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+.editor-cardtype-option.is-selected .editor-cardtype-option-thickness,
+.editor-cardtype-option:hover .editor-cardtype-option-thickness {
+  color: var(--fg);
+}
+.editor-cardtype-row-color {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+  text-align: center;
+}
 .editor-price-help-list {
   list-style: none;
   display: flex;
@@ -1294,6 +1441,23 @@
   opacity: 1;
   transition-delay: 0.12s;
 }
+/* Same centered-above-anchor treatment as --bottom, just its own stagger
+   delay — the Card Type button sits in the same bottom bar row as the
+   Sides callout points at, so the visual language matches. */
+.editor-help-callout--cardtype {
+  transform: translate(-50%, 16px);
+}
+.editor-help-callout--cardtype::after {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-top-color: var(--line);
+}
+.editor-help-overlay.is-open .editor-help-callout--cardtype {
+  transform: translateX(-50%);
+  opacity: 1;
+  transition-delay: 0.15s;
+}
 /* Right-aligned (not centered like --bottom) so it sits above the price
    readout in the bottom-right corner without running off the right edge
    of the screen. */
@@ -1313,7 +1477,7 @@
 .editor-help-hint {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  top: 24px;
   transform: translateX(-50%);
   font-family: var(--mono);
   font-size: 0.72rem;
@@ -1454,6 +1618,161 @@
 #svg-oversize-modal .editor-modal { width: 320px; }
 #svg-oversize-modal .editor-modal-actions { flex-wrap: wrap; }
 #save-as-modal .editor-modal { width: 280px; }
+
+/* ---- Next / order review modal ---- */
+/* Wide two-column layout — renderings on the left (front, then back
+   stacked on top of one another, matching the Renderings panel's own
+   arrangement), quantity/pricing + the request-a-quote form on the
+   right, grouped into two labeled sections so the longer form doesn't
+   read as one undifferentiated wall of fields. Sits on top of the editor
+   via the same overlay mechanism as every other modal, so closing it
+   never loses anything underneath. Sized to comfortably fit the full
+   form without its own scrollbar on a normal desktop viewport; the body
+   still scrolls (see below) as a fallback on a short window. Every gap/
+   padding/margin from here down is deliberately tighter than this app's
+   usual spacing (and than styles.css's own .contact-form defaults,
+   overridden below) specifically to fit the full quantity+address+
+   contact form without scrolling on a normal laptop screen — this modal
+   just has more content than any other one in the editor. */
+#next-modal .editor-modal { width: 1040px; max-height: 97vh; overflow-y: auto; padding: 14px 20px; }
+.editor-next-modal { position: relative; }
+.editor-next-modal-intro {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--muted);
+  max-width: 640px;
+  margin: -4px 0 12px;
+}
+#next-modal .editor-modal-title { margin-bottom: 8px; }
+.editor-next-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  font-size: 1.2rem;
+}
+.editor-next-modal-body {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+.editor-next-modal-renderings {
+  flex: none;
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+}
+.editor-next-modal-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 86 / 54;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.editor-next-modal-canvas.is-hidden { display: none; }
+.editor-next-modal-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Each labeled group (Quantity & Price, Your Information) gets its own
+   bordered card — the visual grouping "organizes" the popup at a glance
+   without needing heavier chrome like nested modals or tabs. */
+.editor-next-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.editor-next-modal-section-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.editor-next-modal-cardtype {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--fg);
+}
+.editor-next-modal-cardtype-swatch {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: #3a3a3a;
+}
+.editor-next-modal-select-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.editor-next-modal-select-field span {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--fg);
+  flex: none;
+}
+.editor-next-modal-select-field select {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 7px 8px;
+}
+.editor-next-modal-summary {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+/* The form itself reuses .contact-form (styles.css, already loaded on
+   this page for the marketing site's own #rfq-form) for its field
+   styling — same look, same field names, same submission target — just
+   wrapped in the same bordered-section treatment as the quantity group
+   above so the two halves of the right column read as one system. */
+.contact-form.editor-next-modal-form {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  gap: 7px;
+}
+/* Tighter than styles.css's own .contact-form defaults (10px label gap,
+   10px vertical input padding) — this instance has nearly twice the
+   fields of the marketing form (shipping address on top of name/email/
+   message), so the same per-field spacing would push the modal well
+   past a normal screen's height. */
+.editor-next-modal-form label { gap: 4px; }
+.editor-next-modal-form input,
+.editor-next-modal-form textarea { padding: 6px 0; }
+.editor-next-modal-form textarea { min-height: 44px; }
+/* City/State/ZIP side by side rather than each on its own full-width
+   row — ZIP in particular reads oddly stretched across the whole form
+   width. State/ZIP get a narrower share since they're short values;
+   City keeps the most room since names vary a lot more in length. */
+.editor-next-modal-form-row {
+  display: flex;
+  gap: 12px;
+}
+.editor-next-modal-form-row label { flex: 2; min-width: 0; }
+.editor-next-modal-form-row label:nth-child(2) { flex: 1; }
+.editor-next-modal-form-row label:nth-child(3) { flex: 1.2; }
 
 /* ---- Desktop-only gate ---- */
 @media (max-width: 900px) {

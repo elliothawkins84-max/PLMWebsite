@@ -10,6 +10,19 @@ const MM_PER_IN = 25.4;
 // concern. Internally, everything is still stored and computed in px
 // (via PX_PER_MM), same as always; only reading from/writing to the UI
 // goes through pxPerUnit() so a field shows/accepts the chosen unit.
+// Which card type (color + thickness, see CARD_TYPES / the card-type
+// picker in card-editor.js further down, populated from card-types/
+// card-types-data.js) is currently selected — declared at the very top
+// because pushHistory (called as early as the initial baseline snapshot,
+// well before the picker's own section of the script runs) triggers a
+// Mockup repaint that reads this on every render. Defaults to Black at
+// 0.016" (0.4mm), CARD_TYPES' own first entry, rather than no selection —
+// a fresh page load should show a real card, not the "choose one" state.
+let selectedCardTypeId = 'black-016';
+function getSelectedCardTypeColor() {
+  const entry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+  return entry ? entry.swatch : null;
+}
 let unitSystem = 'mm';
 function pxPerUnit() { return unitSystem === 'in' ? PX_PER_MM * MM_PER_IN : PX_PER_MM; }
 function unitLabel() { return unitSystem === 'in' ? 'in' : 'mm'; }
@@ -47,6 +60,63 @@ const PRICING_VARIABLE_COST_PER_PCT = ((PRICING_VARIABLE_SEC_PER_CARD / 60) * PR
 // Ratio of the 100–149-card tier price to direct cost, from the
 // quantity-tier pricing table this was built against.
 const PRICING_QTY100_MARKUP = 1.228;
+// Quantity-tier markup table (mid-market positioning — see the
+// pricing-strategy notes this was built from), reframed as ratio
+// anchors at specific quantities rather than flat step tiers — a step
+// table gives every quantity inside the same bucket (say, 150 and 200,
+// both "150–200") the exact same ratio, and therefore the exact same
+// per-card price, which reads as a bug even though it isn't one.
+// Interpolating linearly between these anchor points instead means
+// every distinct quantity gets a distinct (and still monotonically
+// decreasing, i.e. real bulk-discount) price. The anchor ratios
+// themselves are exactly the table's own reference values at each
+// tier's starting quantity; 200's own ratio isn't in that table (the
+// last row just covers "150–200" as one bucket) so it's extrapolated
+// continuing the same decelerating step-down pattern as the ratios
+// before it (-0.35, -0.18, -0.17, -0.09, -0.05, then -0.03).
+const PRICING_MIN_ORDER_FLAT = 95;
+const PRICING_QTY_RATIO_ANCHORS = [
+  { qty: 11, ratio: 2.02 },
+  { qty: 25, ratio: 1.67 },
+  { qty: 50, ratio: 1.49 },
+  { qty: 75, ratio: 1.32 },
+  { qty: 100, ratio: 1.23 },
+  { qty: 150, ratio: 1.18 },
+  { qty: 200, ratio: 1.15 },
+];
+// One representative order size per tier above, offered as the Next
+// modal's dropdown options — round numbers a customer would actually
+// type into a quantity field, not the tier's raw bounds.
+const PRICING_QTY_OPTIONS = [10, 20, 25, 50, 75, 100, 150, 200];
+function ratioForQty(qty) {
+  const anchors = PRICING_QTY_RATIO_ANCHORS;
+  if (qty <= anchors[0].qty) return anchors[0].ratio;
+  if (qty >= anchors[anchors.length - 1].qty) return anchors[anchors.length - 1].ratio;
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const a = anchors[i];
+    const b = anchors[i + 1];
+    if (qty >= a.qty && qty <= b.qty) {
+      const t = (qty - a.qty) / (b.qty - a.qty);
+      return a.ratio + (b.ratio - a.ratio) * t;
+    }
+  }
+  return anchors[anchors.length - 1].ratio;
+}
+// $95 is a standing order minimum, not just the 1–10 tier's own rate —
+// any quantity/design combination whose real cost-plus-markup total
+// would fall under that (a simple design at a low-but-not-tiny
+// quantity, e.g. 20 plain cards) still gets charged the $95 floor
+// instead of a misleadingly cheap total. `each`/`total` are null while
+// isMinCharge is true since there's no real meaningful per-card rate at
+// the order-minimum price — the UI shows "$95 min charge" instead of an
+// "ea." figure in that case, only switching to a real per-card price
+// once the computed total actually clears $95.
+function getNextModalPricing(directCost, qty) {
+  if (qty <= 10) return { total: PRICING_MIN_ORDER_FLAT, each: null, isMinCharge: true };
+  const total = directCost * ratioForQty(qty) * qty;
+  if (total < PRICING_MIN_ORDER_FLAT) return { total: PRICING_MIN_ORDER_FLAT, each: null, isMinCharge: true };
+  return { total, each: total / qty, isMinCharge: false };
+}
 // Relative engrave-time weight per finish, from the swatch reference
 // card's own $ tiers — Metallic or Frosted White takes longer per mm^2
 // than a plain White fill or a thin Stroke outline.
@@ -1363,7 +1433,7 @@ if (fabricCanvasEl && window.fabric) {
   // overlays (the edge indicator, snap guide lines) are excluded
   // automatically since they're marked excludeFromExport.
   const HISTORY_PROPS = [
-    'strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'cardFinish', 'cardFinishTexture', 'cardFinishOutline',
+    'strokeAlign', '_strokeWidthPx', 'lineDashStyle', 'cardFinish', 'cardFinishTexture', 'cardFinishOutline', 'cardFinishAngle',
     '_cornerRadiusPx', '_shapeBaseType', '_triWidth', '_triHeight',
   ];
   const HISTORY_LIMIT = 50;
@@ -1614,10 +1684,92 @@ if (fabricCanvasEl && window.fabric) {
   }
 
   // ---- Save to / Import from a local file ----
-  // The whole project (both sides' full designs) as one plain JSON file —
-  // not the print-ready SVG export (Export / Submit Design, still
-  // unbuilt), just enough to reconstruct the editable project exactly as
-  // it was, the same way "Save" and "Open" work in a desktop app.
+  // The whole project (both sides' full designs) as one file — not the
+  // print-ready SVG export (the Next button's quantity/info/request flow,
+  // still unbuilt), just
+  // enough to reconstruct the editable project exactly as it was, the
+  // same way "Save" and "Open" work in a desktop app.
+  //
+  // Saved as our own ".plm" format rather than plain ".json": still just
+  // JSON underneath (there's no server or license key to actually
+  // enforce "only our editor can open this" — see the save-format
+  // conversation this came out of), but gzip-compressed into opaque
+  // binary behind a small magic-header/version prefix, so double-
+  // clicking it or peeking in a text editor shows gibberish instead of a
+  // readable, hand-editable design file. That's a deterrent for casual
+  // tampering, not real DRM. `PLM_FORMAT_RAW`/`PLM_FORMAT_GZIP` let
+  // decodeProjectFile understand either an older/uncompressed save (or a
+  // browser without CompressionStream) or a normal gzip one.
+  const PLM_MAGIC = 'PLM1';
+  const PLM_FORMAT_RAW = 0;
+  const PLM_FORMAT_GZIP = 1;
+  async function encodeProjectFile(payloadObj) {
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(payloadObj));
+    let bodyBytes = jsonBytes;
+    let format = PLM_FORMAT_RAW;
+    if (typeof CompressionStream !== 'undefined') {
+      const cs = new CompressionStream('gzip');
+      const writer = cs.writable.getWriter();
+      writer.write(jsonBytes);
+      writer.close();
+      bodyBytes = new Uint8Array(await new Response(cs.readable).arrayBuffer());
+      format = PLM_FORMAT_GZIP;
+    }
+    const header = new TextEncoder().encode(PLM_MAGIC);
+    const out = new Uint8Array(header.length + 1 + bodyBytes.length);
+    out.set(header, 0);
+    out[header.length] = format;
+    out.set(bodyBytes, header.length + 1);
+    return out;
+  }
+  async function decodeProjectFile(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const header = new TextDecoder().decode(bytes.slice(0, PLM_MAGIC.length));
+    if (header !== PLM_MAGIC) throw new Error('Not a .plm file');
+    const format = bytes[PLM_MAGIC.length];
+    const body = bytes.slice(PLM_MAGIC.length + 1);
+    let jsonBytes = body;
+    if (format === PLM_FORMAT_GZIP) {
+      if (typeof DecompressionStream === 'undefined') throw new Error('This browser can\'t open compressed .plm files');
+      const ds = new DecompressionStream('gzip');
+      const writer = ds.writable.getWriter();
+      writer.write(body);
+      writer.close();
+      jsonBytes = new Uint8Array(await new Response(ds.readable).arrayBuffer());
+    }
+    return JSON.parse(new TextDecoder().decode(jsonBytes));
+  }
+  // A small branded "cover" rendering (same wood + aluminum-card look as
+  // the Mockup panel) embedded into the saved file as a data URL — not
+  // used anywhere yet (there's no custom "Open" file-picker in the
+  // editor to show it in), but the file format carries it now so that UI
+  // can just read it out later instead of needing a format change.
+  const PLM_THUMB_W = 320;
+  const PLM_THUMB_H = Math.round(PLM_THUMB_W * (CARD_H_PX / CARD_W_PX) * 1.25);
+  function generateCardCoverThumbnail(snapshotJSON) {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = PLM_THUMB_W;
+      canvas.height = PLM_THUMB_H;
+      const ctx = canvas.getContext('2d');
+      drawWoodBackground(ctx, canvas.width, canvas.height);
+      const rect = drawAluminumCard(ctx, canvas.width, canvas.height, getSelectedCardTypeColor());
+      const resolutionScale = rect.w / CARD_W_PX;
+      renderStrokeOutlinesToDataURL(snapshotJSON, resolutionScale, (dataUrl) => {
+        const img = new Image();
+        img.onload = () => {
+          ctx.save();
+          roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+          ctx.clip();
+          ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+          ctx.restore();
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => resolve(canvas.toDataURL('image/png'));
+        img.src = dataUrl;
+      });
+    });
+  }
   function getSideSnapshotJSON(side) {
     if (side === currentSide) return undoStack[undoStack.length - 1];
     const stored = sideHistories[side];
@@ -1626,16 +1778,22 @@ if (fabricCanvasEl && window.fabric) {
   function projectHasBackSide() {
     return currentSide === 'back' || !!sideHistories.back || !!document.querySelector('.editor-side-thumb[data-side="back"]');
   }
-  function downloadProjectFile(filename) {
+  async function downloadProjectFile(filename) {
     const hasBack = projectHasBackSide();
+    const frontJSON = getSideSnapshotJSON('front') || blankCanvasSnapshot;
+    const backJSON = hasBack ? (getSideSnapshotJSON('back') || blankCanvasSnapshot) : null;
+    const thumbnail = await generateCardCoverThumbnail(frontJSON).catch(() => null);
     const payload = {
       app: 'business-card-editor',
       version: 1,
       currentSide,
-      front: JSON.parse(getSideSnapshotJSON('front') || blankCanvasSnapshot),
-      back: hasBack ? JSON.parse(getSideSnapshotJSON('back') || blankCanvasSnapshot) : null,
+      front: JSON.parse(frontJSON),
+      back: backJSON ? JSON.parse(backJSON) : null,
+      thumbnail,
+      cardTypeId: selectedCardTypeId,
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const bytes = await encodeProjectFile(payload);
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -1662,7 +1820,7 @@ if (fabricCanvasEl && window.fabric) {
   }
   function openSaveAsModal() {
     if (!saveAsModal) {
-      downloadProjectFile('business-card.json');
+      downloadProjectFile('business-card.plm');
       return;
     }
     if (saveAsFilenameInput) saveAsFilenameInput.value = 'business-card';
@@ -1684,7 +1842,7 @@ if (fabricCanvasEl && window.fabric) {
     // typing them wouldn't crash anything, but could silently produce a
     // file the OS itself refuses to save, or a confusingly mangled name.
     const cleaned = (raw || 'business-card').replace(/[\\/:*?"<>|]+/g, '').trim() || 'business-card';
-    const filename = /\.json$/i.test(cleaned) ? cleaned : `${cleaned}.json`;
+    const filename = /\.plm$/i.test(cleaned) ? cleaned : `${cleaned}.plm`;
     closeSaveAsModal();
     downloadProjectFile(filename);
   }
@@ -1726,6 +1884,18 @@ if (fabricCanvasEl && window.fabric) {
       ensureBackSideUI();
       sideHistories.back = { undo: [JSON.stringify(payload.back)], redo: [] };
     }
+    // Only a real saved .plm project carries its own card type — a
+    // template load (see buildTemplateCard's own importProjectData call)
+    // has no `cardTypeId` key at all, and should leave whatever's
+    // currently selected alone rather than resetting it to "none".
+    // Setting it before loadSideAndSwitch below means the Mockup re-paint
+    // that load triggers already picks up the right color on its first
+    // render, not a flash of the old one.
+    if (Object.prototype.hasOwnProperty.call(payload, 'cardTypeId')) {
+      selectedCardTypeId = payload.cardTypeId;
+      updateCardTypeButton();
+      updateFinishAvailability();
+    }
     const targetSide = payload.currentSide === 'back' && payload.back ? 'back' : 'front';
     loadSideAndSwitch(targetSide);
     if (payload.back) renderCardPreview('back');
@@ -1744,17 +1914,17 @@ if (fabricCanvasEl && window.fabric) {
       const file = importProjectInput.files && importProjectInput.files[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         let payload;
         try {
-          payload = JSON.parse(String(reader.result));
+          payload = await decodeProjectFile(reader.result);
         } catch (err) {
           alert("That file couldn't be read as a business card design.");
           return;
         }
         importProjectData(payload);
       };
-      reader.readAsText(file);
+      reader.readAsArrayBuffer(file);
     });
   }
 
@@ -1816,8 +1986,12 @@ if (fabricCanvasEl && window.fabric) {
     ctx.restore();
   }
   // Returns the card's own rect (in preview-canvas px) so the caller can
-  // composite the actual engraved artwork into exactly that area.
-  function drawAluminumCard(ctx, w, h) {
+  // composite the actual engraved artwork into exactly that area. `color`
+  // is the anodized aluminum's own base color (see the card-type picker's
+  // CARD_TYPES swatches further down) — defaults to the original fixed
+  // black so any caller that hasn't been given a selected card type still
+  // renders exactly as before.
+  function drawAluminumCard(ctx, w, h, color) {
     const margin = Math.min(w, h) * 0.08;
     const cardW = w - margin * 2;
     const cardH = cardW * (CARD_H_PX / CARD_W_PX);
@@ -1828,7 +2002,7 @@ if (fabricCanvasEl && window.fabric) {
     ctx.shadowBlur = 14;
     ctx.shadowOffsetY = 6;
     roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
-    ctx.fillStyle = '#0c0c0c';
+    ctx.fillStyle = color || '#0c0c0c';
     ctx.fill();
     ctx.restore();
 
@@ -1856,6 +2030,39 @@ if (fabricCanvasEl && window.fabric) {
 
     return rect;
   }
+  // A small standalone rendering of a bare (un-engraved) aluminum blank in
+  // a given anodized color — same brushed-metal sheen treatment as
+  // drawAluminumCard above (diagonal highlight band + a faint edge
+  // stroke), just without the wood backdrop/shadow, since this paints
+  // directly into a preview box that already has its own container
+  // styling. Used by the card-type picker so each color/thickness swatch
+  // reads as an actual rendered card rather than a flat color chip.
+  function paintCardTypeSwatch(canvasEl, color) {
+    const ctx = canvasEl.getContext('2d');
+    const w = canvasEl.width;
+    const h = canvasEl.height;
+    ctx.clearRect(0, 0, w, h);
+    const r = h * (27 / CARD_H_PX);
+    roundRectPath(ctx, 0, 0, w, h, r);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.save();
+    roundRectPath(ctx, 0, 0, w, h, r);
+    ctx.clip();
+    const sheen = ctx.createLinearGradient(0, 0, w, h);
+    sheen.addColorStop(0, 'rgba(255,255,255,0)');
+    sheen.addColorStop(0.45, 'rgba(255,255,255,0.12)');
+    sheen.addColorStop(0.5, 'rgba(255,255,255,0.28)');
+    sheen.addColorStop(0.55, 'rgba(255,255,255,0.12)');
+    sheen.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    roundRectPath(ctx, 0, 0, w, h, r);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
   // Texture density (from the Finish toolbar's slider) is a real physical
   // value — lines per centimeter, cross-hatched at 45 degrees both ways —
   // so spacing converts directly, no representative curve needed here.
@@ -1864,11 +2071,16 @@ if (fabricCanvasEl && window.fabric) {
     const mm = 10 / lpc;
     return mm * PX_PER_MM;
   }
-  // Builds a small tile with a 45-degree diagonal corner-to-corner —
-  // repeating that tile is the standard trick for a continuous diagonal
-  // hatch, since each tile's line meets its neighbors'. `crossed` adds the
-  // opposite diagonal too, crossing in an X (Texture's cross-hatch); left
-  // off, it's a single-direction brushed-grain line (White's own look).
+  // Builds a small repeatable tile carrying Texture's cross-hatch, in
+  // either of two angles the Finish toolbar's dropdown offers:
+  // `crossed === true` (45°, the default) draws both diagonals corner to
+  // corner, crossing in an X — repeating that tile is the standard trick
+  // for a continuous diagonal hatch, since each tile's line meets its
+  // neighbors'. `crossed === 90` instead draws one horizontal and one
+  // vertical line through the tile's center, giving a plain square
+  // checkerboard grid aligned with the shape's own edges rather than
+  // diagonal to them. `crossed === false` (used only by White's own
+  // single-direction grain, not Texture) draws just the one "/" diagonal.
   function makeHatchPatternCanvas(tileSizePx, lineColor, lineWidthPx, crossed) {
     const size = Math.max(1, tileSizePx);
     const pc = document.createElement('canvas');
@@ -1878,11 +2090,18 @@ if (fabricCanvasEl && window.fabric) {
     pctx.strokeStyle = lineColor;
     pctx.lineWidth = lineWidthPx;
     pctx.beginPath();
-    pctx.moveTo(0, size);
-    pctx.lineTo(size, 0);
-    if (crossed) {
-      pctx.moveTo(0, 0);
-      pctx.lineTo(size, size);
+    if (crossed === 90) {
+      pctx.moveTo(0, size / 2);
+      pctx.lineTo(size, size / 2);
+      pctx.moveTo(size / 2, 0);
+      pctx.lineTo(size / 2, size);
+    } else {
+      pctx.moveTo(0, size);
+      pctx.lineTo(size, 0);
+      if (crossed) {
+        pctx.moveTo(0, 0);
+        pctx.lineTo(size, size);
+      }
     }
     pctx.stroke();
     return pc;
@@ -1924,13 +2143,13 @@ if (fabricCanvasEl && window.fabric) {
   // same pixels the Mockup preview shows rather than recomputing
   // coverage from separate vector geometry.
   const HATCH_TILE_SOURCE_PX = 64;
-  function buildHatchFillPattern(obj, linesPerCm, crossed) {
+  function buildHatchFillPattern(obj, linesPerCm, crossed, lineColor) {
     const { scaleX, scaleY } = fabric.util.qrDecompose(obj.calcTransformMatrix());
     const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2 || 1;
     const spacing = textureSpacingPx(linesPerCm);
     const tileScale = spacing / HATCH_TILE_SOURCE_PX;
     const lineWidthInTile = RENDER_LINE_WIDTH_PX / tileScale;
-    const patternCanvas = makeHatchPatternCanvas(HATCH_TILE_SOURCE_PX, 'rgb(250,250,250)', lineWidthInTile, crossed);
+    const patternCanvas = makeHatchPatternCanvas(HATCH_TILE_SOURCE_PX, lineColor || 'rgb(250,250,250)', lineWidthInTile, crossed);
     const pattern = new fabric.Pattern({ source: patternCanvas, repeat: 'repeat' });
     const finalScale = tileScale / avgScale;
     pattern.patternTransform = [finalScale, 0, 0, finalScale, 0, 0];
@@ -1941,27 +2160,43 @@ if (fabricCanvasEl && window.fabric) {
   // Reuses the hatch tile mechanics above, just with the tile's own
   // background painted first (so gaps between grain lines show white,
   // not the card underneath) and a low-contrast line color instead of
-  // the Texture finish's bright trace lines. Deliberately not as fine as
-  // it was originally (90 L/cm) — the Mockup preview usually renders
-  // well below the card's native resolution (a small thumbnail, or the
-  // side-bar mini previews), and at that scale a 90 L/cm spacing falls
-  // under a pixel, aliasing into a false diagonal gradient/banding
-  // instead of reading as grain. This density stays visually resolved
-  // even shrunk down.
-  const WHITE_GRAIN_LINES_PER_CM = 40;
+  // the Texture finish's bright trace lines. The grain line color
+  // follows the selected card type's own color (falling back to the
+  // original near-black default when none is selected yet) — White
+  // finish means "leave the aluminum bare", so the grain should read as
+  // that same aluminum's color showing through, not a fixed black/gray
+  // regardless of which card is picked.
+  //
+  // Packed tight (200 L/cm) and barely-there (thin lines, low opacity) —
+  // individual lines this close together aren't separately resolvable at
+  // a glance, so the whole thing reads as a soft, even brushed sheen
+  // rather than a visible hatch.
+  const WHITE_GRAIN_LINES_PER_CM = 200;
+  // "#rrggbb" -> "rgba(r,g,b,alpha)", so the grain line can ride at a
+  // fixed low opacity over a color that changes per card type.
+  function hexToRgba(hex, alpha) {
+    const h = (hex || '#0c0c0c').replace('#', '');
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
   function buildWhiteFillPattern(obj) {
     const { scaleX, scaleY } = fabric.util.qrDecompose(obj.calcTransformMatrix());
     const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2 || 1;
     const spacing = textureSpacingPx(WHITE_GRAIN_LINES_PER_CM);
     const tileScale = spacing / HATCH_TILE_SOURCE_PX;
-    const lineWidthInTile = (RENDER_LINE_WIDTH_PX * 0.5) / tileScale;
+    const lineWidthInTile = (RENDER_LINE_WIDTH_PX * 0.15) / tileScale;
     const patternCanvas = document.createElement('canvas');
     patternCanvas.width = HATCH_TILE_SOURCE_PX;
     patternCanvas.height = HATCH_TILE_SOURCE_PX;
     const pctx = patternCanvas.getContext('2d');
     pctx.fillStyle = 'rgb(253,253,253)';
     pctx.fillRect(0, 0, HATCH_TILE_SOURCE_PX, HATCH_TILE_SOURCE_PX);
-    pctx.strokeStyle = 'rgba(185,185,185,0.9)';
+    // The card's own color, at low opacity — same idea as fading a
+    // watermark, so the grain reads as a faint hint of the card's own
+    // color rather than a wash toward gray/black.
+    pctx.strokeStyle = hexToRgba(getSelectedCardTypeColor(), 0.05);
     pctx.lineWidth = lineWidthInTile;
     pctx.beginPath();
     pctx.moveTo(0, HATCH_TILE_SOURCE_PX);
@@ -1972,38 +2207,82 @@ if (fabricCanvasEl && window.fabric) {
     pattern.patternTransform = [finalScale, 0, 0, finalScale, 0, 0];
     return pattern;
   }
-  // A diagonal silver gradient with a bright highlight band down the
-  // middle — the same sheen technique used on the aluminum card
-  // background, just applied to the shape's own fill. Percentage
-  // gradient units keep it scaled to each shape's own bounding box,
-  // so it holds up at any size, aspect ratio, or rotation.
+  // A diagonal gunmetal-gray sheen with a few separate highlight bands
+  // moving across it, rather than one single clean peak — reads more
+  // like brushed metal catching light at a few different points than a
+  // polished mirror with one streak. Fixed to the card's own absolute
+  // coordinate space (0,0 to CARD_W_PX,CARD_H_PX), not each shape's own
+  // bounding box — every Metallic object across the whole card reads
+  // this same coordinate space, so styleForRender below can align each
+  // one's local coordinates back to it (via gradientTransform) and the
+  // whole banded sheen reads as one continuous pattern crossing the
+  // card, the same way the aluminum background's own sheen does, rather
+  // than a separate disconnected streak per letter.
   function buildMetallicFill() {
     return new fabric.Gradient({
       type: 'linear',
-      gradientUnits: 'percentage',
-      coords: { x1: 0, y1: 0, x2: 1, y2: 1 },
+      gradientUnits: 'pixels',
+      coords: { x1: 0, y1: 0, x2: CARD_W_PX, y2: CARD_H_PX },
       colorStops: [
-        { offset: 0, color: '#3f4144' },
-        { offset: 0.12, color: '#6c6f72' },
-        { offset: 0.25, color: '#a8abad' },
-        { offset: 0.38, color: '#f7f7f7' },
-        { offset: 0.45, color: '#ffffff' },
-        { offset: 0.52, color: '#f7f7f7' },
-        { offset: 0.65, color: '#9a9d9f' },
-        { offset: 0.78, color: '#5c5f62' },
-        { offset: 0.88, color: '#8e9092' },
-        { offset: 1, color: '#3f4144' },
+        { offset: 0, color: '#35373a' },
+        { offset: 0.08, color: '#4c4f52' },
+        { offset: 0.16, color: '#6e7174' },
+        { offset: 0.21, color: '#9a9d9f' },
+        { offset: 0.26, color: '#6e7174' },
+        { offset: 0.34, color: '#505356' },
+        { offset: 0.42, color: '#6c6f72' },
+        { offset: 0.49, color: '#d8d9da' },
+        { offset: 0.54, color: '#f2f2f2' },
+        { offset: 0.59, color: '#c2c3c5' },
+        { offset: 0.66, color: '#6c6f72' },
+        { offset: 0.73, color: '#454749' },
+        { offset: 0.8, color: '#7d8083' },
+        { offset: 0.85, color: '#a3a5a7' },
+        { offset: 0.9, color: '#6e7174' },
+        { offset: 0.96, color: '#4c4f52' },
+        { offset: 1, color: '#35373a' },
       ],
     });
   }
   function styleForRender(obj) {
+    // This offscreen StaticCanvas gets re-rendered at a different
+    // resolutionScale for every destination (the small thumbnail, the
+    // fullscreen modal, a template gallery card, etc.) from the exact
+    // same object data. Fabric's default per-object caching paints a
+    // shape into an internal bitmap sized for whatever scale it was
+    // *first* rendered at, then reuses/rescales that bitmap on later
+    // renders — for a thin stroked path (an imported logo's fine detail
+    // lines especially) that can lose or distort sub-pixel detail when
+    // the bitmap built for one resolution gets stretched for another.
+    // Disabling it forces every render to re-stroke the real vector
+    // path at whatever the current resolution actually is, so a line
+    // that's there at the small size can't go missing at the large one
+    // (or vice versa). Safe here specifically because this function only
+    // ever touches objects on a disposable render-only canvas, never the
+    // live editing canvas, so there's no interactive-performance cost.
+    obj.objectCaching = false;
     if (obj.type === 'group') {
       obj.getObjects().forEach(styleForRender);
       return;
     }
     const finish = getFinish(obj);
     if (finish === 'metallic') {
-      obj.set({ fill: buildMetallicFill(), stroke: null, opacity: 1 });
+      const fill = buildMetallicFill();
+      // The gradient's own coords are in absolute card space, but Fabric
+      // paints a fill in the object's local (pre-transform) space — so
+      // without correction, each object would still just show its own
+      // little 0..CARD_W_PX-sized slice of the gradient starting at its
+      // own local origin, not the slice that actually belongs at its
+      // real position on the card. Canceling out the object's full
+      // transform (including any parent group, which calcTransformMatrix
+      // already accounts for) via its inverse as the gradient's own
+      // transform makes the two compose back to identity, so the
+      // gradient ends up reading in true card-absolute coordinates
+      // regardless of this object's own position/scale/rotation — every
+      // Metallic object on the card ends up sampling the exact same
+      // underlying gradient at the exact same real spot.
+      fill.gradientTransform = fabric.util.invertTransform(obj.calcTransformMatrix());
+      obj.set({ fill, stroke: null, opacity: 1 });
       return;
     }
     if (finish === 'texture') {
@@ -2013,7 +2292,7 @@ if (fabricCanvasEl && window.fabric) {
       // shared render line width) so every line in this preview reads
       // as the same physical thickness, texture hatch included.
       obj.set({
-        fill: buildHatchFillPattern(obj, obj.cardFinishTexture, true),
+        fill: buildHatchFillPattern(obj, obj.cardFinishTexture, obj.cardFinishAngle === 90 ? 90 : true),
         stroke: obj.cardFinishOutline ? 'rgb(250,250,250)' : null,
         strokeWidth: RENDER_LINE_WIDTH_PX,
         strokeUniform: true,
@@ -2078,7 +2357,7 @@ if (fabricCanvasEl && window.fabric) {
     const h = canvasEl.height;
     ctx.clearRect(0, 0, w, h);
     drawWoodBackground(ctx, w, h);
-    const rect = drawAluminumCard(ctx, w, h);
+    const rect = drawAluminumCard(ctx, w, h, getSelectedCardTypeColor());
     const resolutionScale = rect.w / CARD_W_PX;
     renderStrokeOutlinesToDataURL(snapshot, resolutionScale, (dataUrl) => {
       if (renderGenerationByCanvas.get(canvasEl) !== myGeneration) return;
@@ -2688,7 +2967,7 @@ if (fabricCanvasEl && window.fabric) {
       style = {
         fill: styleSource.stroke, stroke: null, strokeWidth: 0,
         cardFinish: styleSource.cardFinish, cardFinishTexture: styleSource.cardFinishTexture,
-        cardFinishOutline: styleSource.cardFinishOutline,
+        cardFinishOutline: styleSource.cardFinishOutline, cardFinishAngle: styleSource.cardFinishAngle,
       };
     } else if (styleSource.type === 'group') {
       style = firstFillableDescendant(styleSource) || { fill: '#000000', stroke: null, strokeWidth: 0 };
@@ -2709,6 +2988,7 @@ if (fabricCanvasEl && window.fabric) {
     path.cardFinish = style.cardFinish;
     path.cardFinishTexture = style.cardFinishTexture;
     path.cardFinishOutline = style.cardFinishOutline;
+    path.cardFinishAngle = style.cardFinishAngle;
     fabricCanvas.discardActiveObject();
     suppressHistoryEvents = true;
     sourceObjects.forEach((o) => fabricCanvas.remove(o));
@@ -2898,13 +3178,15 @@ if (fabricCanvasEl && window.fabric) {
       return false;
     }
   }
-  function updatePriceEstimate() {
-    const priceEl = document.getElementById('editor-price');
-    if (!priceEl) return;
+  // Shared by the toolbar's live /100 estimate and the Next modal's
+  // per-quantity pricing — both need this same weighted-coverage-based
+  // direct cost, just multiplied by a different markup afterward.
+  // `callback(null)` when there's nothing on either side to price yet.
+  function computeDirectCostForCurrentDesign(callback) {
     const frontSnapshot = snapshotForSide('front');
     const backSnapshot = snapshotForSide('back');
     if (!snapshotHasObjects(frontSnapshot) && !snapshotHasObjects(backSnapshot)) {
-      priceEl.innerHTML = 'Estimated Price: n/a';
+      callback(null);
       return;
     }
     weightedCoveragePx2ForSnapshot(frontSnapshot, (frontWeighted) => {
@@ -2912,10 +3194,473 @@ if (fabricCanvasEl && window.fabric) {
         const totalWeightedPx2 = frontWeighted + backWeighted;
         const totalCardAreaPx2 = CARD_W_PX * CARD_H_PX * 2; // both sides, always
         const weightedPct = (totalWeightedPx2 / totalCardAreaPx2) * 100;
-        const directCost = PRICING_FIXED_COST + PRICING_VARIABLE_COST_PER_PCT * weightedPct;
-        const pricePerCard = directCost * PRICING_QTY100_MARKUP;
-        priceEl.innerHTML = `Estimated Price: $${pricePerCard.toFixed(2)} ea. <span class="editor-price-qty">/100</span>`;
+        callback(PRICING_FIXED_COST + PRICING_VARIABLE_COST_PER_PCT * weightedPct);
       });
+    });
+  }
+  function updatePriceEstimate() {
+    const priceEl = document.getElementById('editor-price');
+    if (!priceEl) return;
+    computeDirectCostForCurrentDesign((directCost) => {
+      if (directCost === null) {
+        priceEl.innerHTML = 'Estimated Price: n/a';
+        return;
+      }
+      const pricePerCard = directCost * PRICING_QTY100_MARKUP;
+      priceEl.innerHTML = `Estimated Price: $${pricePerCard.toFixed(2)} ea. <span class="editor-price-qty">/100</span>`;
+    });
+  }
+
+  // ---- Next modal (quantity + pricing + request-a-quote) ----
+  // Opened by the top bar's Next button — an overlay on top of the
+  // editor, not a page navigation, so closing it (×, clicking outside,
+  // or Escape) always returns to the design exactly as it was. The form
+  // half reuses the exact same field names and Worker endpoint as the
+  // marketing site's own #rfq-form (index.html/script.js) — same
+  // framework, just submitted from inside the editor with the design's
+  // own quantity/price context folded into the message and both sides'
+  // renderings auto-attached alongside whatever reference files the
+  // customer adds themselves.
+  const RFQ_ENDPOINT = 'https://plm-rfq.precisionlasermark.workers.dev';
+  const nextBtn = document.getElementById('next-btn');
+  const nextModal = document.getElementById('next-modal');
+  const nextModalClose = document.getElementById('next-modal-close');
+  const nextModalCanvasFront = document.getElementById('next-modal-canvas-front');
+  const nextModalCanvasBack = document.getElementById('next-modal-canvas-back');
+  const nextModalQuantity = document.getElementById('next-modal-quantity');
+  const nextModalSummary = document.getElementById('next-modal-summary');
+  const nextModalCardTypeSwatch = document.getElementById('next-modal-cardtype-swatch');
+  const nextModalCardTypeLabel = document.getElementById('next-modal-cardtype-label');
+  const nextModalForm = document.getElementById('next-modal-rfq-form');
+  const nextModalStatus = document.getElementById('next-modal-status');
+  const nextModalRequestBtn = document.getElementById('next-modal-request');
+  // Cached from the most recent computeDirectCostForCurrentDesign call
+  // this modal triggered, so switching the quantity dropdown re-prices
+  // instantly instead of re-running the coverage render on every change.
+  let nextModalDirectCost = null;
+  function updateNextModalSummary() {
+    if (!nextModalQuantity || !nextModalSummary) return;
+    const qty = parseInt(nextModalQuantity.value, 10) || 0;
+    if (nextModalDirectCost === null || !qty) {
+      nextModalSummary.textContent = 'Estimated total: n/a';
+      return;
+    }
+    const pricing = getNextModalPricing(nextModalDirectCost, qty);
+    nextModalSummary.textContent = pricing.isMinCharge
+      ? `Estimated total: $${pricing.total.toFixed(2)} min charge (${qty} cards)`
+      : `Estimated total: $${pricing.total.toFixed(2)} (${qty} × $${pricing.each.toFixed(2)} ea.)`;
+  }
+  function populateNextModalQuantityOptions() {
+    if (!nextModalQuantity) return;
+    const previousValue = nextModalQuantity.value;
+    nextModalQuantity.innerHTML = '';
+    PRICING_QTY_OPTIONS.forEach((qty) => {
+      const option = document.createElement('option');
+      option.value = String(qty);
+      const pricing = nextModalDirectCost === null ? null : getNextModalPricing(nextModalDirectCost, qty);
+      option.textContent = !pricing
+        ? `${qty}`
+        : pricing.isMinCharge
+          ? `${qty} — $95 min charge`
+          : `${qty} — $${pricing.each.toFixed(2)} ea.`;
+      nextModalQuantity.appendChild(option);
+    });
+    // Keep whatever was selected across a re-price (design edited while
+    // the modal happened to already be open) rather than always
+    // snapping back to the first option.
+    if (previousValue && PRICING_QTY_OPTIONS.some((q) => String(q) === previousValue)) {
+      nextModalQuantity.value = previousValue;
+    }
+  }
+  function updateNextModalCardType() {
+    if (!nextModalCardTypeLabel) return;
+    const entry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+    if (!entry) {
+      nextModalCardTypeLabel.textContent = 'Card type: none selected';
+      if (nextModalCardTypeSwatch) nextModalCardTypeSwatch.style.background = '#3a3a3a';
+      return;
+    }
+    nextModalCardTypeLabel.textContent = `Card type: ${entry.color} · ${entry.thicknessIn} (${entry.thicknessMm})`;
+    if (nextModalCardTypeSwatch) nextModalCardTypeSwatch.style.background = entry.swatch;
+  }
+  function openNextModal() {
+    if (!nextModal) return;
+    nextModal.classList.add('is-open');
+    nextModal.setAttribute('aria-hidden', 'false');
+    updateNextModalCardType();
+    const hasBack = projectHasBackSide();
+    if (nextModalCanvasFront) paintCardPreview(nextModalCanvasFront, snapshotForSide('front') || blankCanvasSnapshot);
+    if (nextModalCanvasBack) {
+      nextModalCanvasBack.classList.toggle('is-hidden', !hasBack);
+      if (hasBack) paintCardPreview(nextModalCanvasBack, snapshotForSide('back') || blankCanvasSnapshot);
+    }
+    populateNextModalQuantityOptions();
+    updateNextModalSummary();
+    computeDirectCostForCurrentDesign((directCost) => {
+      nextModalDirectCost = directCost;
+      populateNextModalQuantityOptions();
+      updateNextModalSummary();
+    });
+  }
+  function closeNextModal() {
+    if (!nextModal) return;
+    nextModal.classList.remove('is-open');
+    nextModal.setAttribute('aria-hidden', 'true');
+  }
+  if (nextBtn) nextBtn.addEventListener('click', openNextModal);
+  if (nextModalClose) nextModalClose.addEventListener('click', closeNextModal);
+  if (nextModal) {
+    nextModal.addEventListener('mousedown', (e) => {
+      if (e.target === nextModal) closeNextModal();
+    });
+  }
+  if (nextModalQuantity) nextModalQuantity.addEventListener('change', updateNextModalSummary);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && nextModal && nextModal.classList.contains('is-open')) closeNextModal();
+  });
+
+  // Wraps HTMLCanvasElement#toBlob (callback-based) in a Promise so the
+  // two renderings can be awaited alongside the fetch call below.
+  function canvasToBlob(canvas) {
+    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
+  }
+
+  // ---- TEMPORARY: local export-file verification (Send Request button) ----
+  // Not the real submission yet, and not the real print-export feature
+  // either — just generates the five files a real request/export would
+  // need and downloads them locally, so the file *contents* can be
+  // checked by eye before either of those gets wired up for real. The
+  // form's submit handler below calls this instead of actually POSTing
+  // anywhere; nothing here talks to the network. Swap it back to the
+  // real fetch() (still intact, just unused below) once the files look
+  // right — at that point these should probably become attachments on
+  // the real request rather than local downloads.
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+  // Same wood+aluminum+artwork look as the Mockup panel (paintCardPreview),
+  // just resolved as a Promise instead of writing straight to a live
+  // canvas element, so a batch of these can be awaited in sequence.
+  function renderMockupCanvasAsync(canvasEl, snapshot) {
+    return new Promise((resolve) => {
+      const ctx = canvasEl.getContext('2d');
+      const w = canvasEl.width;
+      const h = canvasEl.height;
+      ctx.clearRect(0, 0, w, h);
+      drawWoodBackground(ctx, w, h);
+      const rect = drawAluminumCard(ctx, w, h, getSelectedCardTypeColor());
+      const resolutionScale = rect.w / CARD_W_PX;
+      renderStrokeOutlinesToDataURL(snapshot, resolutionScale, (dataUrl) => {
+        const img = new Image();
+        img.onload = () => {
+          ctx.save();
+          roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+          ctx.clip();
+          ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+          ctx.restore();
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = dataUrl;
+      });
+    });
+  }
+  // Unlike styleForRender (built for the photoreal mockup, where every
+  // engraved line reads as bright metal against the card), this keeps
+  // each finish's own proofing color from FINISH_COLORS — the exact
+  // color-coding already used live while editing — so the color legend
+  // stays meaningful. The one addition: Texture gets its real hatch
+  // pattern (at its real L/cm density and angle) instead of a flat fill,
+  // since "shows texture density" is the whole point of this file.
+  // Everything else already carries the right proofing fill/stroke
+  // straight from the snapshot, untouched.
+  function styleForProofingRender(obj) {
+    if (obj.type === 'group') {
+      obj.getObjects().forEach(styleForProofingRender);
+      return;
+    }
+    obj.objectCaching = false;
+    if (getFinish(obj) !== 'texture') return;
+    const color = obj.cardFinishOutline ? FINISH_COLORS['texture-outline'] : FINISH_COLORS.texture;
+    obj.set({
+      fill: buildHatchFillPattern(obj, obj.cardFinishTexture, obj.cardFinishAngle === 90 ? 90 : true, color),
+      stroke: obj.cardFinishOutline ? color : null,
+      strokeWidth: RENDER_LINE_WIDTH_PX,
+      strokeUniform: true,
+      opacity: 1,
+    });
+  }
+  // Renders one side's proofing view at the given pixel size, returning
+  // the offscreen canvas it painted into (so the caller can composite
+  // front/back together) rather than a data URL.
+  function renderProofingCanvasAsync(width, height, snapshotJson) {
+    return new Promise((resolve) => {
+      const off = document.createElement('canvas');
+      off.width = width;
+      off.height = height;
+      // Retina scaling would silently double (or more) this canvas's own
+      // backing-store pixel dimensions on a high-DPI display, while
+      // getWidth()/getHeight() keep reporting the logical (unscaled)
+      // size — so the later drawImage(proofFront, 0, 0) that composites
+      // this into the final stacked PNG (drawn without an explicit
+      // destination size, so it paints at the SOURCE's native pixel
+      // size) would only show the top-left quarter of the actual design,
+      // cropping the rest. Off entirely, same reasoning as
+      // weightedCoveragePx2ForSnapshot's own offscreen canvas.
+      const staticCanvas = new fabric.StaticCanvas(off, { backgroundColor: '#202020', enableRetinaScaling: false });
+      staticCanvas.setZoom(width / CARD_W_PX);
+      staticCanvas.loadFromJSON(snapshotJson, () => {
+        staticCanvas.getObjects().forEach((obj) => {
+          obj.set({ left: obj.left - CARD_OFFSET_X, top: obj.top - CARD_OFFSET_Y });
+          obj.setCoords();
+          styleForProofingRender(obj);
+        });
+        staticCanvas.renderAll();
+        resolve(off);
+      });
+    });
+  }
+  // Real Fabric vector output (StaticCanvas#toSVG) plus two extra shapes
+  // marking the physical card's own cut outline: a solid dark background
+  // rect (behind everything, so White-finish — and any other light-
+  // colored — artwork doesn't just disappear against whatever blank-page
+  // color the SVG happens to get viewed on) and a stroke-only outline on
+  // top (so the cut line still reads clearly over dark artwork too).
+  // Neither is part of the actual design, hence their own labeled groups
+  // rather than merging into Fabric's own output.
+  function buildCardSvgAsync(snapshotJson) {
+    return new Promise((resolve) => {
+      const off = document.createElement('canvas');
+      const staticCanvas = new fabric.StaticCanvas(off, { width: CARD_W_PX, height: CARD_H_PX });
+      staticCanvas.loadFromJSON(snapshotJson, () => {
+        staticCanvas.getObjects().forEach((obj) => {
+          obj.set({ left: obj.left - CARD_OFFSET_X, top: obj.top - CARD_OFFSET_Y });
+          obj.setCoords();
+        });
+        staticCanvas.renderAll();
+        const background = `<g id="card-background"><rect x="0" y="0" width="${CARD_W_PX}" height="${CARD_H_PX}" rx="27" ry="27" fill="#1a1a1a"/></g>`;
+        const outline = `<g id="card-outline"><rect x="0.75" y="0.75" width="${CARD_W_PX - 1.5}" height="${CARD_H_PX - 1.5}" rx="27" ry="27" fill="none" stroke="#ffffff" stroke-width="1.5"/></g>`;
+        const svg = staticCanvas.toSVG()
+          .replace('</defs>', `</defs>\n${background}`)
+          .replace('</svg>', `${outline}</svg>`);
+        staticCanvas.dispose();
+        resolve(svg);
+      });
+    });
+  }
+  // Walks a snapshot's plain (unparsed-into-Fabric) object list, same
+  // recursive-into-groups shape as the JSON the JS elsewhere in this file
+  // already works with, collecting which finish `keys` (matching
+  // FINISH_LEGEND_ORDER's own key strings) actually appear anywhere on
+  // this side — mirrors getFinish's own default-to-White/Line-defaults-
+  // to-Stroke logic since these are plain objects without that helper's
+  // live-Fabric-object access.
+  function collectUsedFinishKeys(snapshotJson, keys) {
+    if (!snapshotJson) return;
+    let data;
+    try {
+      data = JSON.parse(snapshotJson);
+    } catch (e) {
+      return;
+    }
+    function walk(objs) {
+      if (!Array.isArray(objs)) return;
+      objs.forEach((o) => {
+        if (!o) return;
+        const finish = o.cardFinish || (o.type === 'line' ? 'stroke' : 'white');
+        keys.add(finish === 'texture' && o.cardFinishOutline ? 'texture-outline' : finish);
+        if (Array.isArray(o.objects)) walk(o.objects);
+      });
+    }
+    walk(data.objects);
+  }
+  async function downloadRfqTestFiles() {
+    const hasBack = projectHasBackSide();
+    const frontSnap = snapshotForSide('front') || blankCanvasSnapshot;
+    const backSnap = hasBack ? (snapshotForSide('back') || blankCanvasSnapshot) : null;
+    const w = 860;
+    const h = 540;
+    const gap = 24;
+
+    // 1) Photoreal mockup, front + back stacked vertically in one PNG.
+    const frontMockup = document.createElement('canvas');
+    frontMockup.width = w;
+    frontMockup.height = h;
+    await renderMockupCanvasAsync(frontMockup, frontSnap);
+    let backMockup = null;
+    if (hasBack) {
+      backMockup = document.createElement('canvas');
+      backMockup.width = w;
+      backMockup.height = h;
+      await renderMockupCanvasAsync(backMockup, backSnap);
+    }
+    const mockupOut = document.createElement('canvas');
+    mockupOut.width = w;
+    mockupOut.height = hasBack ? h * 2 + gap : h;
+    const mctx = mockupOut.getContext('2d');
+    mctx.fillStyle = '#000';
+    mctx.fillRect(0, 0, mockupOut.width, mockupOut.height);
+    mctx.drawImage(frontMockup, 0, 0);
+    if (backMockup) mctx.drawImage(backMockup, 0, h + gap);
+    triggerDownload(await canvasToBlob(mockupOut), 'mockup-front-back.png');
+
+    // 2) Proofing colors + texture density, front + back stacked.
+    const proofFront = await renderProofingCanvasAsync(w, h, frontSnap);
+    const proofBack = hasBack ? await renderProofingCanvasAsync(w, h, backSnap) : null;
+    const proofOut = document.createElement('canvas');
+    proofOut.width = w;
+    proofOut.height = hasBack ? h * 2 + gap : h;
+    const pctx = proofOut.getContext('2d');
+    pctx.fillStyle = '#000';
+    pctx.fillRect(0, 0, proofOut.width, proofOut.height);
+    // Explicit destination size (not just x/y) so this always scales down
+    // to fit its slot even if the source canvas's own backing store ever
+    // ends up larger than w×h for any reason — belt-and-suspenders on
+    // top of disabling retina scaling above.
+    pctx.drawImage(proofFront, 0, 0, w, h);
+    if (proofBack) pctx.drawImage(proofBack, 0, h + gap, w, h);
+    triggerDownload(await canvasToBlob(proofOut), 'canvas.png');
+
+    // 3) + 4) Front.svg / Back.svg — vector design + card outline.
+    triggerDownload(new Blob([await buildCardSvgAsync(frontSnap)], { type: 'image/svg+xml' }), 'Front.svg');
+    if (hasBack) {
+      triggerDownload(new Blob([await buildCardSvgAsync(backSnap)], { type: 'image/svg+xml' }), 'Back.svg');
+    }
+
+    // 5) Plain-text order info + color legend — the same quantity/card
+    // type/price/shipping context that would go into the real request's
+    // message body (see sendRealRfqRequest below), plus the same
+    // name/color key as the Finish toolbar and the proofing PNG above,
+    // all in one file so the shop has everything about this order
+    // without needing to cross-reference the email itself.
+    const formData = nextModalForm ? new FormData(nextModalForm) : new FormData();
+    const qty = nextModalQuantity ? parseInt(nextModalQuantity.value, 10) || 0 : 0;
+    const pricing = nextModalDirectCost !== null && qty ? getNextModalPricing(nextModalDirectCost, qty) : null;
+    const cardTypeEntry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+    const usedFinishKeys = new Set();
+    collectUsedFinishKeys(frontSnap, usedFinishKeys);
+    if (hasBack) collectUsedFinishKeys(backSnap, usedFinishKeys);
+    const usedFinishLegendLines = FINISH_LEGEND_ORDER
+      .filter(([key]) => usedFinishKeys.has(key))
+      .map(([key, label]) => `${label}: ${FINISH_COLOR_NAMES[key]}`);
+    const infoLines = [
+      'Order info',
+      '==========',
+      `Name: ${String(formData.get('name') || '').trim() || 'n/a'}`,
+      `Email: ${String(formData.get('email') || '').trim() || 'n/a'}`,
+      `Quantity: ${qty || 'n/a'}`,
+      `Card type: ${cardTypeEntry ? `${cardTypeEntry.color} · ${cardTypeEntry.thicknessIn} (${cardTypeEntry.thicknessMm})` : 'n/a'}`,
+      !pricing
+        ? 'Estimated total: n/a'
+        : pricing.isMinCharge
+          ? `Estimated total: $${pricing.total.toFixed(2)} min charge`
+          : `Estimated total: $${pricing.total.toFixed(2)} ($${pricing.each.toFixed(2)} ea.)`,
+      `Shipping address: ${String(formData.get('address') || '').trim() || 'n/a'}, ${String(formData.get('city') || '').trim() || 'n/a'}, ${String(formData.get('state') || '').trim() || 'n/a'} ${String(formData.get('zip') || '').trim() || 'n/a'}`,
+      `Message: ${String(formData.get('message') || '').trim() || 'n/a'}`,
+      '',
+      'Card finish color legend',
+      '(matches the Finish toolbar and canvas.png — only finishes actually used on this card are listed)',
+      '',
+      ...(usedFinishLegendLines.length ? usedFinishLegendLines : ['(no finishes assigned yet)']),
+    ].join('\n');
+    triggerDownload(new Blob([infoLines], { type: 'text/plain' }), 'order-info.txt');
+  }
+
+  // The real submission logic — kept intact and self-contained, just not
+  // called anywhere right now (see the TEMPORARY block above). Once the
+  // downloaded file bundle has been checked over, wire this back in
+  // (probably attaching those same five files here instead of just the
+  // two renderings it currently sends) and swap the event listener below
+  // back to calling this instead of downloadRfqTestFiles().
+  async function sendRealRfqRequest(e) {
+    e.preventDefault();
+    if (!nextModalStatus || !nextModalRequestBtn) return;
+    nextModalStatus.textContent = '';
+    nextModalStatus.className = 'form-status';
+    nextModalRequestBtn.disabled = true;
+    const submitLabel = nextModalRequestBtn.innerHTML;
+    nextModalRequestBtn.textContent = 'Sending…';
+    try {
+      const formData = new FormData(nextModalForm);
+      // The design's own context (quantity/card type/price), folded
+      // into the message body rather than added as new form fields —
+      // the Worker only knows about the marketing form's fields, and
+      // this way it doesn't need to change to understand a request
+      // that came from the editor instead.
+      const qty = nextModalQuantity ? parseInt(nextModalQuantity.value, 10) || 0 : 0;
+      const pricing = nextModalDirectCost !== null && qty ? getNextModalPricing(nextModalDirectCost, qty) : null;
+      const cardTypeEntry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+      const address = String(formData.get('address') || '').trim();
+      const city = String(formData.get('city') || '').trim();
+      const state = String(formData.get('state') || '').trim();
+      const zip = String(formData.get('zip') || '').trim();
+      const contextLines = [
+        `Quantity: ${qty || 'n/a'}`,
+        `Card type: ${cardTypeEntry ? `${cardTypeEntry.color} · ${cardTypeEntry.thicknessIn} (${cardTypeEntry.thicknessMm})` : 'n/a'}`,
+        !pricing
+          ? 'Estimated total: n/a'
+          : pricing.isMinCharge
+            ? `Estimated total: $${pricing.total.toFixed(2)} min charge`
+            : `Estimated total: $${pricing.total.toFixed(2)} ($${pricing.each.toFixed(2)} ea.)`,
+        `Shipping address: ${address || 'n/a'}, ${city || 'n/a'}, ${state || 'n/a'} ${zip || 'n/a'}`,
+      ];
+      const userMessage = String(formData.get('message') || '').trim();
+      formData.set('message', `${contextLines.join('\n')}${userMessage ? `\n\n${userMessage}` : ''}`);
+      // Auto-attach both renderings alongside any files the customer
+      // added themselves (both share the 'attachment' field name,
+      // same as the file input's own multi-file entries would).
+      const frontBlob = await canvasToBlob(nextModalCanvasFront);
+      if (frontBlob) formData.append('attachment', frontBlob, 'front.png');
+      if (nextModalCanvasBack && !nextModalCanvasBack.classList.contains('is-hidden')) {
+        const backBlob = await canvasToBlob(nextModalCanvasBack);
+        if (backBlob) formData.append('attachment', backBlob, 'back.png');
+      }
+      const res = await fetch(RFQ_ENDPOINT, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        nextModalForm.reset();
+        nextModalStatus.textContent = "Request sent — we'll be in touch shortly.";
+        nextModalStatus.className = 'form-status success';
+      } else {
+        nextModalStatus.textContent = data.message || 'Something went wrong — please try again.';
+        nextModalStatus.className = 'form-status error';
+      }
+    } catch (err) {
+      nextModalStatus.textContent = 'Network error — please try again.';
+      nextModalStatus.className = 'form-status error';
+    } finally {
+      nextModalRequestBtn.disabled = false;
+      nextModalRequestBtn.innerHTML = submitLabel;
+    }
+  }
+  if (nextModalForm) {
+    nextModalForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!nextModalStatus || !nextModalRequestBtn) return;
+      nextModalStatus.textContent = '';
+      nextModalStatus.className = 'form-status';
+      nextModalRequestBtn.disabled = true;
+      const submitLabel = nextModalRequestBtn.innerHTML;
+      nextModalRequestBtn.textContent = 'Generating files…';
+      try {
+        await downloadRfqTestFiles();
+        nextModalStatus.textContent = 'Test files downloaded — nothing was sent.';
+        nextModalStatus.className = 'form-status success';
+      } catch (err) {
+        nextModalStatus.textContent = 'Something went wrong generating the files — see console.';
+        nextModalStatus.className = 'form-status error';
+        console.error(err);
+      } finally {
+        nextModalRequestBtn.disabled = false;
+        nextModalRequestBtn.innerHTML = submitLabel;
+      }
     });
   }
 
@@ -3098,6 +3843,7 @@ if (fabricCanvasEl && window.fabric) {
   const finishTextureRange = document.getElementById('finish-texture-range');
   const finishTextureValue = document.getElementById('finish-texture-value');
   const finishTextureOutline = document.getElementById('finish-texture-outline');
+  const finishTextureAngle = document.getElementById('finish-texture-angle');
   // Every object/group defaults to White until a finish is explicitly
   // chosen for it — reading through this one helper (instead of a raw
   // `obj.cardFinish`) everywhere means new objects never need to have
@@ -3123,6 +3869,31 @@ if (fabricCanvasEl && window.fabric) {
     metallic: '#9ca3af',
     'frosted-white': '#a855f7',
   };
+  // Plain-language names for the same swatches, keyed identically —
+  // used by the color-legend.txt export so it reads as "Stroke: Green"
+  // rather than a hex code the shop floor has to look up.
+  const FINISH_COLOR_NAMES = {
+    none: 'Red',
+    stroke: 'Green',
+    texture: 'Blue',
+    'texture-outline': 'Light Blue',
+    white: 'White',
+    metallic: 'Gray',
+    'frosted-white': 'Purple',
+  };
+  // [finish key, display label] pairs, in the same order the Finish
+  // toolbar itself lists them — used to filter order-info.txt's color
+  // legend down to only the finishes actually present on this card (see
+  // collectUsedFinishKeys/downloadRfqTestFiles), not the full fixed set.
+  const FINISH_LEGEND_ORDER = [
+    ['none', "Don't Engrave"],
+    ['stroke', 'Stroke'],
+    ['texture', 'Texture'],
+    ['texture-outline', 'Texture (Outline)'],
+    ['white', 'White'],
+    ['metallic', 'Metallic'],
+    ['frosted-white', 'Frosted White'],
+  ];
   // Paints the finish color onto whichever channel a shape actually
   // renders with — a plain shape/text uses fill, but one already in
   // Stroke fill-mode (see setShapeFillMode) has fill:null and paints via
@@ -3151,27 +3922,24 @@ if (fabricCanvasEl && window.fabric) {
     if (!hasFill && !hasStroke) next.fill = color;
     obj.set(next);
   }
-  // Texture's own outline stroke width, once turned on — a plain, real
-  // physical value (not the proofing color), same default as the Shapes
-  // toolbar's own stroke width field.
-  const TEXTURE_OUTLINE_WIDTH_PX = 0.5 * PX_PER_MM;
-  function applyFinishToOne(obj, finish, textureAmount, outline) {
+  function applyFinishToOne(obj, finish, textureAmount, outline, angle) {
     obj.cardFinish = finish;
     obj.cardFinishTexture = finish === 'texture' ? textureAmount : undefined;
     obj.cardFinishOutline = finish === 'texture' ? !!outline : undefined;
+    obj.cardFinishAngle = finish === 'texture' ? (angle === 90 || angle === '90' ? 90 : 45) : undefined;
     const color = finish === 'texture' && obj.cardFinishOutline
       ? FINISH_COLORS['texture-outline']
       : (FINISH_COLORS[finish] || FINISH_COLORS.white);
     applyFinishColor(obj, color);
-    // Outline is purely additive — a texture-finish shape otherwise only
-    // ever paints via fill, so the stroke channel is safe to own outright
-    // here rather than needing applyFinishColor's fill-vs-stroke guessing.
-    if (finish === 'texture') {
-      if (obj.cardFinishOutline) {
-        obj.set({ stroke: color, strokeWidth: obj.strokeWidth || TEXTURE_OUTLINE_WIDTH_PX, strokeUniform: true });
-      } else if (obj.type !== 'line') {
-        obj.set({ stroke: null });
-      }
+    // Outline is conveyed purely through the fill color (texture-outline's
+    // own proofing color vs. plain texture's) — not by adding a real
+    // stroke to the canvas object itself, which would leave a visible
+    // border sitting on top of the hatch fill in the editor. The actual
+    // traced outline line is drawn separately for the Mockup/Renderings
+    // preview (see styleForRender's own `obj.cardFinishOutline` check),
+    // so nothing here needs the object's own stroke channel to convey it.
+    if (finish === 'texture' && obj.type !== 'line') {
+      obj.set({ stroke: null });
     }
   }
   // Applying a finish to a group (or a multi-object selection) sets it on
@@ -3181,15 +3949,104 @@ if (fabricCanvasEl && window.fabric) {
   // its own (via the Layers panel — see selectNestedObject) and changing
   // it only ever reaches this with that one object, so it stays scoped
   // to just that object, same as any plain shape.
-  function applyFinishCascade(obj, finish, textureAmount, outline) {
+  function applyFinishCascade(obj, finish, textureAmount, outline, angle) {
     if (obj.type === 'activeSelection') {
-      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount, outline));
+      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount, outline, angle));
       return;
     }
-    applyFinishToOne(obj, finish, textureAmount, outline);
+    applyFinishToOne(obj, finish, textureAmount, outline, angle);
     if (obj.type === 'group') {
-      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount, outline));
+      obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount, outline, angle));
     }
+  }
+  // ---- Metallic finish vs. a Silver card blank ----
+  // Metallic finish is a proofing stand-in for "leave the aluminum bare"
+  // — on a Silver blank that's the card's own native color already, so
+  // engraving it "Metallic" would be a no-op (metal on identical metal,
+  // invisible). Disabled outright in the toolbar while Silver is
+  // selected (see updateFinishAvailability, wired up by the card-type
+  // picker below), and any object already set to Metallic — whether
+  // already on the canvas or baked into a template about to load — falls
+  // back to White instead, the same default everything else starts at.
+  function isSilverCardTypeSelected() {
+    const entry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+    return !!entry && entry.color === 'Silver';
+  }
+  function updateFinishAvailability() {
+    const metallicBtn = document.querySelector('.editor-finish-btn[data-finish="metallic"]');
+    if (metallicBtn) metallicBtn.disabled = isSilverCardTypeSelected();
+  }
+  // Walks a plain (already-parsed, not live Fabric) object list — as
+  // found in a JSON snapshot's `objects` array, recursing into any
+  // group's own nested `objects` — demoting every Metallic entry to
+  // White in place, mirroring applyFinishColor's fill-vs-stroke channel
+  // logic by hand since these are plain data objects, not real Fabric
+  // instances with a `.set()`. Returns whether anything changed.
+  function recolorMetallicToWhiteInObjectList(objs) {
+    if (!Array.isArray(objs)) return false;
+    let changed = false;
+    objs.forEach((o) => {
+      if (o && o.cardFinish === 'metallic') {
+        o.cardFinish = 'white';
+        const color = FINISH_COLORS.white;
+        const hasFill = !!o.fill && o.fill !== 'none';
+        const hasStroke = !!o.stroke && o.stroke !== 'none';
+        if (hasFill) o.fill = color;
+        if (hasStroke) o.stroke = color;
+        if (!hasFill && !hasStroke) o.fill = color;
+        changed = true;
+      }
+      if (o && Array.isArray(o.objects) && recolorMetallicToWhiteInObjectList(o.objects)) changed = true;
+    });
+    return changed;
+  }
+  // Deep-clones a template/import side snapshot (a plain object, e.g.
+  // window.CARD_TEMPLATES[i].front) with Metallic demoted to White —
+  // cloned so the shared template data itself is never mutated, since a
+  // later load under a non-Silver card type should still offer Metallic
+  // as that template originally intended.
+  function demoteMetallicFinishesInSnapshot(snapshot) {
+    if (!snapshot) return snapshot;
+    const clone = JSON.parse(JSON.stringify(snapshot));
+    recolorMetallicToWhiteInObjectList(clone.objects);
+    return clone;
+  }
+  // Demotes Metallic->White on whatever's live on the canvas right now
+  // (the current side), pushing one history step if anything actually
+  // changed.
+  function demoteMetallicToWhiteOnCurrentCanvas() {
+    let changed = false;
+    function walk(obj) {
+      if (obj.cardFinish === 'metallic') {
+        applyFinishToOne(obj, 'white');
+        changed = true;
+      }
+      if (obj.type === 'group' && obj.getObjects) obj.getObjects().forEach(walk);
+    }
+    fabricCanvas.getObjects().forEach(walk);
+    if (changed) {
+      fabricCanvas.requestRenderAll();
+      refreshLayersList();
+      refreshFinishUI(fabricCanvas.getActiveObject());
+      pushHistory();
+    }
+    return changed;
+  }
+  // Same demotion, but for whichever side(s) *aren't* currently loaded
+  // into the live canvas — their last snapshot just sits as a JSON string
+  // in sideHistories until switched to, so it's patched directly there.
+  function demoteMetallicToWhiteInOtherSides() {
+    Object.keys(sideHistories).forEach((side) => {
+      if (side === currentSide) return;
+      const hist = sideHistories[side];
+      if (!hist || !hist.undo.length) return;
+      const lastStr = hist.undo[hist.undo.length - 1];
+      let data;
+      try { data = JSON.parse(lastStr); } catch (e) { return; }
+      if (recolorMetallicToWhiteInObjectList(data.objects)) {
+        hist.undo[hist.undo.length - 1] = JSON.stringify(data);
+      }
+    });
   }
   function refreshFinishUI(obj) {
     const finish = getFinish(obj);
@@ -3199,6 +4056,7 @@ if (fabricCanvasEl && window.fabric) {
     if (finishTextureRange) finishTextureRange.value = textureAmount;
     if (finishTextureValue) finishTextureValue.value = textureAmount;
     if (finishTextureOutline) finishTextureOutline.checked = !!(obj && obj.cardFinishOutline);
+    if (finishTextureAngle) finishTextureAngle.value = String((obj && obj.cardFinishAngle) || 45);
   }
   // Shared by the slider and the typed number box, which stay in sync
   // with each other. `commit` pushes history — used once dragging/typing
@@ -3210,7 +4068,7 @@ if (fabricCanvasEl && window.fabric) {
     if (finishTextureValue) finishTextureValue.value = clamped;
     const obj = fabricCanvas.getActiveObject();
     if (!obj || obj.cardFinish !== 'texture') return;
-    applyFinishCascade(obj, 'texture', clamped, obj.cardFinishOutline);
+    applyFinishCascade(obj, 'texture', clamped, obj.cardFinishOutline, obj.cardFinishAngle);
     fabricCanvas.requestRenderAll();
     refreshLayersList();
     if (commit) pushHistory();
@@ -3218,7 +4076,16 @@ if (fabricCanvasEl && window.fabric) {
   function setTextureOutline(checked) {
     const obj = fabricCanvas.getActiveObject();
     if (!obj || obj.cardFinish !== 'texture') return;
-    applyFinishCascade(obj, 'texture', obj.cardFinishTexture, checked);
+    applyFinishCascade(obj, 'texture', obj.cardFinishTexture, checked, obj.cardFinishAngle);
+    fabricCanvas.requestRenderAll();
+    refreshLayersList();
+    pushHistory();
+  }
+  function setTextureAngle(rawValue) {
+    const angle = parseInt(rawValue, 10) === 90 ? 90 : 45;
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj || obj.cardFinish !== 'texture') return;
+    applyFinishCascade(obj, 'texture', obj.cardFinishTexture, obj.cardFinishOutline, angle);
     fabricCanvas.requestRenderAll();
     refreshLayersList();
     pushHistory();
@@ -3335,6 +4202,7 @@ if (fabricCanvasEl && window.fabric) {
   const helpCalloutTopRight = document.getElementById('help-callout-top-right');
   const helpCalloutBottom = document.getElementById('help-callout-bottom');
   const helpCalloutPrice = document.getElementById('help-callout-price');
+  const helpCalloutCardType = document.getElementById('help-callout-cardtype');
   function positionHelpCallouts() {
     const toolbarEl = document.querySelector('.editor-toolbar');
     const toolGroups = document.querySelectorAll('.editor-toolbar .editor-tool-group');
@@ -3375,6 +4243,11 @@ if (fabricCanvasEl && window.fabric) {
       helpCalloutPrice.style.left = `${r.right - 240}px`;
       helpCalloutPrice.style.bottom = `${window.innerHeight - r.top + 12}px`;
     }
+    if (cardTypeToggleBtn && helpCalloutCardType) {
+      const r = cardTypeToggleBtn.getBoundingClientRect();
+      helpCalloutCardType.style.left = `${r.left + r.width / 2}px`;
+      helpCalloutCardType.style.bottom = `${window.innerHeight - r.top + 12}px`;
+    }
   }
   function isHelpModeOpen() {
     return !!(helpOverlay && helpOverlay.classList.contains('is-open'));
@@ -3408,7 +4281,8 @@ if (fabricCanvasEl && window.fabric) {
       if (!obj) return;
       const textureAmount = finish === 'texture' ? (finishTextureRange ? parseInt(finishTextureRange.value, 10) : 25) : undefined;
       const outline = finish === 'texture' && finishTextureOutline ? finishTextureOutline.checked : false;
-      applyFinishCascade(obj, finish, textureAmount, outline);
+      const angle = finish === 'texture' && finishTextureAngle ? parseInt(finishTextureAngle.value, 10) : undefined;
+      applyFinishCascade(obj, finish, textureAmount, outline, angle);
       fabricCanvas.requestRenderAll();
       refreshLayersList();
       pushHistory();
@@ -3427,6 +4301,9 @@ if (fabricCanvasEl && window.fabric) {
   }
   if (finishTextureOutline) {
     finishTextureOutline.addEventListener('change', () => setTextureOutline(finishTextureOutline.checked));
+  }
+  if (finishTextureAngle) {
+    finishTextureAngle.addEventListener('change', () => setTextureAngle(finishTextureAngle.value));
   }
   // "What are these?" — placeholder popup until a real reference image
   // is dropped in.
@@ -3514,7 +4391,12 @@ if (fabricCanvasEl && window.fabric) {
       label.textContent = sideLabel;
       wrap.appendChild(label);
     }
-    paintCardPreview(canvas, snapshot);
+    // Same demotion as an actual load (see the card click handler below)
+    // — a Metallic accent would already read as White the instant this
+    // template's loaded onto a Silver card, so the gallery thumbnail
+    // should show that up front rather than a metallic preview that's
+    // about to change color the moment it's picked.
+    paintCardPreview(canvas, isSilverCardTypeSelected() ? demoteMetallicFinishesInSnapshot(snapshot) : snapshot);
     return wrap;
   }
   function buildTemplateCard(entry) {
@@ -3536,7 +4418,14 @@ if (fabricCanvasEl && window.fabric) {
     card.addEventListener('click', () => {
       const hasExistingWork = undoStack.length > 1 || projectHasBackSide();
       if (hasExistingWork && !confirm('Loading this template will replace your current design. Continue?')) return;
-      importProjectData({ app: 'business-card-editor', version: 1, currentSide: 'front', front: entry.front, back: entry.back });
+      // A template's own baked-in Metallic finishes (several use it as a
+      // default) would be invisible metal-on-metal on a Silver card, same
+      // as a manually-applied one — demote to White on the way in rather
+      // than loading it and immediately having to fix it.
+      const silver = isSilverCardTypeSelected();
+      const front = silver ? demoteMetallicFinishesInSnapshot(entry.front) : entry.front;
+      const back = silver ? demoteMetallicFinishesInSnapshot(entry.back) : entry.back;
+      importProjectData({ app: 'business-card-editor', version: 1, currentSide: 'front', front, back });
       closeTemplatesModal();
     });
     return card;
@@ -3560,6 +4449,133 @@ if (fabricCanvasEl && window.fabric) {
       if (e.target === templatesModal) closeTemplatesModal();
     });
   }
+
+  // ---- Card type picker ----
+  // Entries come from window.CARD_TYPES (card-types/card-types-data.js)
+  // — the physical aluminum blank (color + thickness), chosen separately
+  // from the design template above it. Purely a selection UI for now:
+  // picking one just updates the bottom-bar button, it doesn't touch the
+  // canvas or feed into pricing yet.
+  const cardTypeToggleBtn = document.getElementById('toggle-card-type');
+  const cardTypeModal = document.getElementById('card-type-modal');
+  const cardTypeModalClose = document.getElementById('card-type-modal-close');
+  const cardTypeGrid = document.getElementById('card-type-grid');
+  const cardTypeBtnSwatch = document.getElementById('card-type-btn-swatch');
+  const cardTypeBtnValue = document.getElementById('card-type-btn-value');
+  function closeCardTypeModal() {
+    if (!cardTypeModal) return;
+    cardTypeModal.classList.remove('is-open');
+    cardTypeModal.setAttribute('aria-hidden', 'true');
+  }
+  function updateCardTypeButton() {
+    if (!cardTypeBtnValue) return;
+    const entry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+    if (!entry) {
+      cardTypeBtnValue.textContent = 'Choose color & thickness';
+      if (cardTypeBtnSwatch) cardTypeBtnSwatch.style.background = '#3a3a3a';
+      return;
+    }
+    cardTypeBtnValue.textContent = `${entry.color} · ${entry.thicknessIn} (${entry.thicknessMm})`;
+    if (cardTypeBtnSwatch) cardTypeBtnSwatch.style.background = entry.swatch;
+  }
+  // One row per color, with its two thickness options (0.4mm, 0.8mm)
+  // shown side by side within that row — same left/right pairing as the
+  // templates gallery's front/back preview, but here the pair is the
+  // two thicknesses of the same color rather than two sides of one design.
+  function buildCardTypeOption(entry) {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'editor-cardtype-option';
+    if (entry.id === selectedCardTypeId) option.classList.add('is-selected');
+    const preview = document.createElement('div');
+    preview.className = 'editor-cardtype-option-preview';
+    if (entry.photo) {
+      preview.style.backgroundImage = `url(${entry.photo})`;
+    } else {
+      // No product photo yet -- render a brushed-aluminum swatch in the
+      // real anodized color instead of a flat placeholder chip.
+      const canvas = document.createElement('canvas');
+      canvas.className = 'editor-cardtype-option-preview-canvas';
+      canvas.width = 680;
+      canvas.height = Math.round(680 * (CARD_H_PX / CARD_W_PX));
+      preview.appendChild(canvas);
+      paintCardTypeSwatch(canvas, entry.swatch);
+    }
+    const thickness = document.createElement('span');
+    thickness.className = 'editor-cardtype-option-thickness';
+    thickness.textContent = `${entry.thicknessIn} (${entry.thicknessMm})`;
+    option.appendChild(preview);
+    option.appendChild(thickness);
+    option.addEventListener('click', () => {
+      selectedCardTypeId = entry.id;
+      updateCardTypeButton();
+      cardTypeGrid.querySelectorAll('.editor-cardtype-option.is-selected').forEach((el) => el.classList.remove('is-selected'));
+      option.classList.add('is-selected');
+      closeCardTypeModal();
+      updateFinishAvailability();
+      // Silver is the same color as the Metallic finish itself, so any
+      // Metallic object already on the card (either side) falls back to
+      // White the moment Silver becomes the selected card type.
+      if (isSilverCardTypeSelected()) {
+        demoteMetallicToWhiteOnCurrentCanvas();
+        demoteMetallicToWhiteInOtherSides();
+      }
+      // The Mockup panel's aluminum-card color needs to match the newly
+      // picked type right away — re-paint whichever side(s) currently
+      // exist (renderCardPreview no-ops harmlessly on a side with no
+      // canvas yet, i.e. before Back has been added).
+      renderCardPreview('front');
+      renderCardPreview('back');
+    });
+    return option;
+  }
+  function buildCardTypeRow(colorGroup) {
+    const row = document.createElement('div');
+    row.className = 'editor-cardtype-row';
+    const label = document.createElement('span');
+    label.className = 'editor-cardtype-row-color';
+    label.textContent = colorGroup.color;
+    const options = document.createElement('div');
+    options.className = 'editor-cardtype-row-options';
+    colorGroup.entries.forEach((entry) => options.appendChild(buildCardTypeOption(entry)));
+    row.appendChild(label);
+    row.appendChild(options);
+    return row;
+  }
+  function groupCardTypesByColor(types) {
+    const groups = [];
+    const byColor = new Map();
+    types.forEach((entry) => {
+      if (!byColor.has(entry.color)) {
+        const group = { color: entry.color, entries: [] };
+        byColor.set(entry.color, group);
+        groups.push(group);
+      }
+      byColor.get(entry.color).entries.push(entry);
+    });
+    return groups;
+  }
+  function openCardTypeModal() {
+    if (!cardTypeModal || !cardTypeGrid) return;
+    cardTypeModal.classList.add('is-open');
+    cardTypeModal.setAttribute('aria-hidden', 'false');
+    cardTypeGrid.innerHTML = '';
+    const types = window.CARD_TYPES || [];
+    if (!types.length) {
+      cardTypeGrid.innerHTML = '<p class="editor-side-panel-empty">No card types available.</p>';
+      return;
+    }
+    groupCardTypesByColor(types).forEach((group) => cardTypeGrid.appendChild(buildCardTypeRow(group)));
+  }
+  if (cardTypeToggleBtn) cardTypeToggleBtn.addEventListener('click', openCardTypeModal);
+  if (cardTypeModalClose) cardTypeModalClose.addEventListener('click', closeCardTypeModal);
+  if (cardTypeModal) {
+    cardTypeModal.addEventListener('mousedown', (e) => {
+      if (e.target === cardTypeModal) closeCardTypeModal();
+    });
+  }
+  updateCardTypeButton();
+  updateFinishAvailability();
 
   function handleSelection(e) {
     // getActiveObject() first, not e.selected[0]: for a multi-selection,
@@ -4055,6 +5071,7 @@ if (fabricCanvasEl && window.fabric) {
       strokeAlign: obj.strokeAlign, _strokeWidthPx: obj._strokeWidthPx,
       strokeDashArray: obj.strokeDashArray,
       cardFinish: obj.cardFinish, cardFinishTexture: obj.cardFinishTexture, cardFinishOutline: obj.cardFinishOutline,
+      cardFinishAngle: obj.cardFinishAngle,
     });
     const index = fabricCanvas.getObjects().indexOf(obj);
     fabricCanvas.remove(obj);
