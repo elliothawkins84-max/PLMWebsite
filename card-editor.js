@@ -1306,6 +1306,51 @@ if (fabricCanvasEl && window.fabric) {
     pushHistory();
   }
 
+  // ---- Copy / Paste ----
+  // In-memory only (no OS clipboard access needed) — stores plain object
+  // data via toObject(), the same serialization undo/redo snapshots use,
+  // so custom props (cardFinish, etc.) and whole groups round-trip
+  // correctly. Re-cloning from that stored data on every paste (rather
+  // than cloning the live object once) means the same copy can be pasted
+  // repeatedly, each one independent of the others.
+  let clipboardObjects = null;
+  let pasteOffsetStep = 0;
+  const PASTE_OFFSET_PX = 24;
+  function copyActiveObjects() {
+    const active = fabricCanvas.getActiveObject();
+    if (!active || active.isEditing) return;
+    const objects = active.type === 'activeSelection' ? active.getObjects() : [active];
+    clipboardObjects = objects.map((o) => o.toObject(HISTORY_PROPS));
+    pasteOffsetStep = 0;
+  }
+  function pasteClipboard() {
+    if (!clipboardObjects || !clipboardObjects.length) return;
+    pasteOffsetStep += 1;
+    const offset = PASTE_OFFSET_PX * pasteOffsetStep;
+    // Deep-clone the stored data first — enlivenObjects mutates/consumes
+    // it in ways that make the stored copy unsafe to reuse a second time
+    // otherwise.
+    const data = JSON.parse(JSON.stringify(clipboardObjects));
+    fabric.util.enlivenObjects(data, (enlivened) => {
+      if (!enlivened.length) return;
+      suppressHistoryEvents = true;
+      enlivened.forEach((obj) => {
+        obj.set({ left: (obj.left || 0) + offset, top: (obj.top || 0) + offset });
+        obj.setCoords();
+        fabricCanvas.add(obj);
+      });
+      suppressHistoryEvents = false;
+      if (enlivened.length === 1) {
+        fabricCanvas.setActiveObject(enlivened[0]);
+      } else {
+        fabricCanvas.setActiveObject(new fabric.ActiveSelection(enlivened, { canvas: fabricCanvas }));
+      }
+      fabricCanvas.requestRenderAll();
+      refreshLayersList();
+      pushHistory();
+    });
+  }
+
   // ---- Undo / Redo ----
   // Whole-canvas JSON snapshots rather than a diff/command log — simplest
   // way to cover every kind of edit in this file (drags, field commits,
@@ -2122,9 +2167,345 @@ if (fabricCanvasEl && window.fabric) {
   // rectangle its stroke actually renders as. A Group (manual, or an
   // imported SVG) is eligible too — its children are flattened into one
   // combined set of regions, recursively, so an imported design can be
-  // unioned/subtracted as a whole. Text isn't converted to outlines, so
-  // that's the only common shape left out.
-  const BOOLEAN_ELIGIBLE_TYPES = ['rect', 'circle', 'ellipse', 'triangle', 'path', 'polygon', 'polyline', 'line', 'group'];
+  // unioned/subtracted as a whole. Text has no polygon data of its own
+  // either — this uses the real font file's own glyph curves when one is
+  // available (see exactTextOutlineRingsFor/getOpentypeFontFor), and
+  // falls back to tracing its own rendered pixels otherwise (see
+  // tracedTextOutlineRingsFor) — a browser only ever hands a page the
+  // actual font file bytes for a locally-installed font that the user
+  // explicitly loaded via "Load system fonts" (Local Font Access API,
+  // Chrome/Edge only); every other font (the default list, or any font
+  // in Safari/Firefox) can only ever be traced.
+  const BOOLEAN_ELIGIBLE_TYPES = ['rect', 'circle', 'ellipse', 'triangle', 'path', 'polygon', 'polyline', 'line', 'group', 'i-text'];
+  // ---- Text -> outline rings (for Union/Subtract) ----
+  // There's no font-outline parser here, so instead of real glyph curves
+  // this rasterizes the text using the same canvas 2D text renderer that
+  // draws it on screen (so multi-line layout, alignment, and font all
+  // match what's visible), then traces the antialiased shape into
+  // polygon rings: Moore-neighbor boundary tracing per foreground blob
+  // for the outer contour of each glyph, plus the same tracing applied to
+  // any fully-enclosed background pocket (found by flood-filling in from
+  // the raster's own edges and taking whatever's left unreached) for
+  // letter counters like the hole in "e"/"o"/"8". Rendered at several
+  // pixels per local unit and then Douglas-Peucker-simplified and
+  // Chaikin-smoothed, which turns the raw pixel-grid staircase into a
+  // reasonably smooth curve without needing real glyph math. Known
+  // limitations, both acceptable for a "turn this into a shape so it can
+  // be combined" action rather than a typographic tool: per-character
+  // style overrides aren't reflected (one font/weight/style for the
+  // whole object, matching how these templates actually use text), and
+  // letter-spacing (charSpacing) isn't applied.
+  const TEXT_OUTLINE_SUPERSAMPLE = 6; // raster px per local unit
+  const TEXT_OUTLINE_SIMPLIFY_EPS = TEXT_OUTLINE_SUPERSAMPLE * 0.6;
+  // Deliberately just 1 pass, not 2+: each Chaikin pass doubles the point
+  // count, and a densely-pointed evenodd path (like a Union/Subtract
+  // result with a letter-shaped hole) renders visibly warped wherever the
+  // Mockup preview's texture finish applies its hatch pattern as a
+  // fabric.Pattern fill — confirmed by comparing rendered output at 0/1/2
+  // iterations at real preview resolution; a plain solid fill of the same
+  // path never showed it, so it's specific to pattern-fill rendering of
+  // a dense point cloud, not the traced geometry itself. 1 iteration
+  // still rounds off the pixel-grid staircase without tripping this.
+  const TEXT_OUTLINE_SMOOTH_ITERATIONS = 1;
+  const TEXT_OUTLINE_DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+  function rasterizeTextMask(obj) {
+    const scale = TEXT_OUTLINE_SUPERSAMPLE;
+    const w = Math.max(2, Math.round(obj.width * scale));
+    const h = Math.max(2, Math.round(obj.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.textBaseline = 'alphabetic';
+    const weight = obj.fontWeight && obj.fontWeight !== 'normal' ? `${obj.fontWeight} ` : '';
+    const style = obj.fontStyle === 'italic' ? 'italic ' : '';
+    ctx.font = `${style}${weight}${obj.fontSize * scale}px ${obj.fontFamily || 'Arial'}`;
+    ctx.textAlign = obj.textAlign === 'right' ? 'right' : (obj.textAlign === 'center' ? 'center' : 'left');
+    const lines = String(obj.text || '').split('\n');
+    const lineHeightPx = h / Math.max(1, lines.length);
+    lines.forEach((line, i) => {
+      const x = ctx.textAlign === 'center' ? w / 2 : (ctx.textAlign === 'right' ? w : 0);
+      ctx.fillText(line, x, lineHeightPx * i + lineHeightPx * 0.8);
+    });
+    const { data } = ctx.getImageData(0, 0, w, h);
+    const mask = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) mask[i] = data[i * 4 + 3] > 128 ? 1 : 0;
+    return { mask, w, h };
+  }
+  // Traces one closed boundary starting at (sx,sy) — a pixel where
+  // `inside` first becomes true when scanning a row left-to-right — by
+  // walking its 8-neighborhood clockwise, always resuming the scan just
+  // past the direction it arrived from. Works identically for an outer
+  // glyph edge (inside = ink) and a hole edge (inside = enclosed
+  // background), so the same function traces both.
+  function traceOutlineBoundary(inside, w, h, sx, sy) {
+    const points = [];
+    let cx = sx;
+    let cy = sy;
+    let enterDir = 0;
+    const first = [cx, cy];
+    let guard = 0;
+    while (guard++ < w * h * 2 + 8) {
+      points.push([cx, cy]);
+      const backDir = (enterDir + 4) % 8;
+      let found = null;
+      let foundDir = null;
+      for (let k = 1; k <= 8; k++) {
+        const dIdx = (backDir + k) % 8;
+        const [dx, dy] = TEXT_OUTLINE_DIRS[dIdx];
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (inside(nx, ny)) {
+          found = [nx, ny];
+          foundDir = dIdx;
+          break;
+        }
+      }
+      if (!found) break;
+      [cx, cy] = found;
+      enterDir = foundDir;
+      if (cx === first[0] && cy === first[1]) break;
+    }
+    return points;
+  }
+  function floodFillPred(w, h, sx, sy, pred, visited) {
+    const stack = [[sx, sy]];
+    visited[sy * w + sx] = 1;
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+        const idx = ny * w + nx;
+        if (visited[idx] || !pred(nx, ny)) return;
+        visited[idx] = 1;
+        stack.push([nx, ny]);
+      });
+    }
+  }
+  // Standard Ramer-Douglas-Peucker simplification of an open point chain.
+  function simplifyPoints(points, eps) {
+    if (points.length < 3) return points;
+    function rdp(pts) {
+      let dmax = 0;
+      let idx = 0;
+      const [x1, y1] = pts[0];
+      const [x2, y2] = pts[pts.length - 1];
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const [x0, y0] = pts[i];
+        const d = Math.abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1) / len;
+        if (d > dmax) { dmax = d; idx = i; }
+      }
+      if (dmax > eps) {
+        const left = rdp(pts.slice(0, idx + 1));
+        const right = rdp(pts.slice(idx));
+        return left.slice(0, -1).concat(right);
+      }
+      return [pts[0], pts[pts.length - 1]];
+    }
+    return rdp(points);
+  }
+  // Chaikin corner-cutting on a closed ring — rounds the pixel-grid
+  // staircase left over from tracing into a smooth curve.
+  function smoothRing(points, iterations) {
+    let pts = points;
+    for (let it = 0; it < iterations; it++) {
+      const next = [];
+      const n = pts.length;
+      for (let i = 0; i < n; i++) {
+        const [x0, y0] = pts[i];
+        const [x1, y1] = pts[(i + 1) % n];
+        next.push([x0 * 0.75 + x1 * 0.25, y0 * 0.75 + y1 * 0.25]);
+        next.push([x0 * 0.25 + x1 * 0.75, y0 * 0.25 + y1 * 0.75]);
+      }
+      pts = next;
+    }
+    return pts;
+  }
+  // Full pipeline: rasterize -> trace every glyph's outer contour and
+  // every enclosed counter (hole) -> simplify -> smooth -> convert from
+  // raster-pixel space into the same object-local, origin-centered
+  // coordinate space every other shape in localPolygonsFor below uses.
+  // This is the fallback path — an approximation from pixels, used
+  // whenever real glyph curves aren't available (see
+  // exactTextOutlineRingsFor/getOpentypeFontFor below for when they are).
+  function tracedTextOutlineRingsFor(obj) {
+    const { mask, w, h } = rasterizeTextMask(obj);
+    const get = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : mask[y * w + x]);
+    const fgVisited = new Uint8Array(w * h);
+    const outerRings = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (get(x, y) === 1 && get(x - 1, y) === 0 && !fgVisited[y * w + x]) {
+          outerRings.push(traceOutlineBoundary((nx, ny) => get(nx, ny) === 1, w, h, x, y));
+          floodFillPred(w, h, x, y, (nx, ny) => get(nx, ny) === 1, fgVisited);
+        }
+      }
+    }
+    const outsideVisited = new Uint8Array(w * h);
+    const isBg = (x, y) => get(x, y) === 0;
+    for (let x = 0; x < w; x++) {
+      if (isBg(x, 0) && !outsideVisited[x]) floodFillPred(w, h, x, 0, isBg, outsideVisited);
+      if (isBg(x, h - 1) && !outsideVisited[(h - 1) * w + x]) floodFillPred(w, h, x, h - 1, isBg, outsideVisited);
+    }
+    for (let y = 0; y < h; y++) {
+      if (isBg(0, y) && !outsideVisited[y * w]) floodFillPred(w, h, 0, y, isBg, outsideVisited);
+      if (isBg(w - 1, y) && !outsideVisited[y * w + w - 1]) floodFillPred(w, h, w - 1, y, isBg, outsideVisited);
+    }
+    const isHole = (x, y) => get(x, y) === 0 && !outsideVisited[y * w + x];
+    const holeVisited = new Uint8Array(w * h);
+    const holeRings = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (isHole(x, y) && !isHole(x - 1, y) && !holeVisited[y * w + x]) {
+          holeRings.push(traceOutlineBoundary(isHole, w, h, x, y));
+          floodFillPred(w, h, x, y, isHole, holeVisited);
+        }
+      }
+    }
+    const toLocal = (ring) => smoothRing(simplifyPoints(ring, TEXT_OUTLINE_SIMPLIFY_EPS), TEXT_OUTLINE_SMOOTH_ITERATIONS)
+      .map(([px, py]) => [px / TEXT_OUTLINE_SUPERSAMPLE - obj.width / 2, py / TEXT_OUTLINE_SUPERSAMPLE - obj.height / 2]);
+    return outerRings.map(toLocal).concat(holeRings.map(toLocal));
+  }
+  // ---- Text -> outline rings, exact path (real font file available) ----
+  // The Local Font Access API (see "Load system fonts" below) can hand
+  // back the actual font file bytes for a locally-installed font, not
+  // just permission to display it — opentype.js (CDN, see
+  // card-editor.html) parses those bytes and returns real glyph curves
+  // straight from the font's own outline data. When that's available,
+  // this replaces the raster-trace approximation above with exact
+  // bezier curves, reusing the same cubic/quadratic flattening already
+  // used for imported SVG paths (pushCubicBezier/pushQuadraticBezier
+  // below) so the output is a normal set of polygon rings PolyBool can
+  // consume, just like every other shape. This can't cover bold/italic
+  // run-in mid-string (one font file = one style) or per-character
+  // style overrides — the same limitation the traced fallback has.
+  function ringsFromOpentypePath(path) {
+    const rings = [];
+    let current = null;
+    let cx = 0;
+    let cy = 0;
+    path.commands.forEach((cmd) => {
+      if (cmd.type === 'M') {
+        current = [];
+        rings.push(current);
+        cx = cmd.x; cy = cmd.y;
+        current.push([cx, cy]);
+      } else if (cmd.type === 'L' && current) {
+        cx = cmd.x; cy = cmd.y;
+        current.push([cx, cy]);
+      } else if (cmd.type === 'C' && current) {
+        pushCubicBezier(current, [cx, cy], [cmd.x1, cmd.y1], [cmd.x2, cmd.y2], [cmd.x, cmd.y]);
+        cx = cmd.x; cy = cmd.y;
+      } else if (cmd.type === 'Q' && current) {
+        pushQuadraticBezier(current, [cx, cy], [cmd.x1, cmd.y1], [cmd.x, cmd.y]);
+        cx = cmd.x; cy = cmd.y;
+      }
+    });
+    return rings;
+  }
+  function exactTextOutlineRingsFor(obj, otFont) {
+    const fontSize = obj.fontSize;
+    const lines = String(obj.text || '').split('\n');
+    const lineHeightPx = obj.height / Math.max(1, lines.length);
+    const align = obj.textAlign === 'right' ? 'right' : (obj.textAlign === 'center' ? 'center' : 'left');
+    let rings = [];
+    lines.forEach((line, i) => {
+      if (!line) return;
+      const advance = otFont.getAdvanceWidth(line, fontSize);
+      let x = 0;
+      if (align === 'center') x = (obj.width - advance) / 2;
+      else if (align === 'right') x = obj.width - advance;
+      const baselineY = lineHeightPx * i + lineHeightPx * 0.8;
+      rings = rings.concat(ringsFromOpentypePath(otFont.getPath(line, x, baselineY, fontSize)));
+    });
+    return rings.map((ring) => ring.map(([x, y]) => [x - obj.width / 2, y - obj.height / 2]));
+  }
+  // Single entry point localPolygonsFor calls for any i-text object.
+  // `otFont`, when present, is an already-resolved opentype.Font — see
+  // getOpentypeFontFor/resolveTextFonts below for how callers get one
+  // (it requires an async font-file fetch, so it's always resolved
+  // ahead of time, never inside this synchronous function). Falls back
+  // to the raster trace if there's no real font, or if the exact path
+  // throws for some reason (e.g. a character the font doesn't cover).
+  function textOutlineRingsFor(obj, otFont) {
+    if (otFont) {
+      try {
+        return exactTextOutlineRingsFor(obj, otFont);
+      } catch (err) {
+        console.warn('Exact font outline failed, falling back to traced approximation:', err);
+      }
+    }
+    return tracedTextOutlineRingsFor(obj);
+  }
+  // ---- Local font file access (for exact text outlines above) ----
+  // Populated by the "Load system fonts" button below, which is the only
+  // moment this page has permission to ask for real font files rather
+  // than just display names. Keyed by family, since a family can have
+  // several installed styles (Regular/Bold/Italic/...) each as its own
+  // FontData with its own real file.
+  const localFontDataByFamily = new Map();
+  // FontData -> Promise<opentype.Font|null>, so the same font file is
+  // only ever fetched and parsed once no matter how many text objects
+  // or repeated Union/Subtract calls use it.
+  const parsedOpentypeFontCache = new Map();
+  function pickBestFontData(family, weight, style) {
+    const candidates = localFontDataByFamily.get(family);
+    if (!candidates || !candidates.length) return null;
+    const wantBold = weight === 'bold' || (typeof weight === 'number' && weight >= 600) || parseInt(weight, 10) >= 600;
+    const wantItalic = style === 'italic';
+    const match = candidates.find((f) => {
+      const s = (f.style || '').toLowerCase();
+      return Boolean(wantBold) === s.includes('bold') && Boolean(wantItalic) === s.includes('italic');
+    });
+    return match || candidates.find((f) => (f.style || '').toLowerCase() === 'regular') || candidates[0];
+  }
+  async function getOpentypeFontFor(obj) {
+    if (typeof opentype === 'undefined') return null;
+    const fontData = pickBestFontData(obj.fontFamily, obj.fontWeight, obj.fontStyle);
+    if (!fontData) return null;
+    if (parsedOpentypeFontCache.has(fontData)) return parsedOpentypeFontCache.get(fontData);
+    const promise = (async () => {
+      try {
+        const blob = await fontData.blob();
+        const buffer = await blob.arrayBuffer();
+        return opentype.parse(buffer);
+      } catch (err) {
+        console.warn('Could not read local font file, falling back to traced outline:', err);
+        return null;
+      }
+    })();
+    parsedOpentypeFontCache.set(fontData, promise);
+    return promise;
+  }
+  // Every i-text object anywhere in the selection, including nested
+  // inside a group — mirrors how absolutePolygonsFor recurses into
+  // groups below, so nothing gets missed just because it's grouped.
+  function collectTextObjects(objs) {
+    const result = [];
+    objs.forEach((o) => {
+      if (o.type === 'i-text') result.push(o);
+      else if (o.type === 'group') result.push(...collectTextObjects(o.getObjects()));
+    });
+    return result;
+  }
+  // Resolves an opentype.Font for every text object in the selection up
+  // front (the only async step in the whole Union/Subtract pipeline),
+  // returning a plain Map the rest of the — synchronous — pipeline reads
+  // from instead of ever awaiting anything itself.
+  async function resolveTextFonts(objs) {
+    const textObjs = collectTextObjects(objs);
+    const fontCache = new Map();
+    await Promise.all(textObjs.map(async (obj) => {
+      fontCache.set(obj, await getOpentypeFontFor(obj));
+    }));
+    return fontCache;
+  }
   const CIRCLE_APPROXIMATION_SEGMENTS = 90;
   const CURVE_APPROXIMATION_SEGMENTS = 16;
   function pushCubicBezier(out, p0, p1, p2, p3) {
@@ -2147,7 +2528,10 @@ if (fabricCanvasEl && window.fabric) {
       ]);
     }
   }
-  function localPolygonsFor(obj) {
+  function localPolygonsFor(obj, fontCache) {
+    if (obj.type === 'i-text') {
+      return textOutlineRingsFor(obj, fontCache && fontCache.get(obj));
+    }
     if (obj.type === 'circle') {
       const pts = [];
       for (let i = 0; i < CIRCLE_APPROXIMATION_SEGMENTS; i++) {
@@ -2260,12 +2644,12 @@ if (fabricCanvasEl && window.fabric) {
   // with their parent's (Fabric bakes that in via calcTransformMatrix), so
   // each child's absolute polygons can be computed independently and just
   // concatenated — recursing naturally handles nested groups too.
-  function absolutePolygonsFor(obj) {
+  function absolutePolygonsFor(obj, fontCache) {
     if (obj.type === 'group') {
-      return obj.getObjects().flatMap((child) => absolutePolygonsFor(child));
+      return obj.getObjects().flatMap((child) => absolutePolygonsFor(child, fontCache));
     }
     const matrix = obj.calcTransformMatrix();
-    return localPolygonsFor(obj)
+    return localPolygonsFor(obj, fontCache)
       .map(sanitizeRing)
       .filter((ring) => ring.length >= 3)
       .map((ring) => ring.map(([x, y]) => {
@@ -2273,8 +2657,8 @@ if (fabricCanvasEl && window.fabric) {
         return [p.x, p.y];
       }));
   }
-  function polyBoolInputFor(obj) {
-    return { regions: absolutePolygonsFor(obj), inverted: false };
+  function polyBoolInputFor(obj, fontCache) {
+    return { regions: absolutePolygonsFor(obj, fontCache), inverted: false };
   }
   function pathDataFromRegions(regions) {
     return regions.map((ring) => {
@@ -2343,17 +2727,18 @@ if (fabricCanvasEl && window.fabric) {
   // recover from geometrically, so just fail loudly instead of silently
   // (a console-only throw) or leaving the canvas half-changed. Nothing
   // has been mutated yet at the point this can throw in either function.
-  function runUnion() {
+  async function runUnion() {
     const active = fabricCanvas.getActiveObject();
     if (!active) return;
     const selected = active.type === 'activeSelection' ? active.getObjects() : [active];
     const ordered = fabricCanvas.getObjects().filter((o) => selected.includes(o) && BOOLEAN_ELIGIBLE_TYPES.includes(o.type));
     if (ordered.length < 2) return;
+    const fontCache = await resolveTextFonts(ordered);
     let result;
     try {
-      result = polyBoolInputFor(ordered[0]);
+      result = polyBoolInputFor(ordered[0], fontCache);
       for (let i = 1; i < ordered.length; i++) {
-        result = PolyBool.union(result, polyBoolInputFor(ordered[i]));
+        result = PolyBool.union(result, polyBoolInputFor(ordered[i], fontCache));
       }
     } catch (e) {
       alert('Could not combine these shapes — the artwork is too complex for Union to resolve.');
@@ -2365,16 +2750,17 @@ if (fabricCanvasEl && window.fabric) {
   // Subtract needs exactly two objects: the front (top) one's overlap is
   // removed from the back (bottom) one, which is what's left afterward
   // (keeping the bottom object's appearance).
-  function runSubtract() {
+  async function runSubtract() {
     const active = fabricCanvas.getActiveObject();
     if (!active || active.type !== 'activeSelection') return;
     const selected = active.getObjects();
     const ordered = fabricCanvas.getObjects().filter((o) => selected.includes(o) && BOOLEAN_ELIGIBLE_TYPES.includes(o.type));
     if (ordered.length !== 2) return;
     const [bottom, top] = ordered;
+    const fontCache = await resolveTextFonts(ordered);
     let result;
     try {
-      result = PolyBool.difference(polyBoolInputFor(bottom), polyBoolInputFor(top));
+      result = PolyBool.difference(polyBoolInputFor(bottom, fontCache), polyBoolInputFor(top, fontCache));
     } catch (e) {
       alert('Could not subtract these shapes — the artwork is too complex for Subtract to resolve.');
       return;
@@ -3090,6 +3476,91 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
 
+  // ---- Templates gallery ----
+  // Entries come from window.CARD_TEMPLATES (templates/templates-data.js)
+  // — plain data baked into a normal <script> tag rather than fetched as
+  // JSON, since fetch() is blocked outright on a page opened straight
+  // from disk (file://...), a very plausible way this editor gets
+  // tested, while a script tag loads there exactly like it would from a
+  // real server or GitHub Pages. Each entry's front/back is the same
+  // Fabric canvas JSON the Save button produces. Loading one runs it
+  // through importProjectData, same as Import. Previews are painted with
+  // the same paintCardPreview the Mockup panel uses, so a row shows
+  // exactly what the template actually looks like, both sides where it
+  // has two, not just a name.
+  const templatesToggleBtn = document.getElementById('toggle-templates');
+  const templatesModal = document.getElementById('templates-modal');
+  const templatesModalClose = document.getElementById('templates-modal-close');
+  const templatesGrid = document.getElementById('templates-grid');
+  function isTemplatesModalOpen() {
+    return !!(templatesModal && templatesModal.classList.contains('is-open'));
+  }
+  function closeTemplatesModal() {
+    if (!templatesModal) return;
+    templatesModal.classList.remove('is-open');
+    templatesModal.setAttribute('aria-hidden', 'true');
+  }
+  function buildTemplateSidePreview(snapshot, sideLabel) {
+    const wrap = document.createElement('div');
+    wrap.className = 'editor-template-card-side';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'editor-template-card-preview';
+    canvas.width = 258;
+    canvas.height = 162;
+    wrap.appendChild(canvas);
+    if (sideLabel) {
+      const label = document.createElement('span');
+      label.className = 'editor-template-card-side-label';
+      label.textContent = sideLabel;
+      wrap.appendChild(label);
+    }
+    paintCardPreview(canvas, snapshot);
+    return wrap;
+  }
+  function buildTemplateCard(entry) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'editor-template-card';
+    const previews = document.createElement('div');
+    previews.className = 'editor-template-card-previews';
+    previews.appendChild(buildTemplateSidePreview(entry.front, entry.back ? 'Front' : null));
+    if (entry.back) previews.appendChild(buildTemplateSidePreview(entry.back, 'Back'));
+    const info = document.createElement('div');
+    info.className = 'editor-template-card-info';
+    const label = document.createElement('span');
+    label.className = 'editor-template-card-label';
+    label.textContent = entry.name;
+    info.appendChild(label);
+    card.appendChild(previews);
+    card.appendChild(info);
+    card.addEventListener('click', () => {
+      const hasExistingWork = undoStack.length > 1 || projectHasBackSide();
+      if (hasExistingWork && !confirm('Loading this template will replace your current design. Continue?')) return;
+      importProjectData({ app: 'business-card-editor', version: 1, currentSide: 'front', front: entry.front, back: entry.back });
+      closeTemplatesModal();
+    });
+    return card;
+  }
+  function openTemplatesModal() {
+    if (!templatesModal || !templatesGrid) return;
+    templatesModal.classList.add('is-open');
+    templatesModal.setAttribute('aria-hidden', 'false');
+    templatesGrid.innerHTML = '';
+    const templates = window.CARD_TEMPLATES || [];
+    if (!templates.length) {
+      templatesGrid.innerHTML = '<p class="editor-side-panel-empty">No templates available.</p>';
+      return;
+    }
+    templates.forEach((entry) => templatesGrid.appendChild(buildTemplateCard(entry)));
+  }
+  if (templatesToggleBtn) templatesToggleBtn.addEventListener('click', openTemplatesModal);
+  if (templatesModalClose) templatesModalClose.addEventListener('click', closeTemplatesModal);
+  if (templatesModal) {
+    templatesModal.addEventListener('mousedown', (e) => {
+      if (e.target === templatesModal) closeTemplatesModal();
+    });
+  }
+
   function handleSelection(e) {
     // getActiveObject() first, not e.selected[0]: for a multi-selection,
     // e.selected[0] is just one of the newly-selected members, which
@@ -3328,6 +3799,16 @@ if (fabricCanvasEl && window.fabric) {
       loadFontsBtn.addEventListener('click', async () => {
         try {
           const fonts = await window.queryLocalFonts();
+          // Keep the actual FontData objects too (not just names) — each
+          // one's .blob() is the only way this page can ever get the real
+          // font file bytes, which is what lets Union/Subtract trace an
+          // exact glyph outline instead of the raster-trace fallback. See
+          // getOpentypeFontFor.
+          localFontDataByFamily.clear();
+          fonts.forEach((f) => {
+            if (!localFontDataByFamily.has(f.family)) localFontDataByFamily.set(f.family, []);
+            localFontDataByFamily.get(f.family).push(f);
+          });
           const families = [...new Set(fonts.map((f) => f.family))].sort((a, b) => a.localeCompare(b));
           if (!families.length || !fontFamilySelect) return;
           const current = fontFamilySelect.value;
@@ -3687,6 +4168,10 @@ if (fabricCanvasEl && window.fabric) {
       closeSaveAsModal();
       return;
     }
+    if (isTemplatesModalOpen()) {
+      closeTemplatesModal();
+      return;
+    }
     const obj = fabricCanvas.getActiveObject();
     if (obj) {
       if (obj.isEditing) {
@@ -3724,6 +4209,29 @@ if (fabricCanvasEl && window.fabric) {
     deleteActiveObjects();
   });
 
+  // ---- Copy/Paste keyboard shortcuts ----
+  // Skipped in the same cases as Delete above: an input/textarea/select
+  // has focus (native copy/paste should win there), or a text object is
+  // actively being edited (Fabric's own hidden textarea has focus then,
+  // which reports as tag === 'TEXTAREA' too, so it's already covered).
+  document.addEventListener('keydown', (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const key = e.key.toLowerCase();
+    if (key !== 'c' && key !== 'v') return;
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (key === 'c') {
+      const active = fabricCanvas.getActiveObject();
+      if (!active) return;
+      e.preventDefault();
+      copyActiveObjects();
+    } else {
+      if (!clipboardObjects || !clipboardObjects.length) return;
+      e.preventDefault();
+      pasteClipboard();
+    }
+  });
+
   // ---- Right-click context menu ----
   // Reflects whatever is selected at the moment it's opened: right-
   // clicking an object that isn't already part of the current selection
@@ -3736,6 +4244,8 @@ if (fabricCanvasEl && window.fabric) {
     const menuActions = {
       'bring-front': bringActiveToFront,
       'send-back': sendActiveToBack,
+      copy: copyActiveObjects,
+      paste: pasteClipboard,
       group: groupActiveSelection,
       ungroup: ungroupActiveObject,
       'remove-from-group': () => {
@@ -3756,6 +4266,8 @@ if (fabricCanvasEl && window.fabric) {
       const enabled = {
         'bring-front': !!active,
         'send-back': !!active,
+        copy: !!active,
+        paste: !!clipboardObjects && !!clipboardObjects.length,
         group: !!active && active.type === 'activeSelection',
         ungroup: !!active && active.type === 'group',
         'remove-from-group': !!active && isWithinGroupEditSession(active),
