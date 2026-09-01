@@ -932,6 +932,80 @@
 .editor-price-help-list li:nth-child(1) { transition-delay: 0.1s; }
 .editor-price-help-list li:nth-child(2) { transition-delay: 0.16s; }
 .editor-price-help-list li:nth-child(3) { transition-delay: 0.22s; }
+
+/* ---- Templates gallery ---- */
+/* Each template is one big row/button spanning the modal's width, with
+   its actual rendered front (and back, if it has one) shown large
+   enough to read at a glance — picking a template is a single click on
+   the artwork itself, not a small thumbnail plus a separate label. */
+/* Scoped through the #id, not just the class, matching every other
+   modal's own width override below (.editor-modal's own base width sits
+   later in this file — without the extra specificity here, that later
+   rule wins the cascade regardless of source order and silently clamps
+   this back down). */
+#templates-modal .editor-modal { width: 760px; }
+.editor-templates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.editor-template-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  background: transparent;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.editor-template-card:hover,
+.editor-template-card:focus-visible {
+  border-color: var(--fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+.editor-template-card-previews {
+  display: flex;
+  gap: 10px;
+  flex: none;
+}
+.editor-template-card-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.editor-template-card-preview {
+  display: block;
+  width: 190px;
+  aspect-ratio: 86 / 54;
+  border-radius: 6px;
+  border: 1.5px solid var(--line);
+}
+.editor-template-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+.editor-template-card-label {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+}
+.editor-template-card-side-label {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .editor-side-thumb,
 .editor-side-add {
   display: flex;
