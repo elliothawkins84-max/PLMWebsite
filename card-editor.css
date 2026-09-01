@@ -674,10 +674,13 @@
   min-height: 0;
   overflow: auto;
   scrollbar-width: none; /* Firefox */
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-color: #0a0a0a;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
 }
 .editor-canvas-scroll::-webkit-scrollbar { display: none; }
 /* A large fixed virtual canvas, not just "however big the frame is" —
@@ -951,7 +954,9 @@
   margin-bottom: 20px;
   max-height: 60vh;
   overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
 }
+.editor-templates-list::-webkit-scrollbar { display: none; }
 .editor-template-card {
   display: flex;
   align-items: center;
