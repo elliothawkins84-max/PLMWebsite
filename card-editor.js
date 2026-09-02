@@ -3759,7 +3759,20 @@ if (fabricCanvasEl && window.fabric) {
         // cutting/engraving. Just the outline, as a reference guide for
         // the card's edge, stays.
         const outline = `<g id="card-outline"><rect x="0.75" y="0.75" width="${CARD_W_PX - 1.5}" height="${CARD_H_PX - 1.5}" rx="27" ry="27" fill="none" stroke="#ffffff" stroke-width="1.5"/></g>`;
+        // Fabric's own width/height on the <svg> tag are unitless (just
+        // "774"/"486"), which every SVG consumer treats as pixels -- at a
+        // typical 96dpi that's ~205mm x ~129mm, more than double the real
+        // 86mm x 54mm card. Swapping in physical "mm" units here (keeping
+        // a viewBox in the same 774x486 px space so every path/shape
+        // coordinate inside stays exactly where it already was) is what
+        // makes the file open true-to-size in Illustrator or the laser
+        // software instead of needing a manual rescale every time.
         const svg = staticCanvas.toSVG()
+          .replace(/^(<\?xml[^>]*\?>\s*)?(<!DOCTYPE[^>]*>\s*)?<svg([^>]*)>/, (_match, xmlDecl, doctype, attrs) => {
+            let rest = attrs.replace(/\swidth="[^"]*"/, '').replace(/\sheight="[^"]*"/, '');
+            if (!/\sviewBox=/.test(rest)) rest += ` viewBox="0 0 ${CARD_W_PX} ${CARD_H_PX}"`;
+            return `${xmlDecl || ''}${doctype || ''}<svg width="86mm" height="54mm"${rest}>`;
+          })
           .replace('</svg>', `${outline}</svg>`);
         staticCanvas.dispose();
         resolve(svg);
