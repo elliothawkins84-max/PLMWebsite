@@ -2227,6 +2227,16 @@ if (fabricCanvasEl && window.fabric) {
   // a glance, so the whole thing reads as a soft, even brushed sheen
   // rather than a visible hatch.
   const WHITE_GRAIN_LINES_PER_CM = 200;
+  // Safari's canvas rasterizer renders very thin, very-low-opacity
+  // strokes noticeably fainter than Chrome's does for the identical
+  // values (a real, documented cross-engine anti-aliasing difference,
+  // not a bug in either) — the grain line below needs more opacity
+  // headroom there to actually be visible. `chrome`/`crios`/`android`
+  // etc. all include "safari" in their UA too (a legacy compatibility
+  // token), so those are explicitly excluded rather than just checking
+  // for the word "safari".
+  const IS_SAFARI = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+  const WHITE_GRAIN_ALPHA = IS_SAFARI ? 0.05 : 0.03;
   // "#rrggbb" -> "rgba(r,g,b,alpha)", so the grain line can ride at a
   // fixed low opacity over a color that changes per card type.
   function hexToRgba(hex, alpha) {
@@ -2250,8 +2260,9 @@ if (fabricCanvasEl && window.fabric) {
     pctx.fillRect(0, 0, HATCH_TILE_SOURCE_PX, HATCH_TILE_SOURCE_PX);
     // The card's own color, at low opacity — same idea as fading a
     // watermark, so the grain reads as a faint hint of the card's own
-    // color rather than a wash toward gray/black.
-    pctx.strokeStyle = hexToRgba(getSelectedCardTypeColor(), 0.03);
+    // color rather than a wash toward gray/black. See WHITE_GRAIN_ALPHA
+    // above for why this differs by browser.
+    pctx.strokeStyle = hexToRgba(getSelectedCardTypeColor(), WHITE_GRAIN_ALPHA);
     pctx.lineWidth = lineWidthInTile;
     pctx.beginPath();
     pctx.moveTo(0, HATCH_TILE_SOURCE_PX);
