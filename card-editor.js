@@ -41,6 +41,10 @@ const CARD_W_PX = 86 * PX_PER_MM; // 774
 const CARD_H_PX = 54 * PX_PER_MM; // 486
 const CARD_OFFSET_X = (PASTEBOARD_W - CARD_W_PX) / 2;
 const CARD_OFFSET_Y = (PASTEBOARD_H - CARD_H_PX) / 2;
+// Matches .editor-safe-zone's own `inset: 9px` in card-editor.css — 1mm
+// at PX_PER_MM=9 — so the safe-zone-overflow check below lines up with
+// the exact same boundary the user actually sees drawn on the card.
+const SAFE_ZONE_INSET_PX = 9;
 
 // ---- Live price estimate constants ----
 // Calibrated against a real timed run: 6 double-sided cards (a logo side
@@ -3198,6 +3202,51 @@ if (fabricCanvasEl && window.fabric) {
       return false;
     }
   }
+  function safeZoneBoundsPx() {
+    return {
+      left: CARD_OFFSET_X + SAFE_ZONE_INSET_PX,
+      top: CARD_OFFSET_Y + SAFE_ZONE_INSET_PX,
+      right: CARD_OFFSET_X + CARD_W_PX - SAFE_ZONE_INSET_PX,
+      bottom: CARD_OFFSET_Y + CARD_H_PX - SAFE_ZONE_INSET_PX,
+    };
+  }
+  // A tiny epsilon so an object landing exactly on the safe-zone line
+  // (a common, deliberate "align to safe zone" outcome) doesn't flag as
+  // overflowing due to sub-pixel float rounding.
+  function objectExceedsSafeZone(obj, bounds) {
+    const box = obj.getBoundingRect(true, true);
+    const EPS = 0.5;
+    return box.left < bounds.left - EPS
+      || box.top < bounds.top - EPS
+      || box.left + box.width > bounds.right + EPS
+      || box.top + box.height > bounds.bottom + EPS;
+  }
+  // Mirrors computeDirectCostForCurrentDesign's own "check both sides"
+  // shape — a snapshot's objects are enlivened into real (but detached,
+  // never added to any canvas) Fabric instances purely to read their
+  // bounding boxes, same trick pasteClipboard uses elsewhere in this
+  // file. Group bounding rects already account for all their members, so
+  // there's no need to recurse into group contents separately.
+  function checkSafeZoneOverflow(callback) {
+    const bounds = safeZoneBoundsPx();
+    function checkSide(side, cb) {
+      const snap = snapshotForSide(side);
+      if (!snapshotHasObjects(snap)) {
+        cb(false);
+        return;
+      }
+      const parsed = JSON.parse(snap);
+      const data = JSON.parse(JSON.stringify(parsed.objects));
+      fabric.util.enlivenObjects(data, (enlivened) => {
+        cb(enlivened.some((o) => objectExceedsSafeZone(o, bounds)));
+      });
+    }
+    checkSide('front', (frontOver) => {
+      checkSide('back', (backOver) => {
+        callback(frontOver || backOver);
+      });
+    });
+  }
   // Shared by the toolbar's live /100 estimate and the Next modal's
   // per-quantity pricing — both need this same weighted-coverage-based
   // direct cost, just multiplied by a different markup afterward.
@@ -3221,6 +3270,12 @@ if (fabricCanvasEl && window.fabric) {
   function updatePriceEstimate() {
     const priceEl = document.getElementById('editor-price');
     if (!priceEl) return;
+    const warningEl = document.getElementById('editor-safe-zone-warning');
+    if (warningEl) {
+      checkSafeZoneOverflow((overflows) => {
+        warningEl.hidden = !overflows;
+      });
+    }
     computeDirectCostForCurrentDesign((directCost) => {
       if (directCost === null) {
         priceEl.innerHTML = 'Estimated Price: n/a';
