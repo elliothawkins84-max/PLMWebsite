@@ -92,6 +92,22 @@ const PRICING_QTY_RATIO_ANCHORS = [
 // modal's dropdown options — round numbers a customer would actually
 // type into a quantity field, not the tier's raw bounds.
 const PRICING_QTY_OPTIONS = [10, 20, 25, 50, 75, 100, 150, 200];
+// Text color for the "Estimated total" figure in the Next modal, keyed by
+// CARD_TYPES color name -- picked to read clearly against the modal's
+// black background rather than reusing each card type's own (often much
+// darker/anodized-muted) swatch hex directly. Black is the one card
+// whose actual swatch (#0d0d0d) would be all but invisible on black, so
+// that one's an explicit exception rather than a "readable black" -- red.
+const NEXT_MODAL_TOTAL_COLORS = {
+  Black: '#ef4444',
+  Silver: '#e5e7eb',
+  Yellow: '#facc15',
+  Red: '#f87171',
+  Blue: '#60a5fa',
+  Orange: '#fb923c',
+  Violet: '#c084fc',
+  Green: '#4ade80',
+};
 function ratioForQty(qty) {
   const anchors = PRICING_QTY_RATIO_ANCHORS;
   if (qty <= anchors[0].qty) return anchors[0].ratio;
@@ -3464,14 +3480,19 @@ if (fabricCanvasEl && window.fabric) {
   function updateNextModalSummary() {
     if (!nextModalQuantity || !nextModalSummary) return;
     const qty = parseInt(nextModalQuantity.value, 10) || 0;
+    const cardTypeEntry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+    const totalColor = cardTypeEntry ? NEXT_MODAL_TOTAL_COLORS[cardTypeEntry.color] : null;
     if (nextModalDirectCost === null || !qty) {
       nextModalSummary.textContent = 'Estimated total: n/a';
       return;
     }
     const pricing = getNextModalPricing(nextModalDirectCost, qty);
-    nextModalSummary.textContent = pricing.isMinCharge
-      ? `Estimated total: $${pricing.total.toFixed(2)} min charge (${qty} cards)`
-      : `Estimated total: $${pricing.total.toFixed(2)} (${qty} × $${pricing.each.toFixed(2)} ea.)`;
+    const rest = pricing.isMinCharge
+      ? `$${pricing.total.toFixed(2)} min charge (${qty} cards)`
+      : `$${pricing.total.toFixed(2)} (${qty} × $${pricing.each.toFixed(2)} ea.)`;
+    nextModalSummary.innerHTML = totalColor
+      ? `Estimated total: <span style="color:${totalColor}">${rest}</span>`
+      : `Estimated total: ${rest}`;
   }
   function populateNextModalQuantityOptions() {
     if (!nextModalQuantity) return;
@@ -3484,8 +3505,8 @@ if (fabricCanvasEl && window.fabric) {
       option.textContent = !pricing
         ? `${qty}`
         : pricing.isMinCharge
-          ? `${qty} — $95 min charge`
-          : `${qty} — $${pricing.each.toFixed(2)} ea.`;
+          ? `${qty} — $${pricing.total.toFixed(2)} min charge`
+          : `${qty} — $${pricing.each.toFixed(2)} ea. — $${pricing.total.toFixed(2)} total`;
       nextModalQuantity.appendChild(option);
     });
     // Keep whatever was selected across a re-price (design edited while
