@@ -332,6 +332,22 @@
       </div>
     </header>
 
+    <!-- Shown once per session on any non-Chromium browser (Safari,
+         Firefox, ...) — set up in card-editor.js right alongside the
+         IS_CHROME/IS_SAFARI checks used elsewhere for the same reason.
+         Dismissible; a per-feature version of this same message pops up
+         as a toast (#editor-toast below) when a Chrome-only feature is
+         actually attempted, e.g. loading system fonts. -->
+    <div class="editor-browser-warning" id="editor-browser-warning" hidden>
+      <span>This editor is optimized for Chrome — some features may not be available in this browser.</span>
+      <button type="button" class="editor-browser-warning-dismiss" id="editor-browser-warning-dismiss" aria-label="Dismiss">&times;</button>
+    </div>
+
+    <!-- Populated/shown via showChromeOnlyToast() in card-editor.js
+         whenever a Chrome-only feature is actually attempted somewhere
+         that isn't Chrome (rather than just silently disabling it). -->
+    <div class="editor-toast" id="editor-toast" hidden></div>
+
     <div class="editor-main">
       <!-- Left toolbar -->
       <nav class="editor-toolbar" aria-label="Editor tools">
@@ -899,6 +915,22 @@
       <div class="editor-modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" id="save-as-modal-cancel">Cancel</button>
         <button type="button" class="btn btn-sm" id="save-as-modal-done">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stands in for native alert()/confirm() everywhere in this file (see
+       plmAlert/plmConfirm in card-editor.js) — same look as every other
+       modal here, titled "PLM" instead of whatever generic label/domain
+       the browser's own native dialog chrome would otherwise show. The
+       Cancel button is hidden for a plain alert (nothing to cancel). -->
+  <div class="editor-modal-overlay" id="plm-dialog-overlay" aria-hidden="true">
+    <div class="editor-modal" role="alertdialog" aria-modal="true" aria-labelledby="plm-dialog-title">
+      <h2 class="editor-modal-title" id="plm-dialog-title">PLM</h2>
+      <p class="editor-modal-message" id="plm-dialog-message"></p>
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="plm-dialog-cancel">Cancel</button>
+        <button type="button" class="btn btn-sm" id="plm-dialog-ok">OK</button>
       </div>
     </div>
   </div>

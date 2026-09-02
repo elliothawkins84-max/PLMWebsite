@@ -391,6 +391,62 @@ if (canvasScroll) {
 // placeholder until this runs.
 applyZoom();
 
+// ---- Non-Chrome browser warning + Chrome-only feature toast ----
+// 'queryLocalFonts' in window is the same real feature-detect the actual
+// Chrome-only feature (Load System Fonts, further down) already gates
+// itself on — reused here as the practical "is this a Chrome-family
+// browser" signal, rather than a separate UA-sniffed guess, since it's
+// the one thing in this app that's actually Chromium-exclusive today.
+const IS_CHROME_FAMILY = 'queryLocalFonts' in window;
+const BROWSER_WARNING_DISMISSED_KEY = 'plmBrowserWarningDismissed';
+const browserWarningEl = document.getElementById('editor-browser-warning');
+const browserWarningDismissBtn = document.getElementById('editor-browser-warning-dismiss');
+if (browserWarningEl && !IS_CHROME_FAMILY) {
+  let alreadyDismissed = false;
+  try {
+    alreadyDismissed = sessionStorage.getItem(BROWSER_WARNING_DISMISSED_KEY) === '1';
+  } catch (err) {
+    alreadyDismissed = false;
+  }
+  if (!alreadyDismissed) browserWarningEl.hidden = false;
+}
+if (browserWarningDismissBtn) {
+  browserWarningDismissBtn.addEventListener('click', () => {
+    if (browserWarningEl) browserWarningEl.hidden = true;
+    try {
+      sessionStorage.setItem(BROWSER_WARNING_DISMISSED_KEY, '1');
+    } catch (err) {
+      // sessionStorage unavailable — the banner will just show again
+      // next load, which is a fine fallback.
+    }
+  });
+}
+// Generic, reusable — call whenever a Chrome-only feature is actually
+// attempted somewhere that isn't Chrome (see the Load System Fonts
+// button further down for the first user of this).
+let toastHideTimer = null;
+function showChromeOnlyToast(featureName) {
+  const toastEl = document.getElementById('editor-toast');
+  if (!toastEl) return;
+  toastEl.textContent = `${featureName} is only available in Chrome.`;
+  toastEl.hidden = false;
+  // Two rAFs (not one) so the hidden->visible attribute change and the
+  // opacity transition's starting state both actually paint first —
+  // otherwise the browser can coalesce them into one frame and the
+  // fade-in never visibly happens, same class of issue as the loading
+  // overlay's own entrance animation elsewhere in this file.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toastEl.classList.add('is-visible'));
+  });
+  if (toastHideTimer) clearTimeout(toastHideTimer);
+  toastHideTimer = setTimeout(() => {
+    toastEl.classList.remove('is-visible');
+    setTimeout(() => {
+      toastEl.hidden = true;
+    }, 250); // matches the CSS opacity transition duration
+  }, 3000);
+}
+
 // ---- Fabric.js canvas — the first real (non-placeholder) tool: Text ----
 const fabricCanvasEl = document.getElementById('fabric-canvas');
 let fabricCanvas = null;
@@ -894,6 +950,62 @@ if (fabricCanvasEl && window.fabric) {
     return !!(svgOversizeModal && svgOversizeModal.classList.contains('is-open'));
   }
 
+  // ---- PLM dialog (alert()/confirm() replacement) ----
+  // Native alert()/confirm() carry a title/domain label the browser
+  // controls entirely — no page can relabel it — so every use of either
+  // anywhere in this file goes through here instead: same visual language
+  // as every other modal in the app, headed "PLM". Both return a Promise
+  // (there's no way to block script execution for a custom dialog the way
+  // the native ones do), so every call site awaits it.
+  const plmDialogOverlay = document.getElementById('plm-dialog-overlay');
+  const plmDialogMessage = document.getElementById('plm-dialog-message');
+  const plmDialogCancelBtn = document.getElementById('plm-dialog-cancel');
+  const plmDialogOkBtn = document.getElementById('plm-dialog-ok');
+  let plmDialogResolve = null;
+  function closePlmDialog(result) {
+    if (!plmDialogOverlay) return;
+    plmDialogOverlay.classList.remove('is-open');
+    plmDialogOverlay.setAttribute('aria-hidden', 'true');
+    const resolve = plmDialogResolve;
+    plmDialogResolve = null;
+    if (resolve) resolve(result);
+  }
+  // showCancel true => confirm()-style (Cancel resolves false, OK
+  // resolves true); false => alert()-style (Cancel hidden, only OK,
+  // always resolves true once dismissed).
+  function openPlmDialog(message, showCancel) {
+    return new Promise((resolve) => {
+      if (!plmDialogOverlay || !plmDialogMessage || !plmDialogOkBtn) {
+        // No dialog in the DOM (shouldn't happen) — fall back to the
+        // native ones rather than silently doing nothing.
+        resolve(showCancel ? window.confirm(message) : (window.alert(message), true));
+        return;
+      }
+      plmDialogResolve = resolve;
+      plmDialogMessage.textContent = message;
+      if (plmDialogCancelBtn) plmDialogCancelBtn.hidden = !showCancel;
+      plmDialogOverlay.classList.add('is-open');
+      plmDialogOverlay.setAttribute('aria-hidden', 'false');
+      plmDialogOkBtn.focus();
+    });
+  }
+  function plmAlert(message) {
+    return openPlmDialog(message, false);
+  }
+  function plmConfirm(message) {
+    return openPlmDialog(message, true);
+  }
+  if (plmDialogOkBtn) plmDialogOkBtn.addEventListener('click', () => closePlmDialog(true));
+  if (plmDialogCancelBtn) plmDialogCancelBtn.addEventListener('click', () => closePlmDialog(false));
+  if (plmDialogOverlay) {
+    plmDialogOverlay.addEventListener('mousedown', (e) => {
+      if (e.target === plmDialogOverlay) closePlmDialog(false);
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && plmDialogOverlay && plmDialogOverlay.classList.contains('is-open')) closePlmDialog(false);
+  });
+
   function importSvgFile(file) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -901,7 +1013,7 @@ if (fabricCanvasEl && window.fabric) {
       fabric.loadSVGFromString(svgText, (objects, options) => {
         const valid = (objects || []).filter(Boolean);
         if (!valid.length) {
-          alert('Could not import that file — no supported shapes were found in it.');
+          plmAlert('Could not import that file — no supported shapes were found in it.');
           return;
         }
         // Fabric objects default to strokeWidth:1 even with no stroke paint,
@@ -971,7 +1083,7 @@ if (fabricCanvasEl && window.fabric) {
         }
       });
     };
-    reader.onerror = () => alert('Could not read that file.');
+    reader.onerror = () => plmAlert('Could not read that file.');
     reader.readAsText(file);
   }
   if (uploadBtn && importFileInput) {
@@ -1915,7 +2027,7 @@ if (fabricCanvasEl && window.fabric) {
   // to from a freshly opened file.
   function importProjectData(payload) {
     if (!payload || typeof payload !== 'object' || !payload.front) {
-      alert("That file doesn't look like a valid business card design.");
+      plmAlert("That file doesn't look like a valid business card design.");
       return;
     }
     groupEditSession = null;
@@ -1959,9 +2071,9 @@ if (fabricCanvasEl && window.fabric) {
     hasUnsavedChanges = false;
   }
   if (importBtn && importProjectInput) {
-    importBtn.addEventListener('click', () => {
+    importBtn.addEventListener('click', async () => {
       const hasExistingWork = undoStack.length > 1 || projectHasBackSide();
-      if (hasExistingWork && !confirm('Importing a file will replace your current design. Continue?')) return;
+      if (hasExistingWork && !(await plmConfirm('Importing a file will replace your current design. Continue?'))) return;
       importProjectInput.value = '';
       importProjectInput.click();
     });
@@ -1974,7 +2086,7 @@ if (fabricCanvasEl && window.fabric) {
         try {
           payload = await decodeProjectFile(reader.result);
         } catch (err) {
-          alert("That file couldn't be read as a business card design.");
+          plmAlert("That file couldn't be read as a business card design.");
           return;
         }
         importProjectData(payload);
@@ -3081,7 +3193,7 @@ if (fabricCanvasEl && window.fabric) {
         result = PolyBool.union(result, polyBoolInputFor(ordered[i], fontCache));
       }
     } catch (e) {
-      alert('Could not combine these shapes — the artwork is too complex for Union to resolve.');
+      plmAlert('Could not combine these shapes — the artwork is too complex for Union to resolve.');
       return;
     }
     if (!result.regions.length) return;
@@ -3102,7 +3214,7 @@ if (fabricCanvasEl && window.fabric) {
     try {
       result = PolyBool.difference(polyBoolInputFor(bottom, fontCache), polyBoolInputFor(top, fontCache));
     } catch (e) {
-      alert('Could not subtract these shapes — the artwork is too complex for Subtract to resolve.');
+      plmAlert('Could not subtract these shapes — the artwork is too complex for Subtract to resolve.');
       return;
     }
     if (!result.regions.length) {
@@ -4643,9 +4755,9 @@ if (fabricCanvasEl && window.fabric) {
     info.appendChild(label);
     card.appendChild(previews);
     card.appendChild(info);
-    card.addEventListener('click', () => {
+    card.addEventListener('click', async () => {
       const hasExistingWork = undoStack.length > 1 || projectHasBackSide();
-      if (hasExistingWork && !confirm('Loading this template will replace your current design. Continue?')) return;
+      if (hasExistingWork && !(await plmConfirm('Loading this template will replace your current design. Continue?'))) return;
       // A template's own baked-in Metallic finishes (several use it as a
       // default) would be invisible metal-on-metal on a Silver card, same
       // as a manually-applied one — demote to White on the way in rather
@@ -5133,8 +5245,15 @@ if (fabricCanvasEl && window.fabric) {
   const loadFontsBtn = document.getElementById('load-system-fonts-btn');
   if (loadFontsBtn) {
     if (!('queryLocalFonts' in window)) {
-      loadFontsBtn.disabled = true;
+      // Stays clickable (not the native `disabled`, which would silently
+      // swallow the click instead of explaining anything) — styled as
+      // muted instead, and clicking it surfaces the same "Chrome only"
+      // toast every other Chrome-exclusive feature would use.
+      loadFontsBtn.classList.add('is-unavailable');
       loadFontsBtn.title = 'Loading system fonts needs Chrome or Edge — not supported in this browser';
+      loadFontsBtn.addEventListener('click', () => {
+        showChromeOnlyToast('Loading system fonts');
+      });
     } else {
       loadFontsBtn.addEventListener('click', async () => {
         try {
