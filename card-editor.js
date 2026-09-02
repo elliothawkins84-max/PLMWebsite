@@ -1675,6 +1675,22 @@ if (fabricCanvasEl && window.fabric) {
       renderingsBody.appendChild(backPreview);
     }
   }
+  // The other direction from ensureBackSideUI — needed when importing a
+  // .plm file that has no back side while the currently open project does:
+  // without this, the old Back thumbnail/renderings-panel canvas would
+  // just sit there frozen on the previous design until clicked (which
+  // forces loadSideAndSwitch to notice sideHistories.back is gone and
+  // reload it blank). Re-inserting the original addBackBtn node keeps its
+  // already-attached click listener working.
+  function removeBackSideUI() {
+    const backThumb = document.querySelector('.editor-side-thumb[data-side="back"]');
+    if (backThumb) {
+      if (addBackBtn) backThumb.replaceWith(addBackBtn);
+      else backThumb.remove();
+    }
+    const backPreview = renderingsBody && renderingsBody.querySelector('.editor-renderings-canvas[data-side="back"]');
+    if (backPreview) backPreview.remove();
+  }
   if (addBackBtn) {
     addBackBtn.addEventListener('click', () => {
       ensureBackSideUI();
@@ -1883,6 +1899,8 @@ if (fabricCanvasEl && window.fabric) {
     if (payload.back) {
       ensureBackSideUI();
       sideHistories.back = { undo: [JSON.stringify(payload.back)], redo: [] };
+    } else {
+      removeBackSideUI();
     }
     // Only a real saved .plm project carries its own card type — a
     // template load (see buildTemplateCard's own importProjectData call)
@@ -1898,6 +1916,14 @@ if (fabricCanvasEl && window.fabric) {
     }
     const targetSide = payload.currentSide === 'back' && payload.back ? 'back' : 'front';
     loadSideAndSwitch(targetSide);
+    // Whichever side just became active gets its preview repainted for
+    // free, asynchronously, once restoreHistorySnapshot's loadFromJSON
+    // finishes (see loadSideAndSwitch/restoreHistorySnapshot above) — but
+    // the *other* side never goes through that path at all, so it has to
+    // be rendered explicitly here or its thumbnail/Mockup preview is
+    // stuck on stale content until clicked. When the file's active side
+    // was Back, that stale side was Front — exactly what was reported.
+    renderCardPreview('front');
     if (payload.back) renderCardPreview('back');
     // The just-loaded file is now what's on screen — nothing to warn
     // about losing until it's actually edited again.
@@ -2196,7 +2222,7 @@ if (fabricCanvasEl && window.fabric) {
     // The card's own color, at low opacity — same idea as fading a
     // watermark, so the grain reads as a faint hint of the card's own
     // color rather than a wash toward gray/black.
-    pctx.strokeStyle = hexToRgba(getSelectedCardTypeColor(), 0.05);
+    pctx.strokeStyle = hexToRgba(getSelectedCardTypeColor(), 0.03);
     pctx.lineWidth = lineWidthInTile;
     pctx.beginPath();
     pctx.moveTo(0, HATCH_TILE_SOURCE_PX);
@@ -2245,22 +2271,16 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
   function styleForRender(obj) {
-    // This offscreen StaticCanvas gets re-rendered at a different
-    // resolutionScale for every destination (the small thumbnail, the
-    // fullscreen modal, a template gallery card, etc.) from the exact
-    // same object data. Fabric's default per-object caching paints a
-    // shape into an internal bitmap sized for whatever scale it was
-    // *first* rendered at, then reuses/rescales that bitmap on later
-    // renders — for a thin stroked path (an imported logo's fine detail
-    // lines especially) that can lose or distort sub-pixel detail when
-    // the bitmap built for one resolution gets stretched for another.
-    // Disabling it forces every render to re-stroke the real vector
-    // path at whatever the current resolution actually is, so a line
-    // that's there at the small size can't go missing at the large one
-    // (or vice versa). Safe here specifically because this function only
-    // ever touches objects on a disposable render-only canvas, never the
-    // live editing canvas, so there's no interactive-performance cost.
-    obj.objectCaching = false;
+    // NOTE: this used to force obj.objectCaching = false here, as a
+    // speculative fix for a "line goes missing when enlarged" report
+    // that a synthetic test was never actually able to reproduce.
+    // Disabling caching turned out to have a real, confirmed cost
+    // instead: small, thin, densely-packed shapes (e.g. Diamond
+    // Lattice's repeated diamond pattern) render as broken/speckled
+    // noise at small preview sizes without it — Fabric's own per-object
+    // cache is what smooths that out. Reverted; if the original missing-
+    // line report resurfaces, reproduce it first before reaching for
+    // this again.
     if (obj.type === 'group') {
       obj.getObjects().forEach(styleForRender);
       return;
@@ -3325,26 +3345,9 @@ if (fabricCanvasEl && window.fabric) {
     return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
   }
 
-  // ---- TEMPORARY: local export-file verification (Send Request button) ----
-  // Not the real submission yet, and not the real print-export feature
-  // either — just generates the five files a real request/export would
-  // need and downloads them locally, so the file *contents* can be
-  // checked by eye before either of those gets wired up for real. The
-  // form's submit handler below calls this instead of actually POSTing
-  // anywhere; nothing here talks to the network. Swap it back to the
-  // real fetch() (still intact, just unused below) once the files look
-  // right — at that point these should probably become attachments on
-  // the real request rather than local downloads.
-  function triggerDownload(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  }
+  // ---- RFQ file bundle (mockup, proofing canvas, SVGs, order info) ----
+  // Built for every real request the Next modal sends — see
+  // buildRfqFileBundle/sendRealRfqRequest further down.
   // Same wood+aluminum+artwork look as the Mockup panel (paintCardPreview),
   // just resolved as a Promise instead of writing straight to a live
   // canvas element, so a batch of these can be awaited in sequence.
@@ -3386,7 +3389,6 @@ if (fabricCanvasEl && window.fabric) {
       obj.getObjects().forEach(styleForProofingRender);
       return;
     }
-    obj.objectCaching = false;
     if (getFinish(obj) !== 'texture') return;
     const color = obj.cardFinishOutline ? FINISH_COLORS['texture-outline'] : FINISH_COLORS.texture;
     obj.set({
@@ -3423,9 +3425,108 @@ if (fabricCanvasEl && window.fabric) {
           styleForProofingRender(obj);
         });
         staticCanvas.renderAll();
+        drawSafeZoneAndBorder(off, width, height);
+        drawTextureDensityLabels(off, staticCanvas);
         resolve(off);
       });
     });
+  }
+  // Same card outline + dashed safe-zone inset the editor itself always
+  // shows (see .editor-card/.editor-safe-zone in card-editor.css) — drawn
+  // straight onto the 2D context after Fabric's own render, so this
+  // reads as "what you see in the editor" rather than just the bare
+  // artwork. `width` is assumed to be the card's own full width in
+  // pixels, so the scale factor back to real mm (PX_PER_MM) is just
+  // width / CARD_W_PX, the same resolutionScale used everywhere else.
+  function drawSafeZoneAndBorder(canvasEl, width, height) {
+    const ctx = canvasEl.getContext('2d');
+    const scale = width / CARD_W_PX;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1.5;
+    roundRectPath(ctx, 0.75, 0.75, width - 1.5, height - 1.5, 27 * scale);
+    ctx.stroke();
+    const inset = 9 * scale;
+    ctx.strokeStyle = '#ff3b3b';
+    ctx.setLineDash([20 * scale, 12 * scale]);
+    roundRectPath(ctx, inset, inset, width - inset * 2, height - inset * 2, 27 * scale);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // "N L/cm" next to every Texture-finish object — the color alone
+  // (from styleForProofingRender's real hatch pattern) shows *that*
+  // something's textured and roughly how dense, but not the exact
+  // number, which the shop needs. getCenterPoint()/viewportTransform
+  // together resolve each object's true position even nested inside a
+  // group and even with the static canvas's own zoom applied — plain
+  // obj.left/top wouldn't account for either.
+  function drawTextureDensityLabels(canvasEl, staticCanvas) {
+    const ctx = canvasEl.getContext('2d');
+    ctx.save();
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    function labelOne(obj) {
+      if (obj.type === 'group') {
+        obj.getObjects().forEach(labelOne);
+        return;
+      }
+      if (getFinish(obj) !== 'texture' || !obj.cardFinishTexture) return;
+      const center = fabric.util.transformPoint(obj.getCenterPoint(), staticCanvas.viewportTransform);
+      const text = `${obj.cardFinishTexture} L/cm`;
+      const metrics = ctx.measureText(text);
+      const padX = 4;
+      const boxW = metrics.width + padX * 2;
+      const boxH = 16;
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(center.x - boxW / 2, center.y - boxH / 2, boxW, boxH);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(text, center.x, center.y + 1);
+    }
+    staticCanvas.getObjects().forEach(labelOne);
+    ctx.restore();
+  }
+  // The editor's own top/left mm rulers (see buildRuler) plus a
+  // "Front — 86 × 54mm"-style label under the card, drawn into the
+  // margin reserved around each side's card image — same major-every-
+  // 10mm/minor-every-2mm convention as the real ruler, just on a canvas
+  // instead of DOM ticks.
+  function drawRulerAndLabel(ctx, marginLeft, marginTop, cardW, cardH, scale, sideLabel) {
+    const pxPerMm = PX_PER_MM * scale;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = '10px monospace';
+    ctx.lineWidth = 1;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    for (let mm = 0; mm <= 86; mm += 2) {
+      const x = marginLeft + mm * pxPerMm;
+      const isMajor = mm % 10 === 0;
+      const tickLen = isMajor ? 8 : 4;
+      ctx.beginPath();
+      ctx.moveTo(x, marginTop - tickLen);
+      ctx.lineTo(x, marginTop);
+      ctx.stroke();
+      if (isMajor) ctx.fillText(String(mm), x, marginTop - tickLen - 2);
+    }
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let mm = 0; mm <= 54; mm += 2) {
+      const y = marginTop + mm * pxPerMm;
+      const isMajor = mm % 10 === 0;
+      const tickLen = isMajor ? 8 : 4;
+      ctx.beginPath();
+      ctx.moveTo(marginLeft - tickLen, y);
+      ctx.lineTo(marginLeft, y);
+      ctx.stroke();
+      if (isMajor) ctx.fillText(String(mm), marginLeft - tickLen - 4, y);
+    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = '11px monospace';
+    ctx.fillText(`${sideLabel} — 86 × 54mm`, marginLeft, marginTop + cardH + 8);
+    ctx.restore();
   }
   // Real Fabric vector output (StaticCanvas#toSVG) plus two extra shapes
   // marking the physical card's own cut outline: a solid dark background
@@ -3481,13 +3582,19 @@ if (fabricCanvasEl && window.fabric) {
     }
     walk(data.objects);
   }
-  async function downloadRfqTestFiles() {
+  // Builds the same five files the local-download test bundle used to
+  // (mockup PNG, proofing/canvas PNG with ruler+safe zone+density labels,
+  // Front.svg, Back.svg, order-info.txt) but returns them as {filename,
+  // blob} pairs instead of downloading them — this is what actually gets
+  // attached to the real request in sendRealRfqRequest below.
+  async function buildRfqFileBundle() {
     const hasBack = projectHasBackSide();
     const frontSnap = snapshotForSide('front') || blankCanvasSnapshot;
     const backSnap = hasBack ? (snapshotForSide('back') || blankCanvasSnapshot) : null;
     const w = 860;
     const h = 540;
     const gap = 24;
+    const files = [];
 
     // 1) Photoreal mockup, front + back stacked vertically in one PNG.
     const frontMockup = document.createElement('canvas');
@@ -3509,14 +3616,24 @@ if (fabricCanvasEl && window.fabric) {
     mctx.fillRect(0, 0, mockupOut.width, mockupOut.height);
     mctx.drawImage(frontMockup, 0, 0);
     if (backMockup) mctx.drawImage(backMockup, 0, h + gap);
-    triggerDownload(await canvasToBlob(mockupOut), 'mockup-front-back.png');
+    files.push({ filename: 'mockup-front-back.png', blob: await canvasToBlob(mockupOut) });
 
-    // 2) Proofing colors + texture density, front + back stacked.
+    // 2) Proofing colors + texture density, front + back stacked — this
+    // one's meant to read like the editor's own canvas (card border,
+    // safe zone, ruler included, see drawSafeZoneAndBorder/
+    // drawRulerAndLabel/drawTextureDensityLabels above), not just the
+    // bare artwork, so extra margin is reserved around each card for the
+    // ruler and its own "Front — 86 × 54mm" label underneath.
+    const rulerLeftW = 44;
+    const rulerTopH = 34;
+    const labelH = 22;
+    const sideW = rulerLeftW + w;
+    const sideH = rulerTopH + h + labelH;
     const proofFront = await renderProofingCanvasAsync(w, h, frontSnap);
     const proofBack = hasBack ? await renderProofingCanvasAsync(w, h, backSnap) : null;
     const proofOut = document.createElement('canvas');
-    proofOut.width = w;
-    proofOut.height = hasBack ? h * 2 + gap : h;
+    proofOut.width = sideW;
+    proofOut.height = hasBack ? sideH * 2 + gap : sideH;
     const pctx = proofOut.getContext('2d');
     pctx.fillStyle = '#000';
     pctx.fillRect(0, 0, proofOut.width, proofOut.height);
@@ -3524,18 +3641,29 @@ if (fabricCanvasEl && window.fabric) {
     // to fit its slot even if the source canvas's own backing store ever
     // ends up larger than w×h for any reason — belt-and-suspenders on
     // top of disabling retina scaling above.
-    pctx.drawImage(proofFront, 0, 0, w, h);
-    if (proofBack) pctx.drawImage(proofBack, 0, h + gap, w, h);
-    triggerDownload(await canvasToBlob(proofOut), 'canvas.png');
+    pctx.drawImage(proofFront, rulerLeftW, rulerTopH, w, h);
+    drawRulerAndLabel(pctx, rulerLeftW, rulerTopH, w, h, w / CARD_W_PX, 'Front');
+    if (proofBack) {
+      const backTop = sideH + gap;
+      pctx.drawImage(proofBack, rulerLeftW, backTop + rulerTopH, w, h);
+      drawRulerAndLabel(pctx, rulerLeftW, backTop + rulerTopH, w, h, w / CARD_W_PX, 'Back');
+    }
+    files.push({ filename: 'canvas.png', blob: await canvasToBlob(proofOut) });
 
     // 3) + 4) Front.svg / Back.svg — vector design + card outline.
-    triggerDownload(new Blob([await buildCardSvgAsync(frontSnap)], { type: 'image/svg+xml' }), 'Front.svg');
+    files.push({
+      filename: 'Front.svg',
+      blob: new Blob([await buildCardSvgAsync(frontSnap)], { type: 'image/svg+xml' }),
+    });
     if (hasBack) {
-      triggerDownload(new Blob([await buildCardSvgAsync(backSnap)], { type: 'image/svg+xml' }), 'Back.svg');
+      files.push({
+        filename: 'Back.svg',
+        blob: new Blob([await buildCardSvgAsync(backSnap)], { type: 'image/svg+xml' }),
+      });
     }
 
     // 5) Plain-text order info + color legend — the same quantity/card
-    // type/price/shipping context that would go into the real request's
+    // type/price/shipping context that goes into the real request's own
     // message body (see sendRealRfqRequest below), plus the same
     // name/color key as the Finish toolbar and the proofing PNG above,
     // all in one file so the shop has everything about this order
@@ -3570,15 +3698,14 @@ if (fabricCanvasEl && window.fabric) {
       '',
       ...(usedFinishLegendLines.length ? usedFinishLegendLines : ['(no finishes assigned yet)']),
     ].join('\n');
-    triggerDownload(new Blob([infoLines], { type: 'text/plain' }), 'order-info.txt');
+    files.push({ filename: 'order-info.txt', blob: new Blob([infoLines], { type: 'text/plain' }) });
+
+    return files;
   }
 
-  // The real submission logic — kept intact and self-contained, just not
-  // called anywhere right now (see the TEMPORARY block above). Once the
-  // downloaded file bundle has been checked over, wire this back in
-  // (probably attaching those same five files here instead of just the
-  // two renderings it currently sends) and swap the event listener below
-  // back to calling this instead of downloadRfqTestFiles().
+  // Sends the real request — the button used to just download this same
+  // five-file bundle locally for review; now that it's been checked over,
+  // this attaches it to the actual POST instead.
   async function sendRealRfqRequest(e) {
     e.preventDefault();
     if (!nextModalStatus || !nextModalRequestBtn) return;
@@ -3613,15 +3740,12 @@ if (fabricCanvasEl && window.fabric) {
       ];
       const userMessage = String(formData.get('message') || '').trim();
       formData.set('message', `${contextLines.join('\n')}${userMessage ? `\n\n${userMessage}` : ''}`);
-      // Auto-attach both renderings alongside any files the customer
-      // added themselves (both share the 'attachment' field name,
-      // same as the file input's own multi-file entries would).
-      const frontBlob = await canvasToBlob(nextModalCanvasFront);
-      if (frontBlob) formData.append('attachment', frontBlob, 'front.png');
-      if (nextModalCanvasBack && !nextModalCanvasBack.classList.contains('is-hidden')) {
-        const backBlob = await canvasToBlob(nextModalCanvasBack);
-        if (backBlob) formData.append('attachment', backBlob, 'back.png');
-      }
+      // The full five-file bundle (mockup PNG, proofing/canvas PNG,
+      // Front.svg, Back.svg, order-info.txt — see buildRfqFileBundle)
+      // rather than just the two raw renderings, all sharing the
+      // 'attachment' field name same as a real multi-file input would.
+      const bundle = await buildRfqFileBundle();
+      bundle.forEach(({ filename, blob }) => formData.append('attachment', blob, filename));
       const res = await fetch(RFQ_ENDPOINT, { method: 'POST', body: formData });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -3640,29 +3764,41 @@ if (fabricCanvasEl && window.fabric) {
       nextModalRequestBtn.innerHTML = submitLabel;
     }
   }
-  if (nextModalForm) {
-    nextModalForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (!nextModalStatus || !nextModalRequestBtn) return;
-      nextModalStatus.textContent = '';
-      nextModalStatus.className = 'form-status';
-      nextModalRequestBtn.disabled = true;
-      const submitLabel = nextModalRequestBtn.innerHTML;
-      nextModalRequestBtn.textContent = 'Generating files…';
-      try {
-        await downloadRfqTestFiles();
-        nextModalStatus.textContent = 'Test files downloaded — nothing was sent.';
-        nextModalStatus.className = 'form-status success';
-      } catch (err) {
-        nextModalStatus.textContent = 'Something went wrong generating the files — see console.';
-        nextModalStatus.className = 'form-status error';
-        console.error(err);
-      } finally {
-        nextModalRequestBtn.disabled = false;
-        nextModalRequestBtn.innerHTML = submitLabel;
-      }
-    });
+  // Temporarily back to local-download instead of the real POST (see
+  // sendRealRfqRequest above) — swap the listener below back to
+  // sendRealRfqRequest once the bundle's been re-confirmed good.
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
+  async function downloadRfqTestFiles(e) {
+    e.preventDefault();
+    if (!nextModalStatus || !nextModalRequestBtn) return;
+    nextModalStatus.textContent = '';
+    nextModalStatus.className = 'form-status';
+    nextModalRequestBtn.disabled = true;
+    const submitLabel = nextModalRequestBtn.innerHTML;
+    nextModalRequestBtn.textContent = 'Building…';
+    try {
+      const bundle = await buildRfqFileBundle();
+      bundle.forEach(({ filename, blob }) => triggerDownload(blob, filename));
+      nextModalStatus.textContent = 'Test files downloaded — nothing was sent.';
+      nextModalStatus.className = 'form-status success';
+    } catch (err) {
+      nextModalStatus.textContent = 'Could not build the file bundle — please try again.';
+      nextModalStatus.className = 'form-status error';
+    } finally {
+      nextModalRequestBtn.disabled = false;
+      nextModalRequestBtn.innerHTML = submitLabel;
+    }
+  }
+  if (nextModalForm) nextModalForm.addEventListener('submit', downloadRfqTestFiles);
 
   // Both default to uniform scaling — both checkboxes are "Non-uniform
   // scale", unchecked by default, so either has to be deliberately
@@ -3884,7 +4020,7 @@ if (fabricCanvasEl && window.fabric) {
   // [finish key, display label] pairs, in the same order the Finish
   // toolbar itself lists them — used to filter order-info.txt's color
   // legend down to only the finishes actually present on this card (see
-  // collectUsedFinishKeys/downloadRfqTestFiles), not the full fixed set.
+  // collectUsedFinishKeys/buildRfqFileBundle), not the full fixed set.
   const FINISH_LEGEND_ORDER = [
     ['none', "Don't Engrave"],
     ['stroke', 'Stroke'],
@@ -3959,15 +4095,16 @@ if (fabricCanvasEl && window.fabric) {
       obj.getObjects().forEach((child) => applyFinishCascade(child, finish, textureAmount, outline, angle));
     }
   }
-  // ---- Metallic finish vs. a Silver card blank ----
+  // ---- Metallic finish vs. a Clear (bare aluminum) card blank ----
   // Metallic finish is a proofing stand-in for "leave the aluminum bare"
-  // — on a Silver blank that's the card's own native color already, so
-  // engraving it "Metallic" would be a no-op (metal on identical metal,
-  // invisible). Disabled outright in the toolbar while Silver is
-  // selected (see updateFinishAvailability, wired up by the card-type
-  // picker below), and any object already set to Metallic — whether
-  // already on the canvas or baked into a template about to load — falls
-  // back to White instead, the same default everything else starts at.
+  // — on a Clear-anodized blank that's the card's own native color
+  // already, so engraving it "Metallic" would be a no-op (metal on
+  // identical metal, invisible). Disabled outright in the toolbar while
+  // Silver is selected (see updateFinishAvailability, wired up by the
+  // card-type picker below), and any object already set to Metallic —
+  // whether already on the canvas or baked into a template about to
+  // load — falls back to White instead, the same default everything
+  // else starts at.
   function isSilverCardTypeSelected() {
     const entry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
     return !!entry && entry.color === 'Silver';
@@ -4563,9 +4700,11 @@ if (fabricCanvasEl && window.fabric) {
     const types = window.CARD_TYPES || [];
     if (!types.length) {
       cardTypeGrid.innerHTML = '<p class="editor-side-panel-empty">No card types available.</p>';
+      cardTypeGrid.scrollTop = 0;
       return;
     }
     groupCardTypesByColor(types).forEach((group) => cardTypeGrid.appendChild(buildCardTypeRow(group)));
+    cardTypeGrid.scrollTop = 0;
   }
   if (cardTypeToggleBtn) cardTypeToggleBtn.addEventListener('click', openCardTypeModal);
   if (cardTypeModalClose) cardTypeModalClose.addEventListener('click', closeCardTypeModal);
@@ -4757,7 +4896,6 @@ if (fabricCanvasEl && window.fabric) {
         if (Math.abs(d) <= SNAP_THRESHOLD && (!bestY || Math.abs(d) < Math.abs(bestY.d))) bestY = { d, ty };
       });
     });
-    clearSnapGuides();
     if (bestX) {
       obj.left += bestX.d;
       drawSnapLine(true, bestX.tx);
@@ -4767,13 +4905,108 @@ if (fabricCanvasEl && window.fabric) {
       drawSnapLine(false, bestY.ty);
     }
     if (bestX || bestY) obj.setCoords();
+    return { x: !!bestX, y: !!bestY };
+  }
+
+  // ---- Equal-spacing ("same gap") snap guides ----
+  // Beyond plain edge/center alignment above, this also checks whether
+  // the object being dragged sits the exact same distance from its
+  // nearest neighbor on each side — another object, or the card's own
+  // edge — as that neighbor is on its own far side. That's the "equal
+  // gap"/smart-spacing guide most design tools show, distinct from
+  // (and drawn differently than) an alignment snap line: a short
+  // measuring segment with end caps, spanning just the two gaps being
+  // compared, rather than a line all the way across the canvas. Only
+  // checked per axis when applySnapping above didn't already snap that
+  // same axis, so the two features never fight over one move.
+  const SPACING_TICK_LEN = 5; // px, the little perpendicular caps at each end of a spacing line
+  function rectOf(obj) {
+    const r = obj.getBoundingRect(true, true);
+    return { left: r.left, top: r.top, right: r.left + r.width, bottom: r.top + r.height, width: r.width, height: r.height };
+  }
+  // isRow: true draws a horizontal measuring segment (spacing along X, at
+  // a fixed Y); false draws a vertical one (spacing along Y, at a fixed X).
+  function drawSpacingLine(isRow, fixedPos, from, to) {
+    const coords = isRow ? [from, fixedPos, to, fixedPos] : [fixedPos, from, fixedPos, to];
+    const line = new fabric.Line(coords, {
+      stroke: SNAP_LINE_COLOR, strokeWidth: 1, selectable: false, evented: false,
+      excludeFromExport: true, hoverCursor: 'default',
+    });
+    fabricCanvas.add(line);
+    fabricCanvas.bringToFront(line);
+    snapLines.push(line);
+    [from, to].forEach((pos) => {
+      const capCoords = isRow
+        ? [pos, fixedPos - SPACING_TICK_LEN, pos, fixedPos + SPACING_TICK_LEN]
+        : [fixedPos - SPACING_TICK_LEN, pos, fixedPos + SPACING_TICK_LEN, pos];
+      const cap = new fabric.Line(capCoords, {
+        stroke: SNAP_LINE_COLOR, strokeWidth: 1, selectable: false, evented: false,
+        excludeFromExport: true, hoverCursor: 'default',
+      });
+      fabricCanvas.add(cap);
+      fabricCanvas.bringToFront(cap);
+      snapLines.push(cap);
+    });
+  }
+  function applySpacingSnap(obj, skipX, skipY) {
+    const moving = obj.type === 'activeSelection' ? obj.getObjects() : [obj];
+    const others = fabricCanvas.getObjects().filter((o) => o.evented !== false && !moving.includes(o));
+    const rects = others.map(rectOf);
+    const cardLeft = { left: CARD_OFFSET_X, right: CARD_OFFSET_X, top: CARD_OFFSET_Y, bottom: CARD_OFFSET_Y + CARD_H_PX };
+    const cardRight = { left: CARD_OFFSET_X + CARD_W_PX, right: CARD_OFFSET_X + CARD_W_PX, top: CARD_OFFSET_Y, bottom: CARD_OFFSET_Y + CARD_H_PX };
+    const cardTop = { top: CARD_OFFSET_Y, bottom: CARD_OFFSET_Y, left: CARD_OFFSET_X, right: CARD_OFFSET_X + CARD_W_PX };
+    const cardBottom = { top: CARD_OFFSET_Y + CARD_H_PX, bottom: CARD_OFFSET_Y + CARD_H_PX, left: CARD_OFFSET_X, right: CARD_OFFSET_X + CARD_W_PX };
+    if (!skipX) {
+      const own = rectOf(obj);
+      let leftN = null;
+      let rightN = null;
+      rects.concat([cardLeft, cardRight]).forEach((c) => {
+        if (c.right <= own.left + 0.01 && (!leftN || c.right > leftN.right)) leftN = c;
+        if (c.left >= own.right - 0.01 && (!rightN || c.left < rightN.left)) rightN = c;
+      });
+      if (leftN && rightN) {
+        const gapLeft = own.left - leftN.right;
+        const gapRight = rightN.left - own.right;
+        if (gapLeft >= 0 && gapRight >= 0 && Math.abs(gapLeft - gapRight) <= SNAP_THRESHOLD) {
+          const newLeft = (leftN.right + rightN.left - own.width) / 2;
+          obj.left += newLeft - own.left;
+          obj.setCoords();
+          const lineY = own.top + own.height / 2;
+          drawSpacingLine(true, lineY, leftN.right, newLeft);
+          drawSpacingLine(true, lineY, newLeft + own.width, rightN.left);
+        }
+      }
+    }
+    if (!skipY) {
+      const own = rectOf(obj);
+      let topN = null;
+      let bottomN = null;
+      rects.concat([cardTop, cardBottom]).forEach((c) => {
+        if (c.bottom <= own.top + 0.01 && (!topN || c.bottom > topN.bottom)) topN = c;
+        if (c.top >= own.bottom - 0.01 && (!bottomN || c.top < bottomN.top)) bottomN = c;
+      });
+      if (topN && bottomN) {
+        const gapTop = own.top - topN.bottom;
+        const gapBottom = bottomN.top - own.bottom;
+        if (gapTop >= 0 && gapBottom >= 0 && Math.abs(gapTop - gapBottom) <= SNAP_THRESHOLD) {
+          const newTop = (topN.bottom + bottomN.top - own.height) / 2;
+          obj.top += newTop - own.top;
+          obj.setCoords();
+          const lineX = own.left + own.width / 2;
+          drawSpacingLine(false, lineX, topN.bottom, newTop);
+          drawSpacingLine(false, lineX, newTop + own.height, bottomN.top);
+        }
+      }
+    }
   }
   fabricCanvas.on('mouse:up', clearSnapGuides);
 
   // Live readouts while dragging the move handle or the rotate handle.
   fabricCanvas.on('object:moving', (opt) => {
     if (!opt.target) return;
-    applySnapping(opt.target);
+    clearSnapGuides();
+    const snapped = applySnapping(opt.target);
+    applySpacingSnap(opt.target, snapped.x, snapped.y);
     refreshTransformFields(opt.target);
   });
   fabricCanvas.on('object:rotating', (opt) => {
@@ -5410,8 +5643,20 @@ if (fabricCanvasEl && window.fabric) {
   function renderLayerThumbnail(obj) {
     const box = obj.getBoundingRect(true, true);
     const maxDim = Math.max(box.width, box.height, 1);
+    let multiplier = LAYER_THUMB_SIZE / maxDim;
+    // A very thin object (a horizontal/vertical Line, a flattened shape)
+    // has a near-zero minor dimension — scaled down by the same multiplier
+    // as the major one, it rounds to 0 actual pixels, which makes
+    // toDataURL hand back an empty, unusable "data:," image (a Line always
+    // hit this, since its bounding box is only ever as tall as its own
+    // stroke width). Bumping the multiplier up so the minor dimension
+    // clears 1px fixes that; the thumbnail <img> is a fixed, object-fit:
+    // contain box (see .editor-layer-item-thumb), so a larger raw render
+    // just gets scaled back down with no visual difference.
+    const minDim = Math.min(box.width, box.height);
+    if (minDim > 0 && minDim * multiplier < 1) multiplier = 1 / minDim;
     try {
-      return obj.toDataURL({ format: 'png', multiplier: LAYER_THUMB_SIZE / maxDim });
+      return obj.toDataURL({ format: 'png', multiplier });
     } catch (e) {
       return null;
     }
@@ -6017,4 +6262,28 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('selection:updated', refreshLayersListIfNeeded);
   fabricCanvas.on('selection:cleared', refreshLayersListIfNeeded);
   refreshLayersList();
+
+  // ---- Signal ready to the loading overlay ----
+  // Runs last, after everything above — the canvas, previews, and (if
+  // this load just resumed one) the imported design are all already
+  // painted. The overlay itself (an inline script in card-editor.html,
+  // since it has to start tracking script load progress before
+  // card-editor.js even begins downloading) owns the actual cross-hatch
+  // engrave animation and reveal timing — this just tells it setup is
+  // done on this end; it still waits for its own progress to reach 100%
+  // before actually revealing, so a slow resource load can't get cut off
+  // mid-engrave. Falls back to revealing immediately itself only if that
+  // hook is somehow missing (e.g. this file loaded standalone, outside
+  // card-editor.html).
+  if (window.__plmMarkAppReady) {
+    window.__plmMarkAppReady();
+  } else {
+    const shell = document.querySelector('.editor-shell');
+    if (shell) {
+      shell.classList.remove('is-entering');
+      shell.classList.add('is-ready');
+    }
+    const overlay = document.getElementById('editor-loading-overlay');
+    if (overlay) overlay.remove();
+  }
 }

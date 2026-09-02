@@ -10,6 +10,303 @@
 </head>
 <body class="editor-body">
 
+  <!-- Covers the brief window where the page/script is still setting up
+       (parsing the big non-module script, etc.) so that setup is never
+       visible mid-assembly. The logo "engraves" in like a real two-pass
+       cross-hatch job: a beat of black, then the 45deg lines laid down
+       one by one, then the 135deg pass crossing over them until the
+       result reads solid white — see the inline script below. Once that
+       plays out AND the real page is actually ready (whichever finishes
+       last), it holds briefly, then fades out as .editor-shell fades in.
+       A .plm file import (see card-editor.js) no longer reloads the page
+       at all, so this is purely a first-load/refresh flourish now. -->
+  <div class="editor-loading-overlay" id="editor-loading-overlay">
+    <canvas id="editor-loading-canvas" width="128" height="128"></canvas>
+  </div>
+  <script>
+    // Kept deliberately separate from card-editor.js (which is the very
+    // last of the scripts below, and doesn't even start downloading until
+    // the other five have already finished) — this needs to start
+    // tracking those five's own load times before any of them have
+    // loaded at all.
+    (function () {
+      var RESOURCE_COUNT = 5; // fabric, polybool, opentype, templates-data, card-types-data
+      var loaded = 0;
+      var appReady = false;
+      var revealed = false;
+      window.__plmStepDone = function () {
+        loaded = Math.min(RESOURCE_COUNT, loaded + 1);
+      };
+      // card-editor.js calls this once, right as it finishes its own
+      // setup (see the hand-off at the very end of that file) — by then
+      // every resource above has long since loaded (scripts run in
+      // order), so this really just means "the page itself is ready",
+      // not another unit of load progress.
+      window.__plmMarkAppReady = function () {
+        appReady = true;
+      };
+
+      var canvas = document.getElementById('editor-loading-canvas');
+      var ctx = canvas.getContext('2d');
+      var dpr = window.devicePixelRatio || 1;
+      var cssSize = 144; // ~2x the original size
+      var size = cssSize * dpr;
+      canvas.width = size;
+      canvas.height = size;
+      canvas.style.width = cssSize + 'px';
+      canvas.style.height = cssSize + 'px';
+
+      // Each pass's hatch lines, at true 45deg/135deg (dx===dy, not just
+      // "some diagonal"), clipped to the logo's own alpha shape — built
+      // once each, up front, so a frame only ever has to clip-and-blit a
+      // cached sprite, never redraw individual strokes. A true
+      // 800-lines/cm pitch would be well under a pixel apart at this
+      // element's on-screen size (invisible as individual lines, just a
+      // flat fill) — so that density's actual end result (solid) is
+      // reproduced directly: once both passes finish, a solid fill of the
+      // logo's own shape is drawn on top (spriteSolid below), guaranteeing
+      // a genuinely complete white result rather than relying on the
+      // hatch spacing alone to look dense enough.
+      var spacing = size / 44; // pass 2's density — the one that cleans it up toward full white
+      var pass1Spacing = size / 8; // pass 1 is deliberately sparse AND faint, barely any white at all
+      var pass1Alpha = 0.22;
+      function buildHatchSprite(direction, lineSpacing, alpha) {
+        var off = document.createElement('canvas');
+        off.width = size;
+        off.height = size;
+        var octx = off.getContext('2d');
+        octx.strokeStyle = 'rgba(255,255,255,' + (alpha == null ? 1 : alpha) + ')';
+        octx.lineWidth = Math.max(1, lineSpacing * 0.5);
+        octx.beginPath();
+        // direction 1 draws "/" strokes (up-and-right), -1 draws "\"
+        // strokes (down-and-right) — each individual stroke has
+        // dx === dy (or dy === -dx), i.e. an exact 45deg angle, not an
+        // arbitrary diagonal.
+        for (var offset = -size; offset <= size * 2; offset += lineSpacing) {
+          if (direction > 0) {
+            octx.moveTo(offset, size);
+            octx.lineTo(offset + size, 0);
+          } else {
+            octx.moveTo(offset, 0);
+            octx.lineTo(offset + size, size);
+          }
+        }
+        octx.stroke();
+        octx.globalCompositeOperation = 'destination-in';
+        octx.drawImage(logo, 0, 0, size, size);
+        return off;
+      }
+      function buildSolidSprite() {
+        var off = document.createElement('canvas');
+        off.width = size;
+        off.height = size;
+        var octx = off.getContext('2d');
+        octx.fillStyle = '#fff';
+        octx.fillRect(0, 0, size, size);
+        octx.globalCompositeOperation = 'destination-in';
+        octx.drawImage(logo, 0, 0, size, size);
+        return off;
+      }
+      var sprite45 = null;
+      var sprite135 = null;
+      var spriteSolid = null;
+      var logo = new Image();
+      logo.onload = function () {
+        sprite45 = buildHatchSprite(1, pass1Spacing, pass1Alpha);
+        sprite135 = buildHatchSprite(-1, spacing, 1);
+        spriteSolid = buildSolidSprite();
+        // The animation's own clock only starts now — not when this
+        // script first ran — so however long the image itself took to
+        // arrive is never silently burned out of the animation's budget
+        // (previously: BLACK_MS/pass timing was measured from script
+        // start regardless of image load time, so a slow image fetch ate
+        // straight into the engrave's own visible window, showing as
+        // extra black screen instead of the intended black-hold beat).
+        start = performance.now();
+        scheduleFrame();
+      };
+      // If the image never loads at all (network hiccup, a blocker,
+      // whatever), still start the clock and the frame loop — drawPass
+      // below just no-ops with no sprite to draw, so the overlay stays
+      // black through the engrave phase, but reveal() (which doesn't
+      // depend on the sprites) still fires normally afterward instead of
+      // hanging on this forever.
+      logo.onerror = function () {
+        start = performance.now();
+        scheduleFrame();
+      };
+      logo.src = 'logo-mark.png';
+
+      // Sweep each pass in discrete steps rather than a smooth wipe, so
+      // the lines visibly land one at a time — a real cross-hatch job
+      // reads as individual strokes, not a fade. The sweep boundary
+      // itself is rotated to match each pass's own line angle (45deg,
+      // then -45deg/135deg) so the reveal edge tracks the lines it's
+      // uncovering instead of cutting across them at a mismatched right
+      // angle. The two passes run back to back with no gap — pass 1 ramps
+      // up (slow to fast), pass 2 ramps down (fast to slow), so the whole
+      // engrave reads as one continuous, decelerating motion rather than
+      // two separate movements.
+      var LINE_STEPS = 60; // finer steps read smoother while still landing as individual lines, not a smooth wipe
+      var BLACK_MS = 0;
+      // Both passes sweep the same full-canvas distance, so equal
+      // duration is what actually makes them the same speed (pass 1
+      // being much shorter than pass 2 read as pass 1 moving faster,
+      // which it was). Note this does trade back some of the "start
+      // fast" tuning from before — pass 1's own faintness means a longer
+      // pass 1 reads as more empty time before pass 2's denser motion
+      // takes over; this duration is a middle ground, shorter than the
+      // 4800ms that first read as "nothing happening".
+      var PASS1_MS = 950;
+      var PASS2_MS = 950;
+      var HATCH_MS = PASS1_MS + PASS2_MS; // extends only if the page isn't ready yet
+      var PASS1_SPLIT = PASS1_MS / HATCH_MS;
+      var FADE_TO_SOLID_MS = 130;
+      var HOLD_MS = 500;
+      var FADE_OUT_MS = 350;
+      var start = null; // set once logo-mark.png actually loads — see below
+      // A real cubic Bézier (the same curve family CSS's own
+      // cubic-bezier() timing functions use — two control points between
+      // the fixed (0,0)/(1,1) endpoints, solved for y at a given x via
+      // Newton-Raphson), not a hand-rolled polynomial approximation.
+      function cubicBezier(x1, y1, x2, y2) {
+        function a(p1, p2) { return 1 - 3 * p2 + 3 * p1; }
+        function b(p1, p2) { return 3 * p2 - 6 * p1; }
+        function c(p1) { return 3 * p1; }
+        function bezier(t, p1, p2) { return ((a(p1, p2) * t + b(p1, p2)) * t + c(p1)) * t; }
+        function slope(t, p1, p2) { return 3 * a(p1, p2) * t * t + 2 * b(p1, p2) * t + c(p1); }
+        function tForX(x) {
+          var t = x;
+          for (var i = 0; i < 8; i++) {
+            var dx = bezier(t, x1, x2) - x;
+            var m = slope(t, x1, x2);
+            if (Math.abs(m) < 1e-6) break;
+            t -= dx / m;
+          }
+          return t;
+        }
+        return function (x) {
+          if (x <= 0) return 0;
+          if (x >= 1) return 1;
+          return bezier(tForX(x), y1, y2);
+        };
+      }
+      // One constant speed for both passes — no ease-in/ease-out ramping,
+      // just a straight linear sweep (cubicBezier is kept around for the
+      // curious/for reuse, but isn't used for the pacing itself anymore).
+      var easeInCubic = function (t) { return t; };
+      var easeOutCubic = function (t) { return t; };
+      function stepFraction(raw, easeFn) {
+        var eased = easeFn(Math.min(1, Math.max(0, raw)));
+        return Math.floor(eased * LINE_STEPS) / LINE_STEPS;
+      }
+      // Reveals `sprite` by sweeping a clip boundary rotated to
+      // `angleDeg`, so the boundary runs parallel to that pass's own
+      // lines and travels perpendicular to them — the same direction
+      // consecutive parallel strokes actually sit next to each other in,
+      // so each one appears whole rather than half-clipped.
+      function drawPass(sprite, angleDeg, frac) {
+        if (!sprite || frac <= 0) return;
+        var rad = (angleDeg * Math.PI) / 180;
+        // Tight to the canvas's own half-diagonal (the exact distance a
+        // ±45deg sweep needs to go corner-to-corner) — not a padded
+        // guess. Padding this any wider than necessary means the sweep
+        // finishes covering the actual logo well before frac reaches 1,
+        // so the remainder of the pass's own allotted time (and the next
+        // pass's start, which waits for this one's full duration) just
+        // sweeps empty margin with nothing visibly changing — that dead
+        // stretch is what read as "a delay between each path".
+        var sweepHalf = (size * Math.SQRT2) / 2;
+        var heightHalf = size * 1.5; // perpendicular dimension isn't animated, so generous coverage here is free
+        ctx.save();
+        ctx.translate(size / 2, size / 2);
+        ctx.rotate(rad);
+        ctx.beginPath();
+        ctx.rect(-sweepHalf, -heightHalf, frac * sweepHalf * 2, heightHalf * 2);
+        ctx.clip();
+        ctx.rotate(-rad);
+        ctx.translate(-size / 2, -size / 2);
+        ctx.drawImage(sprite, 0, 0);
+        ctx.restore();
+      }
+      function drawHatch(pass1Frac, pass2Frac) {
+        ctx.clearRect(0, 0, size, size);
+        drawPass(sprite45, 45, pass1Frac);
+        drawPass(sprite135, -45, pass2Frac);
+      }
+      function reveal() {
+        if (revealed) return;
+        revealed = true;
+        var shell = document.querySelector('.editor-shell');
+        if (shell) {
+          shell.classList.remove('is-entering');
+          shell.classList.add('is-ready');
+        }
+        var overlay = document.getElementById('editor-loading-overlay');
+        if (overlay) {
+          overlay.classList.add('is-hidden');
+          setTimeout(function () { overlay.remove(); }, FADE_OUT_MS);
+        }
+      }
+      var fadeStart = null;
+      var holdStart = null;
+      function frame(now) {
+        var elapsed = now - start;
+        var t = Math.min(1, (elapsed - BLACK_MS) / HATCH_MS);
+        var frac2 = t < PASS1_SPLIT ? 0 : stepFraction((t - PASS1_SPLIT) / (1 - PASS1_SPLIT), easeOutCubic);
+        // Linear speed (no easing) means frac2 already reaches its own
+        // max right as t hits 1, with no flat "barely moving" tail to
+        // route around — so there's no need to jump the hatch to fully
+        // drawn early anymore either (that used to cause a visible pop
+        // right as the fade kicked in, since frac2 was still mid-step
+        // when it got forced to 1). Just wait for the real thing.
+        var hatchDone = t >= 1;
+        if (elapsed < BLACK_MS) {
+          ctx.clearRect(0, 0, size, size);
+        } else if (!hatchDone || !appReady) {
+          if (t < PASS1_SPLIT) {
+            drawHatch(stepFraction(t / PASS1_SPLIT, easeInCubic), 0);
+          } else {
+            drawHatch(1, frac2);
+          }
+        } else {
+          // Both the >=2s minimum AND the real page are done — cross-fade
+          // from the hatch into a guaranteed-solid fill over a fixed 1s,
+          // rather than the hatch simply snapping into "done".
+          if (fadeStart === null) fadeStart = now;
+          var fadeT = Math.min(1, (now - fadeStart) / FADE_TO_SOLID_MS);
+          drawHatch(1, frac2);
+          if (spriteSolid) {
+            ctx.globalAlpha = fadeT;
+            ctx.drawImage(spriteSolid, 0, 0);
+            ctx.globalAlpha = 1;
+          }
+          if (fadeT >= 1) {
+            if (holdStart === null) holdStart = now;
+            if (now - holdStart >= HOLD_MS) {
+              reveal();
+              return;
+            }
+          }
+        }
+        scheduleFrame();
+      }
+      // setTimeout rather than requestAnimationFrame: a hidden/background
+      // tab (opened in the background, or the window minimized) throttles
+      // or fully suspends rAF, which would leave this stuck mid-engrave
+      // forever with no way to recover once the tab is looked at again —
+      // setTimeout keeps ticking (just at a lower rate) so the sequence
+      // still finishes, and elapsed time is measured against
+      // performance.now() regardless, so the actual pacing is unaffected
+      // whenever the tab is in the foreground like normal.
+      function scheduleFrame() {
+        setTimeout(function () { frame(performance.now()); }, 16);
+      }
+      // Kicked off from logo.onload above instead of unconditionally here
+      // — see the comment there for why.
+    })();
+  </script>
+
   <!-- Shown only below the desktop breakpoint; the editor itself is
        hidden there via CSS (see card-editor.css). -->
   <div class="editor-mobile-block">
@@ -18,7 +315,7 @@
     <a href="products.html" class="btn btn-ghost">&larr; Back to Products</a>
   </div>
 
-  <div class="editor-shell">
+  <div class="editor-shell is-entering">
     <!-- App-style top bar (distinct from the marketing site header) -->
     <header class="editor-topbar">
       <a href="products.html" class="editor-back" aria-label="Back to Products">
@@ -778,11 +1075,11 @@
     </div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
-  <script src="https://unpkg.com/polybooljs@1.2.2/dist/polybool.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js"></script>
-  <script src="templates/templates-data.js"></script>
-  <script src="card-types/card-types-data.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js" onload="window.__plmStepDone()" onerror="window.__plmStepDone()"></script>
+  <script src="https://unpkg.com/polybooljs@1.2.2/dist/polybool.js" onload="window.__plmStepDone()" onerror="window.__plmStepDone()"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js" onload="window.__plmStepDone()" onerror="window.__plmStepDone()"></script>
+  <script src="templates/templates-data.js" onload="window.__plmStepDone()" onerror="window.__plmStepDone()"></script>
+  <script src="card-types/card-types-data.js" onload="window.__plmStepDone()" onerror="window.__plmStepDone()"></script>
   <script src="card-editor.js"></script>
 </body>
 </html>

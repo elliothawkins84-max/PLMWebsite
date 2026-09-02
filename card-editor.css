@@ -29,6 +29,29 @@
   flex-direction: column;
   height: 100vh;
 }
+.editor-shell.is-entering { opacity: 0; transform: translateY(10px); }
+.editor-shell.is-ready { animation: editor-shell-in 0.4s ease forwards; }
+@keyframes editor-shell-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Loading overlay ---- */
+/* Covers setup (script parsing, a .plm reload's decode) so it's never
+   visible mid-assembly — see the inline script in card-editor.html
+   (owns the cross-hatch engrave animation and reveal timing) and the
+   __plmMarkAppReady hand-off at the very end of card-editor.js. */
+.editor-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  transition: opacity 0.3s ease;
+}
+.editor-loading-overlay.is-hidden { opacity: 0; pointer-events: none; }
+.editor-loading-canvas { display: block; }
 
 /* ---- Top bar ---- */
 .editor-topbar {
@@ -1010,22 +1033,19 @@
 .editor-cardtype-option-preview {
   width: 340px;
   aspect-ratio: 86 / 54;
-  border-radius: 6px;
-  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  border: 1.5px solid transparent;
   background-size: cover;
   background-position: center;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s;
 }
 .editor-cardtype-option:hover .editor-cardtype-option-preview,
-.editor-cardtype-option:focus-visible .editor-cardtype-option-preview {
-  border-color: var(--fg);
-}
+.editor-cardtype-option:focus-visible .editor-cardtype-option-preview,
 .editor-cardtype-option.is-selected .editor-cardtype-option-preview {
   border-color: var(--fg);
-  box-shadow: 0 0 0 1.5px var(--fg);
 }
 .editor-cardtype-option-preview-canvas {
   display: block;

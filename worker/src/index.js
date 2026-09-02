@@ -3,12 +3,22 @@ const ALLOWED_ORIGINS = new Set([
   'https://www.precisionlasermark.com',
 ]);
 
+// Also allow localhost/127.0.0.1 on any port, so the card editor's RFQ
+// popup can be exercised against the real Worker while testing from a
+// local dev server (python http.server, etc.) instead of only from the
+// live production domain.
+const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+function isOriginAllowed(origin) {
+  return ALLOWED_ORIGINS.has(origin) || LOCAL_ORIGIN_RE.test(origin);
+}
+
 const TO_EMAIL = 'info@precisionlasermark.com';
 const FROM_EMAIL = 'RFQ Form <rfq@mail.precisionlasermark.com>';
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB, matches the site's stated limit
 
 function corsHeaders(origin) {
-  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : '';
+  const allowed = isOriginAllowed(origin) ? origin : '';
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -42,7 +52,7 @@ export default {
     if (request.method !== 'POST') {
       return json({ success: false, message: 'Method not allowed' }, 405, origin);
     }
-    if (!ALLOWED_ORIGINS.has(origin)) {
+    if (!isOriginAllowed(origin)) {
       return json({ success: false, message: 'Forbidden' }, 403, origin);
     }
 
