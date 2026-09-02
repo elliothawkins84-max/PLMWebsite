@@ -216,11 +216,19 @@ function rebuildRulers() {
 rebuildRulers();
 
 // ---- Zoom ----
-// Uses the CSS `zoom` property (not `transform: scale`) specifically
-// because it changes the frame's actual layout size, so the surrounding
-// .editor-canvas-scroll container has something real to scroll once the
-// zoomed frame no longer fits — transform doesn't affect layout size, so
-// scrolling wouldn't pick up the change.
+// `transform: scale`, not the CSS `zoom` property this used to run on —
+// `zoom` has a real, documented history of inconsistent mouse-event
+// coordinate handling in Safari specifically (clicks/drags landing off
+// from the actual cursor position, worse the further from 100%), where
+// `transform` is fully standardized and behaves identically everywhere.
+// `transform` alone doesn't affect layout size though, so
+// .editor-canvas-scroll would have nothing new to scroll toward once
+// zoomed content no longer fits — .editor-canvas-frame-sizer (see
+// card-editor.css) is a real, in-flow box that applyZoom() below resizes
+// by hand to the frame's own natural size × the zoom factor, giving the
+// scroll container the same "something real changed size" signal `zoom`
+// used to provide, while the frame itself (transform-scaled, absolutely
+// positioned inside that sizer) is what actually renders at that size.
 const ZOOM_MIN = 25;
 const ZOOM_MAX = 300;
 const ZOOM_STEP = 10; // per button click — a deliberate, discrete action
@@ -236,12 +244,29 @@ const ZOOM_CALIBRATION = 0.9;
 let zoomLevel = DEFAULT_ZOOM;
 
 const canvasFrame = document.querySelector('.editor-canvas-frame');
+const canvasFrameSizer = document.getElementById('canvas-frame-sizer');
 const zoomValueEl = document.getElementById('zoom-value');
 const zoomOutBtn = document.getElementById('zoom-out');
 const zoomInBtn = document.getElementById('zoom-in');
+// Matches .editor-canvas-frame's own fixed grid-template-columns/rows
+// sums (34+16+774 / 18+34+16+486) in card-editor.css — hardcoded rather
+// than measured via offsetWidth/Height because that measurement isn't
+// reliable at every point setup could run: .editor-shell is display:none
+// below the mobile breakpoint, and a one-time DOM read taken while that's
+// true (e.g. a real user starting in a narrow window, or this file's own
+// initial script execution landing before layout has settled) would
+// permanently cache 0 — silently breaking the zoom sizer's math forever,
+// even after the window is later resized wide enough to show the editor.
+const FRAME_NATURAL_W = 824;
+const FRAME_NATURAL_H = 554;
 
 function applyZoom() {
-  if (canvasFrame) canvasFrame.style.zoom = (zoomLevel / 100) * ZOOM_CALIBRATION;
+  const factor = (zoomLevel / 100) * ZOOM_CALIBRATION;
+  if (canvasFrame) canvasFrame.style.transform = `scale(${factor})`;
+  if (canvasFrameSizer) {
+    canvasFrameSizer.style.width = `${FRAME_NATURAL_W * factor}px`;
+    canvasFrameSizer.style.height = `${FRAME_NATURAL_H * factor}px`;
+  }
   if (zoomValueEl) zoomValueEl.textContent = `${zoomLevel}%`;
   if (zoomOutBtn) zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN;
   if (zoomInBtn) zoomInBtn.disabled = zoomLevel >= ZOOM_MAX;

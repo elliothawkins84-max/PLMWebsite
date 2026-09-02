@@ -732,6 +732,19 @@
 .editor-canvas-scroll.is-panning { cursor: grabbing; }
 .editor-canvas-scroll.is-panning * { cursor: grabbing; }
 
+/* JS sets this to the frame's own natural size × the current zoom factor
+   (applyZoom() in card-editor.js) — a real, in-flow layout box, so the
+   surrounding .editor-canvas-scroll always has real scrollable area at
+   any zoom level, same reason CSS `zoom` used to be applied to the frame
+   directly. Scaling now happens one level in via `transform` on the
+   frame itself instead (see below) — `zoom` has a real, documented
+   history of inconsistent mouse-event-coordinate behavior in Safari
+   specifically (clicks/drags landing off from the cursor, worse at
+   higher/lower zoom), where `transform` is fully standardized and
+   consistent across every browser. */
+.editor-canvas-frame-sizer {
+  position: relative;
+}
 /* Ruler + canvas grid — corner box, then a ruler across the top and one
    down the left, sized to match the card exactly so tick 0 lines up with
    the card's own edge. Fixed px-per-mm (6px = 1mm) keeps the ruler math
@@ -742,7 +755,22 @@
   display: grid;
   grid-template-columns: 34px 16px 774px;
   grid-template-rows: 18px 34px 16px 486px;
-  width: fit-content;
+  /* Explicit, not `fit-content` — the tracks above already fix the total
+     size deterministically (34+16+774 / 18+34+16+486), and `fit-content`
+     on an absolutely positioned element resolves against its containing
+     block's own size, which is exactly what JS reads *this* element's
+     size to set (see FRAME_NATURAL_W/H in card-editor.js) — `fit-content`
+     here creates a circular dependency that silently collapses to 0. */
+  width: 824px;
+  height: 554px;
+  /* Taken out of the sizer's flow (which is sized in JS to the *scaled*
+     footprint, not this element's own natural/unscaled one) and scaled
+     in place from its own top-left corner, landing exactly within the
+     sizer's box since both use the same factor. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
 }
 /* z-index on these four: the pasteboard canvas is now much bigger than
    its own grid cell (.editor-canvas-wrap, row 4) and visually overflows
