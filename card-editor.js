@@ -3490,9 +3490,14 @@ if (fabricCanvasEl && window.fabric) {
     });
     // Keep whatever was selected across a re-price (design edited while
     // the modal happened to already be open) rather than always
-    // snapping back to the first option.
+    // snapping back to the first option. On a genuinely fresh open
+    // (previousValue is '') a plain <select> would otherwise default to
+    // PRICING_QTY_OPTIONS[0] (10) just because it's listed first --
+    // 100 is the more realistic starting quantity for most orders.
     if (previousValue && PRICING_QTY_OPTIONS.some((q) => String(q) === previousValue)) {
       nextModalQuantity.value = previousValue;
+    } else if (PRICING_QTY_OPTIONS.includes(100)) {
+      nextModalQuantity.value = '100';
     }
   }
   function updateNextModalCardType() {
