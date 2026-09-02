@@ -1952,6 +1952,24 @@ if (fabricCanvasEl && window.fabric) {
   function projectHasBackSide() {
     return currentSide === 'back' || !!sideHistories.back || !!document.querySelector('.editor-side-thumb[data-side="back"]');
   }
+  // Whether there's anything on the canvas actually worth warning about
+  // losing -- checked directly against current content (front side's
+  // real object count, or any back side at all) rather than the shape of
+  // the undo stack. undoStack.length alone used to gate this (>1 meaning
+  // "at least one edit"), but that resets to a fresh 1-entry stack on
+  // every import/template load (see importProjectData), so loading a
+  // template right after importing a file -- or right after loading a
+  // previous template -- would silently skip the warning even though
+  // there was a real design sitting on the canvas.
+  function projectHasExistingWork() {
+    if (projectHasBackSide()) return true;
+    try {
+      const data = JSON.parse(getSideSnapshotJSON('front') || blankCanvasSnapshot);
+      return Array.isArray(data.objects) && data.objects.length > 0;
+    } catch (e) {
+      return false;
+    }
+  }
   async function downloadProjectFile(filename) {
     const hasBack = projectHasBackSide();
     const frontJSON = getSideSnapshotJSON('front') || blankCanvasSnapshot;
@@ -2089,7 +2107,7 @@ if (fabricCanvasEl && window.fabric) {
   }
   if (importBtn && importProjectInput) {
     importBtn.addEventListener('click', async () => {
-      const hasExistingWork = undoStack.length > 1 || projectHasBackSide();
+      const hasExistingWork = projectHasExistingWork();
       if (hasExistingWork && !(await plmConfirm('Importing a file will replace your current design. Continue?'))) return;
       importProjectInput.value = '';
       importProjectInput.click();
@@ -4932,7 +4950,7 @@ if (fabricCanvasEl && window.fabric) {
     card.appendChild(previews);
     card.appendChild(info);
     card.addEventListener('click', async () => {
-      const hasExistingWork = undoStack.length > 1 || projectHasBackSide();
+      const hasExistingWork = projectHasExistingWork();
       if (hasExistingWork && !(await plmConfirm('Loading this template will replace your current design. Continue?'))) return;
       // A template's own baked-in Metallic finishes (several use it as a
       // default) would be invisible metal-on-metal on a Silver card, same
