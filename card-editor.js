@@ -3547,6 +3547,9 @@ if (fabricCanvasEl && window.fabric) {
   function canvasToBlob(canvas) {
     return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
   }
+  function canvasToDataURL(canvas) {
+    return canvas.toDataURL('image/png');
+  }
 
   // ---- RFQ file bundle (mockup, proofing canvas, SVGs, order info) ----
   // Built for every real request the Next modal sends — see
@@ -3749,10 +3752,14 @@ if (fabricCanvasEl && window.fabric) {
           obj.setCoords();
         });
         staticCanvas.renderAll();
-        const background = `<g id="card-background"><rect x="0" y="0" width="${CARD_W_PX}" height="${CARD_H_PX}" rx="27" ry="27" fill="#1a1a1a"/></g>`;
+        // No filled background rect here (there used to be one, solid
+        // #1a1a1a) — this SVG is the vector file the laser actually reads,
+        // and a filled background is at best dead weight and at worst
+        // something a laser operator has to remember to delete before
+        // cutting/engraving. Just the outline, as a reference guide for
+        // the card's edge, stays.
         const outline = `<g id="card-outline"><rect x="0.75" y="0.75" width="${CARD_W_PX - 1.5}" height="${CARD_H_PX - 1.5}" rx="27" ry="27" fill="none" stroke="#ffffff" stroke-width="1.5"/></g>`;
         const svg = staticCanvas.toSVG()
-          .replace('</defs>', `</defs>\n${background}`)
           .replace('</svg>', `${outline}</svg>`);
         staticCanvas.dispose();
         resolve(svg);
@@ -3871,10 +3878,7 @@ if (fabricCanvasEl && window.fabric) {
     // name/color key as the Finish toolbar and the proofing PNG above,
     // all in one file so the shop has everything about this order
     // without needing to cross-reference the email itself.
-    const formData = nextModalForm ? new FormData(nextModalForm) : new FormData();
-    const qty = nextModalQuantity ? parseInt(nextModalQuantity.value, 10) || 0 : 0;
-    const pricing = nextModalDirectCost !== null && qty ? getNextModalPricing(nextModalDirectCost, qty) : null;
-    const cardTypeEntry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+    const order = computeOrderContext();
     const usedFinishKeys = new Set();
     collectUsedFinishKeys(frontSnap, usedFinishKeys);
     if (hasBack) collectUsedFinishKeys(backSnap, usedFinishKeys);
@@ -3884,17 +3888,13 @@ if (fabricCanvasEl && window.fabric) {
     const infoLines = [
       'Order info',
       '==========',
-      `Name: ${String(formData.get('name') || '').trim() || 'n/a'}`,
-      `Email: ${String(formData.get('email') || '').trim() || 'n/a'}`,
-      `Quantity: ${qty || 'n/a'}`,
-      `Card type: ${cardTypeEntry ? `${cardTypeEntry.color} · ${cardTypeEntry.thicknessIn} (${cardTypeEntry.thicknessMm})` : 'n/a'}`,
-      !pricing
-        ? 'Estimated total: n/a'
-        : pricing.isMinCharge
-          ? `Estimated total: $${pricing.total.toFixed(2)} min charge`
-          : `Estimated total: $${pricing.total.toFixed(2)} ($${pricing.each.toFixed(2)} ea.)`,
-      `Shipping address: ${String(formData.get('address') || '').trim() || 'n/a'}, ${String(formData.get('city') || '').trim() || 'n/a'}, ${String(formData.get('state') || '').trim() || 'n/a'} ${String(formData.get('zip') || '').trim() || 'n/a'}`,
-      `Message: ${String(formData.get('message') || '').trim() || 'n/a'}`,
+      `Name: ${order.name || 'n/a'}`,
+      `Email: ${order.email || 'n/a'}`,
+      `Quantity: ${order.quantity || 'n/a'}`,
+      `Card type: ${order.cardTypeLabel}`,
+      `Estimated total: ${order.estimatedTotal}`,
+      `Shipping address: ${order.address || 'n/a'}, ${order.city || 'n/a'}, ${order.state || 'n/a'} ${order.zip || 'n/a'}`,
+      `Message: ${order.message || 'n/a'}`,
       '',
       'Card finish color legend',
       '(matches the Finish toolbar and canvas.png — only finishes actually used on this card are listed)',
@@ -3904,6 +3904,135 @@ if (fabricCanvasEl && window.fabric) {
     files.push({ filename: 'order-info.txt', blob: new Blob([infoLines], { type: 'text/plain' }) });
 
     return files;
+  }
+  // Shared by buildRfqFileBundle's order-info.txt and buildPlmjFile's
+  // structured `order` field below (and could replace sendRealRfqRequest's
+  // own inline copy of this same computation too, if that ever gets
+  // un-mothballed) — one place that turns the Next modal's form + pricing
+  // state into plain, already-formatted fields.
+  function computeOrderContext() {
+    const formData = nextModalForm ? new FormData(nextModalForm) : new FormData();
+    const qty = nextModalQuantity ? parseInt(nextModalQuantity.value, 10) || 0 : 0;
+    const pricing = nextModalDirectCost !== null && qty ? getNextModalPricing(nextModalDirectCost, qty) : null;
+    const cardTypeEntry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+    return {
+      name: String(formData.get('name') || '').trim(),
+      email: String(formData.get('email') || '').trim(),
+      quantity: qty,
+      cardTypeId: selectedCardTypeId,
+      cardTypeLabel: cardTypeEntry ? `${cardTypeEntry.color} · ${cardTypeEntry.thicknessIn} (${cardTypeEntry.thicknessMm})` : 'n/a',
+      estimatedTotal: !pricing
+        ? 'n/a'
+        : pricing.isMinCharge
+          ? `$${pricing.total.toFixed(2)} min charge`
+          : `$${pricing.total.toFixed(2)} (${qty} × $${pricing.each.toFixed(2)} ea.)`,
+      address: String(formData.get('address') || '').trim(),
+      city: String(formData.get('city') || '').trim(),
+      state: String(formData.get('state') || '').trim(),
+      zip: String(formData.get('zip') || '').trim(),
+      message: String(formData.get('message') || '').trim(),
+    };
+  }
+  // ---- Single-file .plmj job bundle ----
+  // Same five things buildRfqFileBundle above produces (mockup, proofing
+  // canvas, both SVGs, order info) but as one gzip-compressed JSON
+  // container (mirrors the .plm project format's own PLM1 magic-header
+  // approach — see encodeProjectFile) instead of five loose files, so
+  // "Request a Quote" downloads one thing and PLMJobViewer has one file
+  // to open. Kept as its own render pass rather than reusing
+  // buildRfqFileBundle's stacked/composited canvases: PLMJobViewer wants
+  // front and back as separate images it can lay out itself, not a single
+  // pre-stacked PNG with its own black page-margin background.
+  const PLMJ_MAGIC = 'PLMJ';
+  async function encodePlmjFile(payloadObj) {
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(payloadObj));
+    let bodyBytes = jsonBytes;
+    let format = PLM_FORMAT_RAW;
+    if (typeof CompressionStream !== 'undefined') {
+      const cs = new CompressionStream('gzip');
+      const writer = cs.writable.getWriter();
+      writer.write(jsonBytes);
+      writer.close();
+      bodyBytes = new Uint8Array(await new Response(cs.readable).arrayBuffer());
+      format = PLM_FORMAT_GZIP;
+    }
+    const header = new TextEncoder().encode(PLMJ_MAGIC);
+    const out = new Uint8Array(header.length + 1 + bodyBytes.length);
+    out.set(header, 0);
+    out[header.length] = format;
+    out.set(bodyBytes, header.length + 1);
+    return out;
+  }
+  async function buildPlmjFile() {
+    const hasBack = projectHasBackSide();
+    const frontSnap = snapshotForSide('front') || blankCanvasSnapshot;
+    const backSnap = hasBack ? (snapshotForSide('back') || blankCanvasSnapshot) : null;
+    const w = 860;
+    const h = 540;
+    const rulerLeftW = 44;
+    const rulerTopH = 34;
+    const labelH = 22;
+
+    async function sideMockupDataURL(snap) {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      await renderMockupCanvasAsync(c, snap);
+      return canvasToDataURL(c);
+    }
+    async function sideCanvasDataURL(snap, label) {
+      const out = document.createElement('canvas');
+      out.width = rulerLeftW + w;
+      out.height = rulerTopH + h + labelH;
+      const ctx = out.getContext('2d');
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, out.width, out.height);
+      const proof = await renderProofingCanvasAsync(w, h, snap);
+      ctx.drawImage(proof, rulerLeftW, rulerTopH, w, h);
+      drawRulerAndLabel(ctx, rulerLeftW, rulerTopH, w, h, w / CARD_W_PX, label);
+      return canvasToDataURL(out);
+    }
+
+    const [frontMockup, backMockup, frontCanvas, backCanvas, frontSvg, backSvg] = await Promise.all([
+      sideMockupDataURL(frontSnap),
+      hasBack ? sideMockupDataURL(backSnap) : Promise.resolve(null),
+      sideCanvasDataURL(frontSnap, 'Front'),
+      hasBack ? sideCanvasDataURL(backSnap, 'Back') : Promise.resolve(null),
+      buildCardSvgAsync(frontSnap),
+      hasBack ? buildCardSvgAsync(backSnap) : Promise.resolve(null),
+    ]);
+
+    const usedFinishKeys = new Set();
+    collectUsedFinishKeys(frontSnap, usedFinishKeys);
+    if (hasBack) collectUsedFinishKeys(backSnap, usedFinishKeys);
+    const finishLegend = FINISH_LEGEND_ORDER
+      .filter(([key]) => usedFinishKeys.has(key))
+      .map(([key, label]) => ({ key, label, colorName: FINISH_COLOR_NAMES[key], colorHex: FINISH_COLORS[key] }));
+
+    const cardTypeEntry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
+
+    return {
+      app: 'business-card-editor',
+      kind: 'plmj',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      order: computeOrderContext(),
+      cardType: cardTypeEntry
+        ? { id: cardTypeEntry.id, color: cardTypeEntry.color, thicknessIn: cardTypeEntry.thicknessIn, thicknessMm: cardTypeEntry.thicknessMm, swatch: cardTypeEntry.swatch }
+        : null,
+      hasBack,
+      finishLegend,
+      mockup: { front: frontMockup, back: backMockup },
+      canvas: { front: frontCanvas, back: backCanvas },
+      svg: { front: frontSvg, back: backSvg },
+    };
+  }
+  async function downloadPlmjFile() {
+    const payload = await buildPlmjFile();
+    const bytes = await encodePlmjFile(payload);
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    const base = (payload.order.name || 'business-card').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'business-card';
+    triggerDownload(blob, `${base}-order.plmj`);
   }
 
   // Sends the real request — the button used to just download this same
@@ -3989,12 +4118,11 @@ if (fabricCanvasEl && window.fabric) {
     const submitLabel = nextModalRequestBtn.innerHTML;
     nextModalRequestBtn.textContent = 'Building…';
     try {
-      const bundle = await buildRfqFileBundle();
-      bundle.forEach(({ filename, blob }) => triggerDownload(blob, filename));
-      nextModalStatus.textContent = 'Test files downloaded — nothing was sent.';
+      await downloadPlmjFile();
+      nextModalStatus.textContent = 'Order file (.plmj) downloaded — nothing was sent. Open it in PLM Job Viewer.';
       nextModalStatus.className = 'form-status success';
     } catch (err) {
-      nextModalStatus.textContent = 'Could not build the file bundle — please try again.';
+      nextModalStatus.textContent = 'Could not build the order file — please try again.';
       nextModalStatus.className = 'form-status error';
     } finally {
       nextModalRequestBtn.disabled = false;
