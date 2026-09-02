@@ -95,12 +95,13 @@ const PRICING_QTY_OPTIONS = [10, 20, 25, 50, 75, 100, 150, 200];
 // Text color for the "Estimated total" figure in the Next modal, keyed by
 // CARD_TYPES color name -- picked to read clearly against the modal's
 // black background rather than reusing each card type's own (often much
-// darker/anodized-muted) swatch hex directly. Black is the one card
-// whose actual swatch (#0d0d0d) would be all but invisible on black, so
-// that one's an explicit exception rather than a "readable black" -- red.
+// darker/anodized-muted) swatch hex directly. Black and Silver both use
+// red rather than a "readable black"/"readable silver": Black's actual
+// swatch (#0d0d0d) is all but invisible on black, and Silver reads too
+// close to the modal's own plain white/gray body text to stand out.
 const NEXT_MODAL_TOTAL_COLORS = {
   Black: '#ef4444',
-  Silver: '#e5e7eb',
+  Silver: '#ef4444',
   Yellow: '#facc15',
   Red: '#f87171',
   Blue: '#60a5fa',
