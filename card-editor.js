@@ -3763,7 +3763,15 @@ if (fabricCanvasEl && window.fabric) {
         // something a laser operator has to remember to delete before
         // cutting/engraving. Just the outline, as a reference guide for
         // the card's edge, stays.
-        const outline = `<g id="card-outline"><rect x="0.75" y="0.75" width="${CARD_W_PX - 1.5}" height="${CARD_H_PX - 1.5}" rx="27" ry="27" fill="none" stroke="#ffffff" stroke-width="1.5"/></g>`;
+        // Full CARD_W_PX x CARD_H_PX, not inset by half the stroke width --
+        // an inset rect's own width/height attribute reads as slightly
+        // less than the true card size (772.5 x 484.5 px, i.e. 85.83mm x
+        // 53.83mm instead of 86mm x 54mm) to any tool that measures the
+        // shape's geometry rather than its rendered/stroke-inclusive
+        // bounds. The 1.5px stroke now centers on the true edge and bleeds
+        // ~0.04mm outside the nominal card size on each side, which is
+        // negligible next to getting the geometry itself exactly right.
+        const outline = `<g id="card-outline"><rect x="0" y="0" width="${CARD_W_PX}" height="${CARD_H_PX}" rx="27" ry="27" fill="none" stroke="#ffffff" stroke-width="1.5"/></g>`;
         // Fabric's own width/height on the <svg> tag are unitless (just
         // "774"/"486"), which every SVG consumer treats as pixels -- at a
         // typical 96dpi that's ~205mm x ~129mm, more than double the real
