@@ -3587,6 +3587,75 @@ if (fabricCanvasEl && window.fabric) {
     if (e.key === 'Escape' && nextModal && nextModal.classList.contains('is-open')) closeNextModal();
   });
 
+  // ---- RFQ success modal ----
+  // Replaces the Next modal entirely once a request actually goes through
+  // — closing that one and opening this one, rather than just swapping
+  // the status text in place, so it reads as "the request is done, here's
+  // what to do next" instead of a small inline confirmation easy to miss.
+  const rfqSuccessModal = document.getElementById('rfq-success-modal');
+  const rfqSuccessEditorBtn = document.getElementById('rfq-success-editor-btn');
+  const rfqSuccessSaveBtn = document.getElementById('rfq-success-save-btn');
+  const rfqSuccessHomeBtn = document.getElementById('rfq-success-home-btn');
+  function closeRfqSuccessModal() {
+    if (!rfqSuccessModal) return;
+    rfqSuccessModal.classList.remove('is-open');
+    rfqSuccessModal.setAttribute('aria-hidden', 'true');
+  }
+  function showRfqSuccessModal() {
+    closeNextModal();
+    if (!rfqSuccessModal) return;
+    // Waits out the Next modal's own close transition (0.2s, see
+    // .editor-modal-overlay) before opening this one, rather than both
+    // firing in the same tick — popping a second modal in on top of the
+    // first one still visibly fading out read as an abrupt, jarring cut.
+    setTimeout(() => {
+      // Re-triggers the checkmark's draw-on animation every time this
+      // modal opens, not just the first — restarting a CSS animation
+      // needs the element actually removed from the document and
+      // reinserted (a class toggle alone is a no-op the second time
+      // around).
+      const check = rfqSuccessModal.querySelector('.editor-rfq-success-check');
+      if (check) {
+        const parent = check.parentNode;
+        const next = check.nextSibling;
+        parent.removeChild(check);
+        // eslint-disable-next-line no-unused-expressions
+        check.offsetWidth; // force layout so the reinsertion below is a genuine restart, not coalesced with the removal
+        parent.insertBefore(check, next);
+      }
+      rfqSuccessModal.classList.add('is-open');
+      rfqSuccessModal.setAttribute('aria-hidden', 'false');
+    }, 300);
+  }
+  // Does exactly what it says and nothing else — the design already sits
+  // untouched on the canvas underneath both modals the whole time, so
+  // "going back" is just closing this one.
+  if (rfqSuccessEditorBtn) rfqSuccessEditorBtn.addEventListener('click', closeRfqSuccessModal);
+  // Same real save flow as the top bar's own Save button — a named
+  // .plm download, not a placeholder.
+  if (rfqSuccessSaveBtn) {
+    rfqSuccessSaveBtn.addEventListener('click', () => {
+      closeRfqSuccessModal();
+      openSaveAsModal();
+    });
+  }
+  // A real navigation, not a placeholder — leaves the editor (and, if
+  // there's anything unsaved, still trips the existing beforeunload
+  // warning first, same as any other way of leaving this page).
+  if (rfqSuccessHomeBtn) {
+    rfqSuccessHomeBtn.addEventListener('click', () => {
+      window.location.href = 'index.html';
+    });
+  }
+  if (rfqSuccessModal) {
+    rfqSuccessModal.addEventListener('mousedown', (e) => {
+      if (e.target === rfqSuccessModal) closeRfqSuccessModal();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && rfqSuccessModal && rfqSuccessModal.classList.contains('is-open')) closeRfqSuccessModal();
+  });
+
   // Wraps HTMLCanvasElement#toBlob (callback-based) in a Promise so the
   // two renderings can be awaited alongside the fetch call below.
   function canvasToBlob(canvas) {
@@ -4148,8 +4217,7 @@ if (fabricCanvasEl && window.fabric) {
       const data = await res.json();
       if (res.ok && data.success) {
         nextModalForm.reset();
-        nextModalStatus.textContent = "Request sent — we'll be in touch shortly.";
-        nextModalStatus.className = 'form-status success';
+        showRfqSuccessModal();
       } else {
         nextModalStatus.textContent = data.message || 'Something went wrong — please try again.';
         nextModalStatus.className = 'form-status error';
@@ -4185,8 +4253,7 @@ if (fabricCanvasEl && window.fabric) {
     nextModalRequestBtn.textContent = 'Building…';
     try {
       await downloadPlmjFile();
-      nextModalStatus.textContent = 'Order file (.plmj) downloaded — nothing was sent. Open it in PLM Job Viewer.';
-      nextModalStatus.className = 'form-status success';
+      showRfqSuccessModal();
     } catch (err) {
       nextModalStatus.textContent = 'Could not build the order file — please try again.';
       nextModalStatus.className = 'form-status error';

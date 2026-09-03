@@ -1697,6 +1697,57 @@
   margin-bottom: 20px;
 }
 #plm-dialog-overlay .editor-modal { width: 300px; }
+
+/* ---- RFQ success modal ---- */
+.editor-rfq-success-modal {
+  width: 320px;
+  text-align: center;
+}
+.editor-rfq-success-check {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 18px;
+  /* A quick pop-in for the whole badge, independent of (and finishing
+     before) the circle/checkmark stroke draw-on below — two motions
+     reading as one animated reveal rather than a static icon that just
+     appears. */
+  animation: rfq-success-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.editor-rfq-success-check svg { width: 100%; height: 100%; }
+.editor-rfq-success-check-circle {
+  stroke: #3ddc71;
+  stroke-dasharray: 227;
+  stroke-dashoffset: 227;
+  animation: rfq-success-draw 0.7s ease-out 0.2s forwards;
+}
+.editor-rfq-success-check-mark {
+  stroke: #3ddc71;
+  stroke-dasharray: 49;
+  stroke-dashoffset: 49;
+  animation: rfq-success-draw 0.45s ease-out 0.9s forwards;
+}
+@keyframes rfq-success-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes rfq-success-draw {
+  to { stroke-dashoffset: 0; }
+}
+.editor-rfq-success-modal .editor-modal-title { text-align: center; }
+.editor-rfq-success-modal .editor-modal-message { text-align: center; }
+.editor-rfq-success-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.editor-rfq-success-actions .btn { width: 100%; }
+.editor-rfq-success-actions em {
+  display: block;
+  font-style: normal;
+  font-size: 0.62rem;
+  opacity: 0.75;
+  margin-top: 2px;
+}
 #plm-dialog-cancel[hidden] { display: none; }
 .editor-modal-fields {
   display: flex;
