@@ -1697,6 +1697,13 @@
   margin-bottom: 20px;
 }
 #plm-dialog-overlay .editor-modal { width: 300px; }
+/* Can open while another modal (e.g. Templates) is already open behind it
+   — same z-index as every other .editor-modal-overlay otherwise meant it
+   was painting BELOW whichever one happened to sit later in the HTML, so
+   it was invisible but still real and still focused, making it look like
+   clicking a template did nothing until Enter (which was actually
+   activating this dialog's own hidden, focused OK button). */
+#plm-dialog-overlay { z-index: 300; }
 
 /* ---- RFQ success modal ---- */
 .editor-rfq-success-modal {
