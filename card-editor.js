@@ -1269,6 +1269,321 @@ if (fabricCanvasEl && window.fabric) {
     if (obj.type === 'path') return new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
     return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
   }
+  function lineIntersection(a1, b1, a2, b2) {
+    const d1x = b1.x - a1.x;
+    const d1y = b1.y - a1.y;
+    const d2x = b2.x - a2.x;
+    const d2y = b2.y - a2.y;
+    const denom = d1x * d2y - d1y * d2x;
+    if (Math.abs(denom) < 1e-9) return null;
+    const t = ((a2.x - a1.x) * d2y - (a2.y - a1.y) * d2x) / denom;
+    return { x: a1.x + d1x * t, y: a1.y + d1y * t };
+  }
+  // The sharpest (smallest) interior angle among a triangle's 3
+  // vertices, as sin(angle/2) — used below to size a "big enough"
+  // underlying native stroke. Smaller return value = sharper corner.
+  function triangleMinHalfAngleSin(points) {
+    let minSin = 1;
+    for (let i = 0; i < 3; i += 1) {
+      const prev = points[(i + 2) % 3];
+      const curr = points[i];
+      const next = points[(i + 1) % 3];
+      const v1 = { x: prev.x - curr.x, y: prev.y - curr.y };
+      const v2 = { x: next.x - curr.x, y: next.y - curr.y };
+      const len1 = Math.hypot(v1.x, v1.y) || 1;
+      const len2 = Math.hypot(v2.x, v2.y) || 1;
+      const cosAngle = Math.max(-1, Math.min(1, (v1.x * v2.x + v1.y * v2.y) / (len1 * len2)));
+      const s = Math.sin(Math.acos(cosAngle) / 2);
+      if (s < minSin) minSin = s;
+    }
+    return minSin;
+  }
+  // The double-stroke-clip trick (below, and buildDoubleStrokeClip) only
+  // works if the object's own *native* stroke — the thing that actually
+  // gets painted, before the clip carves it down to the true offset
+  // ring — reaches at least as far as that true offset does. A plain
+  // miter/bevel join falls short at a triangle's naturally shallow
+  // corners regardless of how wide the stroke is (the shortfall scales
+  // with width too), which is the whole reason the true-offset clip
+  // boundary exists in the first place. A *round* join's reach at a
+  // corner is a full disk of radius strokeWidth/2 centered on the
+  // vertex, covering every direction at once — so sizing that radius to
+  // clear the sharpest corner's own required reach (delta / sin(half
+  // the interior angle)) guarantees full coverage at any angle.
+  function bigStrokeSettingsFor(obj, maxAbsDelta) {
+    if (obj.type !== 'triangle') return { strokeWidth: 2 * maxAbsDelta + 2, strokeLineJoin: 'miter' };
+    const sx = obj.scaleX || 1;
+    const sy = obj.scaleY || 1;
+    const realPts = [
+      { x: 0, y: -obj.height / 2 },
+      { x: obj.width / 2, y: obj.height / 2 },
+      { x: -obj.width / 2, y: obj.height / 2 },
+    ].map((p) => ({ x: p.x * sx, y: p.y * sy }));
+    const reach = maxAbsDelta / Math.max(triangleMinHalfAngleSin(realPts), 0.05);
+    return { strokeWidth: 2 * reach + 4, strokeLineJoin: 'round' };
+  }
+  // A triangle's incircle radius — the largest amount its edges can be
+  // inset before the inset triangle collapses to a point. Insetting
+  // *past* that has no valid non-self-intersecting answer: naively
+  // intersecting each vertex's two offset edges still returns a point
+  // (the math doesn't know it's degenerate), but the three points stop
+  // being in the shape's own natural order, so the "triangle" built from
+  // them self-intersects into a jagged star instead of just shrinking to
+  // nothing — see the clamp in makeStrokeOffsetShapeFor below.
+  function triangleInradius(points) {
+    const [p0, p1, p2] = points;
+    const a = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    const b = Math.hypot(p0.x - p2.x, p0.y - p2.y);
+    const c = Math.hypot(p0.x - p1.x, p0.y - p1.y);
+    const s = (a + b + c) / 2;
+    const area = Math.abs((p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y)) / 2;
+    return s > 0 ? area / s : 0;
+  }
+  // True (unlimited-miter) offset of a closed polygon's own vertices by
+  // a perpendicular distance `delta` (positive = outward) — each new
+  // vertex sits exactly where its two adjacent edges' own offset lines
+  // intersect, so every corner stays a genuine point at any angle. Used
+  // instead of leaning on the canvas's own line-join for a shape like a
+  // Triangle, whose corners are naturally fairly shallow (~53-63°) —
+  // relative to a practical stroke width that reads as a blunt/cut
+  // corner even though the native join isn't technically wrong, just
+  // short at that angle.
+  function offsetPolygonPoints(points, delta) {
+    const n = points.length;
+    return points.map((curr, i) => {
+      const prev = points[(i - 1 + n) % n];
+      const next = points[(i + 1) % n];
+      function edgeNormal(a, b) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { x: dy / len, y: -dx / len };
+      }
+      const n1 = edgeNormal(prev, curr);
+      const n2 = edgeNormal(curr, next);
+      const a1 = { x: prev.x + n1.x * delta, y: prev.y + n1.y * delta };
+      const b1 = { x: curr.x + n1.x * delta, y: curr.y + n1.y * delta };
+      const a2 = { x: curr.x + n2.x * delta, y: curr.y + n2.y * delta };
+      const b2 = { x: next.x + n2.x * delta, y: next.y + n2.y * delta };
+      return lineIntersection(a1, b1, a2, b2) || { x: curr.x + n1.x * delta, y: curr.y + n1.y * delta };
+    });
+  }
+  // Same base-path shape as makeStrokeClipShapeFor, but grown (or
+  // shrunk, for a negative delta) by delta — used to build the outer/
+  // inner boundary of a shape's real stroke ring. For rect/circle/
+  // ellipse this is an exact offset (their defining dimensions grow
+  // linearly with distance from the edge); triangle gets a true offset
+  // too (see offsetPolygonPoints); a true offset has no closed form for
+  // an arbitrary polygon/path in general, so those approximate it by
+  // scaling the base shape about its own center instead — fine for the
+  // sub-mm deltas this is ever called with for those (a hairline's
+  // width, at most half the user's own stroke width).
+  // `delta` is a real (already-rendered-scale) distance — but the shape
+  // this builds becomes a clipPath, which inherits the ORIGINAL object's
+  // full transform (including its own scaleX/scaleY) on top of whatever
+  // this shape's own dimensions are. Building it straight from obj's
+  // local (pre-scale) width/height/radius would then have that same
+  // delta scaled AGAIN by the object's own scale once rendered — correct
+  // only at scale 1, and increasingly wrong (eventually invisible, once
+  // the resulting hairline drifts outside the real stroke painted under
+  // it — see buildDoubleStrokeClip) for a shape that's been resized by
+  // dragging rather than by its base width/height. Dividing delta by the
+  // relevant axis scale up front cancels that out.
+  // The true-offset triangle vertices for a given real (already-scaled)
+  // delta, in LOCAL (pre-scale) coordinates — shared by
+  // makeStrokeOffsetShapeFor (a single boundary, as a Polygon) and
+  // buildTriangleDoubleStrokeClip (four boundaries combined into one
+  // even-odd Path) so both use the exact same math.
+  function triangleOffsetLocalPoints(obj, delta) {
+    const sx = obj.scaleX || 1;
+    const sy = obj.scaleY || 1;
+    const localPts = [
+      { x: 0, y: -obj.height / 2 },
+      { x: obj.width / 2, y: obj.height / 2 },
+      { x: -obj.width / 2, y: obj.height / 2 },
+    ];
+    const realPts = localPts.map((p) => ({ x: p.x * sx, y: p.y * sy }));
+    // A stroke wide enough to inset past the triangle's own incircle has
+    // no valid smaller triangle to shrink to — clamp there instead of
+    // letting the raw per-vertex offset self-intersect into a jagged
+    // star (see triangleInradius above).
+    const clampedDelta = delta < 0 ? Math.max(delta, -triangleInradius(realPts) + 0.01) : delta;
+    return offsetPolygonPoints(realPts, clampedDelta).map((p) => ({ x: p.x / sx, y: p.y / sy }));
+  }
+  function makeStrokeOffsetShapeFor(obj, delta) {
+    const common = { left: 0, top: 0, originX: 'center', originY: 'center' };
+    const sx = obj.scaleX || 1;
+    const sy = obj.scaleY || 1;
+    if (obj.type === 'circle') {
+      const s = (sx + sy) / 2 || 1; // a Fabric circle's radius has one scale to divide by; average the two in the rare case they differ
+      return new fabric.Circle({ ...common, radius: Math.max(0.01, obj.radius + delta / s) });
+    }
+    if (obj.type === 'ellipse') {
+      return new fabric.Ellipse({ ...common, rx: Math.max(0.01, obj.rx + delta / sx), ry: Math.max(0.01, obj.ry + delta / sy) });
+    }
+    if (obj.type === 'rect') {
+      return new fabric.Rect({
+        ...common,
+        width: Math.max(0.01, obj.width + (delta / sx) * 2),
+        height: Math.max(0.01, obj.height + (delta / sy) * 2),
+        rx: obj.rx, ry: obj.ry,
+      });
+    }
+    if (obj.type === 'triangle') {
+      const offsetLocal = triangleOffsetLocalPoints(obj, delta);
+      const poly = new fabric.Polygon(offsetLocal, { left: 0, top: 0, originX: 'left', originY: 'top' });
+      // fabric.Polygon centers itself on its OWN bounding box (pathOffset)
+      // by construction — fine for a shape whose offset stays symmetric,
+      // but a triangle that isn't equilateral shrinks/grows unevenly
+      // (the apex moves a different amount than the base), so each
+      // differently-offset polygon's bounding-box center drifts away from
+      // the *true* shape center by a different amount. Two boundaries
+      // built this way (as the outer/inner pair of a band clip) would
+      // then land mutually misaligned. With origin 'left'/'top', point
+      // (0,0) in the untransformed points passed above — the one point
+      // that's consistently the true shape center across every offset,
+      // since that's what they were all computed relative to — renders
+      // at (left + width/2 + pathOffset.x, top + height/2 + pathOffset.y);
+      // solving that for left/top pins it to this object's own local
+      // origin instead, so outer and inner boundaries always share the
+      // same true center regardless of how their bounding boxes
+      // individually shift.
+      poly.set({ left: poly.pathOffset.x - poly.width / 2, top: poly.pathOffset.y - poly.height / 2 });
+      return poly;
+    }
+    const base = makeStrokeClipShapeFor(obj);
+    // Real (post-scale) half-extent, so `delta` — itself a real distance
+    // — divides against a matching unit instead of the shape's own local
+    // (pre-scale) size.
+    const halfExtent = Math.max(base.width * sx, base.height * sy) / 2 || 1;
+    const scale = Math.max(0, (halfExtent + delta) / halfExtent);
+    base.set({ scaleX: scale, scaleY: scale });
+    return base;
+  }
+  // A clip isolating a hairline-wide sliver at exactly `delta` from the
+  // shape's true edge — the intersection of "inside the slightly wider
+  // boundary" and "outside the slightly narrower boundary" (a clipPath's
+  // own nested clipPath composes as an intersection, and `inverted`
+  // flips which side of a boundary is kept).
+  function makeEdgeBandClip(obj, delta, halfBand) {
+    const outerBoundary = makeStrokeOffsetShapeFor(obj, delta + halfBand);
+    const innerBoundary = makeStrokeOffsetShapeFor(obj, delta - halfBand);
+    innerBoundary.set({ inverted: true });
+    outerBoundary.set({ clipPath: innerBoundary });
+    return outerBoundary;
+  }
+  // A shape that's both drawn in Stroke fill-mode AND assigned the
+  // Stroke finish has a real physical stroke ring with two distinct
+  // edges — this traces a hairline at each one (unioned via being two
+  // children of a Group clipPath, which draws all its children and
+  // keeps their combined coverage) so it reads as two offset lines
+  // rather than the ring filled solid edge-to-edge.
+  // A clipPath can only ever reveal parts of what the clipped object
+  // itself already paints — it can't extend visible area beyond the
+  // object's own geometry. A plain fill stops exactly at the shape's
+  // true (unstroked) edge, which is *inside* where the outer hairline
+  // needs to land, so the caller must instead give the object a real,
+  // wide-enough paint before applying this clip: for rect/circle/
+  // ellipse, a native `stroke` (which straddles the path in both
+  // directions, unlike fill) — `strokeWidth` here is that minimum
+  // width, wide enough to cover both hairlines. A triangle's hairline
+  // bands are only ~0.7px wide (RENDER_LINE_WIDTH_PX) — reliable at
+  // that precision only against a plain solid fill, since a native
+  // stroke's own thin-line antialiasing and join geometry lose that
+  // precision once combined with a nested clip (confirmed: the exact
+  // same clip, applied to an unbounded fill, reveals both bands
+  // correctly). So for a triangle this instead grows the caller's own
+  // fill area — `growWidth`/`growHeight` — generously past the clip's
+  // own reach, entirely safe on the always-detached clone this runs
+  // against (the real edited object is never touched here).
+  // Four concentric triangle boundaries (outer band's outer/inner edge,
+  // then inner band's outer/inner edge — outermost to innermost) combined
+  // into ONE Path with an even-odd fill rule: outside the first contour
+  // is empty, between 1st/2nd is filled (the outer hairline), between
+  // 2nd/3rd is empty again, between 3rd/4th is filled (the inner
+  // hairline), inside the 4th is empty. Deliberately not a
+  // fabric.Group of two independently-built band shapes (the more
+  // "obvious" way to union two regions) — fabric.Group repositions its
+  // children to be relative to the GROUP's own bounding-box center,
+  // which is a *different* point than the true shape center each band
+  // was independently computed relative to (a non-equilateral triangle's
+  // offset boundaries don't share a bounding box center), so the two
+  // bands silently landed misaligned. One Path built from one consistent
+  // set of true-center-relative points sidesteps that entirely.
+  function buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand) {
+    const contours = [outerDelta + halfBand, outerDelta - halfBand, innerDelta + halfBand, innerDelta - halfBand]
+      .map((d) => triangleOffsetLocalPoints(obj, d));
+    const d = contours.map((pts) => `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`).join(' ');
+    const path = new fabric.Path(d, { fillRule: 'evenodd', left: 0, top: 0, originX: 'left', originY: 'top' });
+    // Same true-center pinning as makeStrokeOffsetShapeFor's triangle
+    // branch — Path centers on its own bounding box (pathOffset) too.
+    path.set({ left: path.pathOffset.x - path.width / 2, top: path.pathOffset.y - path.height / 2 });
+    return path;
+  }
+  // Same even-odd technique as buildTriangleDoubleStrokeClip, just the
+  // plain single-ring case (outer edge, inner edge — one band, not two
+  // hairlines): a triangle's own applied clipPath (from applyStrokeRender)
+  // is fine for the LIVE editing canvas, but reusing it as-is for the
+  // *proofing* render (see applyOutlineOnlyPaint) relies on that
+  // clipPath's underlying paint being a big native round-joined stroke —
+  // whose curved corners don't quite reach the clip's own sharp corner
+  // points, leaving a small gap there that's invisible at normal size but
+  // shows up as a notch once the proofing render is scaled up (the
+  // enlarged Renderings view, zoomed further in). Rebuilding the ring
+  // from scratch this way needs no native stroke at all.
+  function buildTriangleRingClip(obj, outerDelta, innerDelta) {
+    const outerPts = triangleOffsetLocalPoints(obj, outerDelta);
+    const innerPts = triangleOffsetLocalPoints(obj, innerDelta);
+    const d = [outerPts, innerPts].map((pts) => `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`).join(' ');
+    const path = new fabric.Path(d, { fillRule: 'evenodd', left: 0, top: 0, originX: 'left', originY: 'top' });
+    path.set({ left: path.pathOffset.x - path.width / 2, top: path.pathOffset.y - path.height / 2 });
+    return path;
+  }
+  // Used by styleForRender wherever a Stroke-fill-mode shape's outline
+  // needs to trace in some other finish's ink (metallic/texture/white/
+  // frosted-white) — for every shape but a triangle, that's just
+  // repainting the object's own already-correct stroke/clipPath (from
+  // applyStrokeRender) in the new color. A triangle instead rebuilds the
+  // ring outright via buildTriangleRingClip, for the precision reasons
+  // documented there.
+  function applyOutlineOnlyPaint(obj, paint) {
+    if (obj.type === 'triangle') {
+      const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
+      const align = obj.strokeAlign || 'center';
+      let outerDelta;
+      let innerDelta;
+      if (align === 'outside') { outerDelta = desired; innerDelta = 0; }
+      else if (align === 'inside') { outerDelta = 0; innerDelta = -desired; }
+      else { outerDelta = desired / 2; innerDelta = -desired / 2; }
+      const clipPath = buildTriangleRingClip(obj, outerDelta, innerDelta);
+      const reach = Math.max(Math.abs(outerDelta), Math.abs(innerDelta));
+      const growth = 1 + (reach * 6) / Math.min(obj.width, obj.height);
+      obj.set({ fill: paint, stroke: null, opacity: 1, clipPath, width: obj.width * growth, height: obj.height * growth });
+      return;
+    }
+    obj.set({ fill: null, stroke: paint, opacity: 1 });
+  }
+  function buildDoubleStrokeClip(obj) {
+    const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
+    const align = obj.strokeAlign || 'center';
+    let outerDelta;
+    let innerDelta;
+    if (align === 'outside') { outerDelta = desired; innerDelta = 0; }
+    else if (align === 'inside') { outerDelta = 0; innerDelta = -desired; }
+    else { outerDelta = desired / 2; innerDelta = -desired / 2; }
+    const halfBand = RENDER_LINE_WIDTH_PX / 2;
+    const reach = Math.max(Math.abs(outerDelta), Math.abs(innerDelta)) + halfBand;
+    if (obj.type === 'triangle') {
+      const clipPath = buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand);
+      const growth = 1 + (reach * 6) / Math.min(obj.width, obj.height);
+      return { clipPath, paintMode: 'fill', growWidth: obj.width * growth, growHeight: obj.height * growth };
+    }
+    const outerBand = makeEdgeBandClip(obj, outerDelta, halfBand);
+    const innerBand = makeEdgeBandClip(obj, innerDelta, halfBand);
+    const clipPath = new fabric.Group([outerBand, innerBand], { left: 0, top: 0, originX: 'center', originY: 'center' });
+    const { strokeWidth, strokeLineJoin } = bigStrokeSettingsFor(obj, reach);
+    return { clipPath, paintMode: 'stroke', strokeWidth, strokeLineJoin };
+  }
   // Applies obj._strokeWidthPx (the width the user actually asked for)
   // and obj.strokeAlign to the object's real, renderable strokeWidth/
   // clipPath. Called whenever either of those, or fill/stroke mode,
@@ -1293,7 +1608,25 @@ if (fabricCanvasEl && window.fabric) {
     // this into a wildly oversized stroke, since Fabric otherwise multiplies
     // strokeWidth by the object's full accumulated scale.
     const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
-    if (align === 'center') {
+    if (obj.type === 'triangle') {
+      // A triangle's corners are naturally fairly shallow (~53-63°) —
+      // relying on the canvas's own line-join there (as the plain
+      // strokeWidth/clipPath branches below do for every other shape)
+      // reads as a blunt/cut corner even at "center" placement. Build
+      // the visible stroke as an exact offset-polygon ring instead (the
+      // same nested-clip trick buildDoubleStrokeClip uses for its
+      // hairline bands, just spanning the whole width here), so every
+      // corner comes to a genuine point regardless of angle, width, or
+      // placement.
+      let outerDelta;
+      let innerDelta;
+      if (align === 'outside') { outerDelta = desired; innerDelta = 0; }
+      else if (align === 'inside') { outerDelta = 0; innerDelta = -desired; }
+      else { outerDelta = desired / 2; innerDelta = -desired / 2; }
+      const { strokeWidth: bigWidth, strokeLineJoin } = bigStrokeSettingsFor(obj, Math.max(Math.abs(outerDelta), Math.abs(innerDelta)));
+      const clip = makeEdgeBandClip(obj, (innerDelta + outerDelta) / 2, (outerDelta - innerDelta) / 2);
+      obj.set({ strokeWidth: bigWidth, strokeLineJoin, strokeUniform: true, clipPath: clip });
+    } else if (align === 'center') {
       obj.set({ strokeWidth: desired, strokeUniform: true, clipPath: null });
     } else {
       const clip = makeStrokeClipShapeFor(obj);
@@ -2473,6 +2806,14 @@ if (fabricCanvasEl && window.fabric) {
       return;
     }
     const finish = getFinish(obj);
+    // A shape in outline (Stroke) fill-mode has no interior to engrave —
+    // whatever finish it's assigned should trace only its edge, at the
+    // shape's own real stroke width/placement (already baked into
+    // strokeWidth/clipPath by applyStrokeRender), not fill the shape
+    // solid. cardFinish 'stroke' (below) already renders outline-only by
+    // definition; every other finish needs its ink redirected from fill
+    // to stroke instead, leaving the existing strokeWidth/clipPath alone.
+    const outlineOnly = finish !== 'stroke' && shapeFillModeFor(obj) === 'stroke';
     if (finish === 'metallic') {
       const fill = buildMetallicFill();
       // The gradient's own coords are in absolute card space, but Fabric
@@ -2489,17 +2830,23 @@ if (fabricCanvasEl && window.fabric) {
       // Metallic object on the card ends up sampling the exact same
       // underlying gradient at the exact same real spot.
       fill.gradientTransform = fabric.util.invertTransform(obj.calcTransformMatrix());
-      obj.set({ fill, stroke: null, opacity: 1 });
+      if (outlineOnly) applyOutlineOnlyPaint(obj, fill);
+      else obj.set({ fill, stroke: null, opacity: 1 });
       return;
     }
     if (finish === 'texture') {
+      const hatch = buildHatchFillPattern(obj, obj.cardFinishTexture, obj.cardFinishAngle === 90 ? 90 : true);
+      if (outlineOnly) {
+        applyOutlineOnlyPaint(obj, hatch);
+        return;
+      }
       // Outline traces the shape's own edge on top of the hatch fill —
       // deliberately overriding strokeWidth (obj's real one is the
       // Outline checkbox's own editor-visibility width, wider than the
       // shared render line width) so every line in this preview reads
       // as the same physical thickness, texture hatch included.
       obj.set({
-        fill: buildHatchFillPattern(obj, obj.cardFinishTexture, obj.cardFinishAngle === 90 ? 90 : true),
+        fill: hatch,
         stroke: obj.cardFinishOutline ? 'rgb(250,250,250)' : null,
         strokeWidth: RENDER_LINE_WIDTH_PX,
         strokeUniform: true,
@@ -2512,17 +2859,42 @@ if (fabricCanvasEl && window.fabric) {
       // read as plain white, but gives Frosted White (the perfectly
       // smooth, brighter finish) an obvious step up rather than the
       // two looking identical.
-      obj.set({ fill: buildWhiteFillPattern(obj), stroke: null, opacity: 1 });
+      const grain = buildWhiteFillPattern(obj);
+      if (outlineOnly) applyOutlineOnlyPaint(obj, grain);
+      else obj.set({ fill: grain, stroke: null, opacity: 1 });
       return;
     }
     if (finish === 'frosted-white') {
       // The brightest, fully smooth finish — plain full white, no line
       // texture at all.
-      obj.set({ fill: '#ffffff', stroke: null, opacity: 1 });
+      if (outlineOnly) applyOutlineOnlyPaint(obj, '#ffffff');
+      else obj.set({ fill: '#ffffff', stroke: null, opacity: 1 });
       return;
     }
     if (finish !== 'stroke') {
       obj.set({ opacity: 0 });
+      return;
+    }
+    if (shapeFillModeFor(obj) === 'stroke') {
+      // The shape itself is ALSO drawn in Stroke fill-mode — it already
+      // has a real, physical stroke ring (see applyStrokeRender). Trace
+      // that ring's own two edges as a pair of offset hairlines instead
+      // of the single base-path trace below, which would otherwise
+      // ignore the user's chosen stroke width/placement entirely. Needs
+      // a wide-enough underlying paint first, since the clip can only
+      // reveal area the object already paints and fill alone never
+      // reaches outward past the shape's true edge — see
+      // buildDoubleStrokeClip for why that's a native `stroke` for most
+      // shapes but a grown fill specifically for a triangle.
+      const result = buildDoubleStrokeClip(obj);
+      if (result.paintMode === 'fill') {
+        obj.set({ fill: 'rgb(250,250,250)', stroke: null, opacity: 1, clipPath: result.clipPath, width: result.growWidth, height: result.growHeight });
+      } else {
+        obj.set({
+          fill: null, stroke: 'rgb(250,250,250)', strokeWidth: result.strokeWidth, strokeLineJoin: result.strokeLineJoin,
+          strokeUniform: true, opacity: 1, clipPath: result.clipPath,
+        });
+      }
       return;
     }
     // A real laser always cuts the same fine hairline regardless of
@@ -3404,6 +3776,29 @@ if (fabricCanvasEl && window.fabric) {
       || box.left + box.width > bounds.right + EPS
       || box.top + box.height > bounds.bottom + EPS;
   }
+  function cardBoundsPx() {
+    return {
+      left: CARD_OFFSET_X,
+      top: CARD_OFFSET_Y,
+      right: CARD_OFFSET_X + CARD_W_PX,
+      bottom: CARD_OFFSET_Y + CARD_H_PX,
+    };
+  }
+  // An object parked entirely out on the pasteboard, with no overlap with
+  // the card at all, isn't "over" the safe zone in any meaningful sense —
+  // it never prints and never costs anything (see
+  // computeDirectCostForCurrentDesign, which is naturally clipped to the
+  // card already). Only objects that actually touch the card — whether
+  // fully inside or straddling its edge — should ever be able to trip the
+  // safe-zone warning.
+  function objectOverlapsCard(obj, cardBounds) {
+    const box = obj.getBoundingRect(true, true);
+    const EPS = 0.5;
+    return box.left < cardBounds.right + EPS
+      && box.left + box.width > cardBounds.left - EPS
+      && box.top < cardBounds.bottom + EPS
+      && box.top + box.height > cardBounds.top - EPS;
+  }
   // Mirrors computeDirectCostForCurrentDesign's own "check both sides"
   // shape — a snapshot's objects are enlivened into real (but detached,
   // never added to any canvas) Fabric instances purely to read their
@@ -3412,6 +3807,7 @@ if (fabricCanvasEl && window.fabric) {
   // there's no need to recurse into group contents separately.
   function checkSafeZoneOverflow(callback) {
     const bounds = safeZoneBoundsPx();
+    const cardBounds = cardBoundsPx();
     function checkSide(side, cb) {
       const snap = snapshotForSide(side);
       if (!snapshotHasObjects(snap)) {
@@ -3421,7 +3817,7 @@ if (fabricCanvasEl && window.fabric) {
       const parsed = JSON.parse(snap);
       const data = JSON.parse(JSON.stringify(parsed.objects));
       fabric.util.enlivenObjects(data, (enlivened) => {
-        cb(enlivened.some((o) => objectExceedsSafeZone(o, bounds)));
+        cb(enlivened.some((o) => objectOverlapsCard(o, cardBounds) && objectExceedsSafeZone(o, bounds)));
       });
     }
     checkSide('front', (frontOver) => {
@@ -3776,10 +4172,17 @@ if (fabricCanvasEl && window.fabric) {
   // "N L/cm" next to every Texture-finish object — the color alone
   // (from styleForProofingRender's real hatch pattern) shows *that*
   // something's textured and roughly how dense, but not the exact
-  // number, which the shop needs. getCenterPoint()/viewportTransform
-  // together resolve each object's true position even nested inside a
-  // group and even with the static canvas's own zoom applied — plain
-  // obj.left/top wouldn't account for either.
+  // number, which the shop needs. calcTransformMatrix() folds in every
+  // ancestor group's own position/scale/rotation on top of the object's
+  // own, so transforming its local (0,0) — its own center — through that
+  // gives the TRUE absolute center even nested inside a group; plain
+  // getCenterPoint() only resolves coordinates relative to the object's
+  // immediate parent, so for anything nested inside a group (an
+  // imported SVG, a Union/Subtract result, ...) it was landing at that
+  // *local* position instead — reading as "stuck in the top-left and
+  // cropped off" whenever the group's own local coordinates happened to
+  // be much smaller than its real position on the card. viewportTransform
+  // on top of that still accounts for the static canvas's own zoom.
   function drawTextureDensityLabels(canvasEl, staticCanvas) {
     const ctx = canvasEl.getContext('2d');
     ctx.save();
@@ -3792,7 +4195,8 @@ if (fabricCanvasEl && window.fabric) {
         return;
       }
       if (getFinish(obj) !== 'texture' || !obj.cardFinishTexture) return;
-      const center = fabric.util.transformPoint(obj.getCenterPoint(), staticCanvas.viewportTransform);
+      const absoluteCenter = fabric.util.transformPoint({ x: 0, y: 0 }, obj.calcTransformMatrix());
+      const center = fabric.util.transformPoint(absoluteCenter, staticCanvas.viewportTransform);
       const text = `${obj.cardFinishTexture} L/cm`;
       const metrics = ctx.measureText(text);
       const padX = 4;
@@ -4160,6 +4564,19 @@ if (fabricCanvasEl && window.fabric) {
       mockup: { front: frontMockup, back: backMockup },
       canvas: { front: frontCanvas, back: backCanvas },
       svg: { front: frontSvg, back: backSvg },
+      // The raw editable design, same shape as a .plm project file's own
+      // payload (see downloadProjectFile) minus its cover thumbnail —
+      // carried along purely so a shop-floor tool like PLMJobViewer can
+      // hand a customer's job straight back to this editor for a revision
+      // without needing the original .plm file too. Everything above this
+      // is already-rendered output for a human to look at; this is the
+      // one field meant for a machine (this editor, reopening it) to read.
+      project: {
+        currentSide,
+        front: JSON.parse(frontSnap),
+        back: backSnap ? JSON.parse(backSnap) : null,
+        cardTypeId: selectedCardTypeId,
+      },
     };
   }
   async function downloadPlmjFile() {
@@ -5251,6 +5668,26 @@ if (fabricCanvasEl && window.fabric) {
   // not just once editing ends.
   fabricCanvas.on('text:changed', refreshLayersList);
 
+  // Fabric's own corner/edge scaling always keeps whichever corner is
+  // OPPOSITE the one being dragged fixed in place — it has no notion of
+  // this app's own "anchor point" setting. That matches by coincidence
+  // whenever the dragged handle happens to be opposite the anchor, but
+  // dragging the SAME corner as the anchor (or any edge handle, when the
+  // anchor is a corner) instead leaves the anchor drifting while some
+  // other point stays put — reads as the shape "moving weirdly" rather
+  // than resizing in place. Since obj.left/obj.top already *are* the
+  // anchor's own canvas coordinates once originX/Y is set to match it
+  // (see setObjectAnchor above), simply re-pinning them back to their
+  // value from just before the drag started — every frame, after
+  // Fabric's own position update — keeps the anchor exactly fixed
+  // regardless of which handle is actually grabbed.
+  let scaleAnchorPos = null;
+  fabricCanvas.on('before:transform', (opt) => {
+    const t = opt.transform;
+    const obj = t && t.target;
+    scaleAnchorPos = obj && /scale/i.test(t.action || '') ? { left: obj.left, top: obj.top } : null;
+  });
+
   // Dragging a corner handle on a text object should change its font size,
   // not stretch it. Folding scale into fontSize on every drag frame forces
   // a full text re-layout each frame — laggy, and it fights with Fabric's
@@ -5277,6 +5714,10 @@ if (fabricCanvasEl && window.fabric) {
       // the smaller one so the shape can't be dragged into a distortion.
       const s = Math.max(Math.abs(obj.scaleX), Math.abs(obj.scaleY));
       obj.set({ scaleX: s, scaleY: s });
+    }
+    if (scaleAnchorPos) {
+      obj.set(scaleAnchorPos);
+      obj.setCoords();
     }
     refreshTransformFields(obj);
   });
