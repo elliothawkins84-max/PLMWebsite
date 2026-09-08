@@ -311,7 +311,6 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   padding-right: 22px;
   animation: applications-scroll 95s linear infinite;
 }
-.applications-marquee:hover .applications-track { animation-play-state: paused; }
 .applications-item {
   font-family: var(--mono);
   font-size: 0.95rem;
