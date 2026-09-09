@@ -309,7 +309,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   flex-shrink: 0;
   gap: 22px;
   padding-right: 22px;
-  animation: applications-scroll 95s linear infinite;
+  animation: applications-scroll 90s linear infinite;
 }
 .applications-item {
   font-family: var(--mono);
