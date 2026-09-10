@@ -109,6 +109,22 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
      actual viewport edges instead. */
   max-width: none;
 }
+.back-home-bar { padding: 18px 28px 0; }
+.back-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 11px 16px;
+  border: 1px solid var(--line);
+  transition: color 0.15s, border-color 0.15s;
+}
+.back-home:hover { color: var(--fg); border-color: var(--fg); }
 .logo { font-size: 0.85rem; color: var(--fg); text-decoration: none; display: flex; align-items: center; }
 .logo img { height: 34px; width: auto; display: block; }
 /* Header wordmark is much wider than the square footer mark, so it gets
@@ -1526,6 +1542,48 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   color: #b3b3b3;
 }
 .footer-industries-list li { padding: 3px 0; white-space: nowrap; }
+
+/* ---- FAQ ---- */
+#faq.section { border-top: none; }
+#faq .section-head .lead { margin-top: 18px; margin-left: 2px; }
+.faq-group { max-width: none; margin-bottom: 48px; }
+.faq-group:last-child { margin-bottom: 0; }
+.faq-group-title { font-size: 0.95rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; }
+.faq-item { border-top: 1px solid var(--line); }
+.faq-item:last-child { border-bottom: 1px solid var(--line); }
+.faq-item summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 18px 28px 18px 0;
+  position: relative;
+  font-size: 0.98rem;
+  line-height: 1.4;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+  content: '+';
+  position: absolute;
+  right: 0;
+  top: 18px;
+  font-size: 1.1rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.faq-item[open] summary::after { content: '\2212'; }
+/* Height is animated by script.js (toggling inline height + this transition)
+   so the accordion opens/closes smoothly instead of snapping instantly --
+   native <details> offers no way to transition its own display:none swap. */
+.faq-item .faq-answer { overflow: hidden; transition: height 0.22s ease; }
+.faq-item .faq-answer > p { padding: 0 28px 20px 0; color: #b3b3b3; font-size: 0.9rem; max-width: 90ch; }
+.faq-item .faq-answer > ul { padding: 0 28px 20px 22px; margin: 0; color: #b3b3b3; font-size: 0.9rem; max-width: 90ch; }
+.faq-item .faq-answer > ul li { margin-bottom: 12px; line-height: 1.5; }
+.faq-item .faq-answer > ul li:last-child { margin-bottom: 0; }
+.faq-item .faq-answer > ul li strong { color: var(--fg); }
+.faq-item .faq-answer a { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) {
+  .faq-item .faq-answer { transition: none; }
+}
+#faq-cta .hero-actions { margin-top: 32px; }
 
 /* ---- Responsive ---- */
 @media (max-width: 860px) {

@@ -398,3 +398,49 @@ if (updatedEl) {
     .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     .toUpperCase();
 }
+
+// FAQ accordion: animates open/close instead of the instant show/hide native
+// <details> gives you. We intercept the summary click, drive the height via
+// inline styles (transitioning from/to a measured pixel value, since CSS
+// can't transition to/from "auto"), and only then flip the `open` attribute
+// -- so the +/- indicator (styled off `[open]` in CSS) still stays in sync.
+document.querySelectorAll('.faq-item').forEach((item) => {
+  const summary = item.querySelector('summary');
+  const answer = item.querySelector('.faq-answer');
+  if (!summary || !answer) return;
+
+  answer.style.height = item.hasAttribute('open') ? 'auto' : '0px';
+
+  summary.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (reduceMotion) {
+      item.toggleAttribute('open');
+      answer.style.height = item.hasAttribute('open') ? 'auto' : '0px';
+      return;
+    }
+
+    const closing = item.hasAttribute('open');
+    if (closing) {
+      answer.style.height = `${answer.scrollHeight}px`;
+      requestAnimationFrame(() => {
+        answer.style.height = '0px';
+      });
+      answer.addEventListener('transitionend', function onEnd(ev) {
+        if (ev.propertyName !== 'height') return;
+        item.removeAttribute('open');
+        answer.removeEventListener('transitionend', onEnd);
+      });
+    } else {
+      item.setAttribute('open', '');
+      answer.style.height = '0px';
+      requestAnimationFrame(() => {
+        answer.style.height = `${answer.scrollHeight}px`;
+      });
+      answer.addEventListener('transitionend', function onEnd(ev) {
+        if (ev.propertyName !== 'height') return;
+        answer.style.height = 'auto';
+        answer.removeEventListener('transitionend', onEnd);
+      });
+    }
+  });
+});
