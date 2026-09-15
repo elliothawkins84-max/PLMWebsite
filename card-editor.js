@@ -4040,7 +4040,7 @@ if (fabricCanvasEl && window.fabric) {
   // warning first, same as any other way of leaving this page).
   if (rfqSuccessHomeBtn) {
     rfqSuccessHomeBtn.addEventListener('click', () => {
-      window.location.href = 'index.html';
+      window.location.href = 'index';
     });
   }
   if (rfqSuccessModal) {

@@ -109,6 +109,22 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
      actual viewport edges instead. */
   max-width: none;
 }
+.back-home-bar { padding: 18px 28px 0; }
+.back-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 11px 16px;
+  border: 1px solid var(--line);
+  transition: color 0.15s, border-color 0.15s;
+}
+.back-home:hover { color: var(--fg); border-color: var(--fg); }
 .logo { font-size: 0.85rem; color: var(--fg); text-decoration: none; display: flex; align-items: center; }
 .logo img { height: 34px; width: auto; display: block; }
 /* Header wordmark is much wider than the square footer mark, so it gets
@@ -278,6 +294,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .sel-label { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.18em; color: var(--muted); }
 .sel-btns { display: flex; flex-wrap: wrap; gap: 10px; }
 .chip {
+  display: inline-block;
   font-family: var(--mono);
   font-size: 0.8rem;
   letter-spacing: 0.06em;
@@ -285,12 +302,58 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   border: 1px solid var(--fg);
   background: transparent;
   color: var(--fg);
+  text-decoration: none;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .chip:hover { background: rgba(255, 255, 255, 0.1); }
 .chip.is-on { background: var(--fg); color: var(--bg); }
 .chip .u { opacity: 0.55; }
+/* Non-interactive placeholder chip ("More Coming Soon") -- dashed border
+   and muted text signal it's not clickable, unlike the real service chips
+   around it. */
+.chip-soon { border-style: dashed; border-color: var(--line); color: var(--muted); cursor: default; }
+.chip-soon:hover { background: transparent; }
+.sel-caption { font-size: 0.82rem; color: var(--muted); }
+.sel-caption a { color: var(--fg); }
+
+/* ---- Applications marquee ----
+   Two identical tracks placed side by side (the second aria-hidden, purely
+   visual) so the scroll animation can run from 0 to -50% and loop with no
+   seam -- at -50% the second track is sitting exactly where the first
+   started. */
+.applications-section .section-head { margin-bottom: 40px; }
+.applications-marquee {
+  display: flex;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.applications-track {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 22px;
+  padding-right: 22px;
+  animation: applications-scroll 95s linear infinite;
+}
+.applications-item {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  padding: 12px 22px;
+  border: 1px solid var(--line);
+}
+.applications-dot { color: var(--muted); }
+@keyframes applications-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .applications-track { animation: none; }
+  .applications-track[aria-hidden="true"] { display: none; }
+}
 
 /* Stage — one card visible at a time */
 /* The inactive cards' off-screen entrance/exit transform (translateX ±44px)
@@ -1556,15 +1619,450 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 
 /* ---- Footer ---- */
 .site-footer { border-top: 1px solid var(--line); padding: 60px 0 40px; }
-.footer-inner { display: flex; flex-direction: column; gap: 28px; }
+.footer-inner { display: flex; flex-direction: row; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 40px; }
+.footer-left { display: flex; flex-direction: column; gap: 20px; }
 .footer-brand { display: flex; flex-direction: column; gap: 8px; }
 .footer-brand p { font-size: 0.9rem; color: #b3b3b3; }
 .footer-links { display: flex; gap: 22px; flex-wrap: wrap; }
 .footer-links a { font-size: 0.7rem; color: var(--muted); text-decoration: none; }
 .footer-links a:hover { color: var(--fg); }
 
+.footer-industries { display: flex; flex-direction: column; gap: 10px; }
+.footer-industries-label { font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+.footer-industries-list {
+  list-style: none;
+  columns: 2;
+  column-gap: 32px;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: #b3b3b3;
+}
+.footer-industries-list li { padding: 3px 0; white-space: nowrap; }
+
+/* ---- FAQ ---- */
+#faq.section { border-top: none; }
+#faq .section-head .lead { margin-top: 18px; margin-left: 2px; }
+.faq-group { max-width: none; margin-bottom: 48px; }
+.faq-group:last-child { margin-bottom: 0; }
+.faq-group-title { font-size: 0.95rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; }
+.faq-item { border-top: 1px solid var(--line); }
+.faq-item:last-child { border-bottom: 1px solid var(--line); }
+.faq-item summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 18px 28px 18px 0;
+  position: relative;
+  font-size: 0.98rem;
+  line-height: 1.4;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+  content: '+';
+  position: absolute;
+  right: 0;
+  top: 18px;
+  font-size: 1.1rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.faq-item[open] summary::after { content: '\2212'; }
+/* Height is animated by script.js (toggling inline height + this transition)
+   so the accordion opens/closes smoothly instead of snapping instantly --
+   native <details> offers no way to transition its own display:none swap. */
+.faq-item .faq-answer { overflow: hidden; transition: height 0.22s ease; }
+.faq-item .faq-answer > p { padding: 0 28px 20px 0; color: #b3b3b3; font-size: 0.9rem; max-width: 90ch; }
+.faq-item .faq-answer > ul { padding: 0 28px 20px 22px; margin: 0; color: #b3b3b3; font-size: 0.9rem; max-width: 90ch; }
+.faq-item .faq-answer > ul li { margin-bottom: 12px; line-height: 1.5; }
+.faq-item .faq-answer > ul li:last-child { margin-bottom: 0; }
+.faq-item .faq-answer > ul li strong { color: var(--fg); }
+.faq-item .faq-answer a { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) {
+  .faq-item .faq-answer { transition: none; }
+}
+#faq-cta .hero-actions { margin-top: 32px; }
+
+/* ---- Service landing pages (laser-engraving.html, etc.) ---- */
+#service-hero.section { border-top: none; }
+/* .section-head .lead is nowrap site-wide (fine for the short leads it was
+   written for), but this hero's sentence is long enough to run past the
+   viewport at in-between desktop widths -- let it wrap here instead. */
+#service-hero .section-head .lead { white-space: normal; max-width: none; }
+#service-hero h1 { margin-left: -4px; }
+.tag-label { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+.service-explainer p { font-size: 0.95rem; color: #b3b3b3; line-height: 1.7; max-width: none; margin: 0 0 18px; }
+.service-explainer p:last-child { margin-bottom: 0; }
+.material-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+.material-card { display: flex; flex-direction: column; gap: 8px; padding: 26px 22px; border: 1px solid var(--line); transition: border-color 0.15s; }
+.material-card:hover { border-color: var(--fg); }
+.material-name { font-family: var(--mono); font-size: 1.05rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg); }
+.material-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); line-height: 1.5; }
+.service-why-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
+.service-why-grid h3 { margin: 12px 0 10px; }
+.service-why-grid p { font-size: 0.88rem; color: #b3b3b3; line-height: 1.6; margin: 0; }
+
+/* ---- Tag configurator (api-rp-tags.html) ---- */
+.tag-configurator { display: grid; grid-template-columns: minmax(0, 420px) 1fr; gap: 48px; align-items: start; }
+.tag-photo-column { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 420px; }
+.tag-photo-column .btn { align-self: center; }
+#addToOrderListBtn {
+  transition: background 0.55s ease, color 0.55s ease, border-color 0.55s ease;
+}
+#addToOrderListBtn.is-added {
+  background: #3ddc71;
+  border-color: #3ddc71;
+  color: #000;
+  cursor: not-allowed;
+}
+.tag-photo-wrap { position: relative; width: 100%; max-width: 420px; aspect-ratio: 1; }
+.tag-photo { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.tag-text-overlay {
+  position: absolute;
+  /* Spans from the hole's bottom edge (see the SVG's hole circle:
+     cy=28.874 r=7.874 in its 0-200 viewBox — a real 3mm-diameter hole
+     positioned so its own top sits exactly 4mm below the tag's top edge
+     — so its bottom edge is at y=36.748, i.e. 18.374%) down to just short
+     of the tag's own bottom edge (circle bottom at y=200, i.e. 100%) —
+     centering content in this box centers it in that region (with a
+     slight upward bias vs. dead-center), not on the tag as a whole. */
+  top: 18.374%;
+  bottom: 10%;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.tag-text-overlay span {
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #f3f6ff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  font-size: 1.05rem;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+}
+.tag-bounds-box {
+  position: absolute;
+  border: 1.5px dashed #a855f7;
+  border-radius: 4px;
+  opacity: 0.85;
+  pointer-events: none;
+}
+.tag-panel { display: flex; flex-direction: column; gap: 26px; }
+.tag-size-hint {
+  margin-top: -14px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.tag-color-chips .chip { display: inline-flex; align-items: center; gap: 8px; }
+.tag-color-swatch {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+.tag-color-swatch--blue { background: #2479de; }
+.tag-color-swatch--red { background: #d32f2f; }
+.tag-color-swatch--green { background: #2e8b47; }
+.tag-inputs { display: flex; flex-direction: column; gap: 16px; }
+.tag-input-row {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  transition: grid-template-rows 0.32s ease, opacity 0.28s ease, transform 0.28s ease, margin-top 0.32s ease;
+}
+.tag-input-row.is-hidden {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-6px);
+  margin-top: calc(-1 * 16px);
+  pointer-events: none;
+}
+.tag-input-inner { display: flex; flex-direction: column; gap: 7px; min-height: 0; overflow: hidden; }
+.tag-input-row span { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.tag-input-row input {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  padding: 13px 14px;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  width: 100%;
+}
+.tag-input-row input:focus { outline: none; border-color: var(--fg); }
+.tag-input-row input::placeholder { color: var(--muted); opacity: 0.6; }
+
+/* ---- Order table (api-rp-tags.html) ---- */
+.tag-order-table-wrap { overflow-x: auto; margin-bottom: 22px; }
+.tag-order-table { width: 100%; border-collapse: separate; border-spacing: 0; font-family: var(--mono); }
+.tag-order-table th {
+  text-align: left;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 14px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.tag-order-table td {
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.tag-order-num { color: var(--muted); font-size: 0.9rem; padding-top: 22px !important; }
+.tag-order-table select {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 9px 28px 9px 10px;
+  width: 100%;
+  min-width: 128px;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) center, calc(100% - 11px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  transition: border-color 0.15s ease;
+}
+.tag-order-table select:focus { outline: none; border-color: var(--fg); }
+.tag-order-text-cell { min-width: 170px; }
+.tag-order-text-stack { display: flex; flex-direction: column; gap: 8px; }
+.tag-order-text-row input {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  padding: 9px 10px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  width: 100%;
+  transition: border-color 0.15s ease;
+}
+.tag-order-text-row input:focus { outline: none; border-color: var(--fg); }
+.tag-order-text-row input::placeholder { color: var(--muted); opacity: 0.7; }
+.tag-order-text-row.is-hidden { display: none; }
+.tag-order-actions { display: flex; gap: 8px; margin-top: 8px; }
+.tag-order-view {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  height: 32px;
+  padding: 0 12px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tag-order-view:hover { color: var(--fg); border-color: var(--fg); }
+.tag-order-remove {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  width: 32px;
+  height: 32px;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.tag-order-remove:hover { color: var(--fg); border-color: var(--fg); }
+.tag-order-quote {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+  margin-top: 40px;
+  padding-top: 40px;
+  border-top: 1px solid var(--line);
+}
+.tag-order-quote-prompt {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  color: var(--fg);
+}
+
+/* ---- RFQ modal (api-rp-tags.html) ----
+   Ported from card-editor.css's Next/RFQ-success modal so this page's
+   "Request a Quote" flow shares the exact same look/behavior, since this
+   page doesn't load card-editor.css itself. */
+.editor-modal-overlay {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.5);
+  align-items: center;
+  justify-content: center;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-out, visibility 0s linear 0.2s;
+}
+.editor-modal-overlay.is-open {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.2s ease-out;
+}
+.editor-modal {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 20px;
+  width: 220px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  font-family: var(--mono);
+  transform: translateY(10px);
+  opacity: 0;
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+.editor-modal-overlay.is-open .editor-modal {
+  transform: translateY(0);
+  opacity: 1;
+  transition-delay: 0.03s;
+}
+.editor-modal-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+  margin-bottom: 16px;
+}
+.editor-modal-message {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+
+#tag-rfq-modal .editor-modal { width: 900px; max-height: 97vh; overflow-y: auto; padding: 14px 20px; }
+.editor-next-modal { position: relative; }
+.editor-next-modal-intro {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--muted);
+  max-width: 640px;
+  margin: -4px 0 12px;
+}
+#tag-rfq-modal .editor-modal-title { margin-bottom: 8px; }
+.editor-next-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  font-size: 1.2rem;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  cursor: pointer;
+}
+.editor-next-modal-close:hover { border-color: var(--fg); }
+.editor-next-modal-body { display: flex; gap: 32px; align-items: flex-start; }
+.editor-next-modal-renderings {
+  flex: none;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+}
+.editor-next-modal-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.editor-next-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.editor-next-modal-section-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.contact-form.editor-next-modal-form { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; gap: 7px; }
+.editor-next-modal-form label { gap: 4px; }
+.editor-next-modal-form input,
+.editor-next-modal-form textarea { padding: 6px 0; }
+.editor-next-modal-form textarea { min-height: 44px; }
+.editor-next-modal-form-row { display: flex; gap: 12px; }
+.editor-next-modal-form-row label { flex: 2; min-width: 0; }
+.editor-next-modal-form-row label:nth-child(2) { flex: 1; }
+.editor-next-modal-form-row label:nth-child(3) { flex: 1.2; }
+
+/* Order-summary tally, left panel */
+.tag-rfq-summary-list { display: flex; flex-direction: column; gap: 10px; }
+.tag-rfq-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.tag-rfq-summary-row .tag-color-swatch { width: 13px; height: 13px; }
+.tag-rfq-summary-count { font-weight: 700; min-width: 1.4em; text-align: right; }
+.tag-rfq-summary-dash { color: var(--muted); }
+.tag-rfq-summary-empty { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+.tag-rfq-specs { font-family: var(--mono); font-size: 0.8rem; color: var(--fg); line-height: 1.5; }
+
+/* Success modal */
+.editor-rfq-success-modal { width: 320px; text-align: center; }
+.editor-rfq-success-check {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 18px;
+  animation: rfq-success-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.editor-rfq-success-check svg { width: 100%; height: 100%; }
+.editor-rfq-success-check-circle {
+  stroke: #3ddc71;
+  stroke-dasharray: 227;
+  stroke-dashoffset: 227;
+  animation: rfq-success-draw 0.7s ease-out 0.2s forwards;
+}
+.editor-rfq-success-check-mark {
+  stroke: #3ddc71;
+  stroke-dasharray: 49;
+  stroke-dashoffset: 49;
+  animation: rfq-success-draw 0.45s ease-out 0.9s forwards;
+}
+@keyframes rfq-success-pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes rfq-success-draw { to { stroke-dashoffset: 0; } }
+.editor-rfq-success-modal .editor-modal-title { text-align: center; }
+.editor-rfq-success-modal .editor-modal-message { text-align: center; }
+.editor-rfq-success-actions { display: flex; flex-direction: column; gap: 8px; }
+.editor-rfq-success-actions .btn { width: 100%; }
+.editor-rfq-success-actions em { display: block; font-style: normal; font-size: 0.62rem; opacity: 0.75; margin-top: 2px; }
+
 /* ---- Responsive ---- */
 @media (max-width: 860px) {
+  .footer-inner { flex-direction: column; gap: 32px; }
+  .footer-industries-list { columns: 1; }
+
+  .service-why-grid { grid-template-columns: 1fr; gap: 28px; }
+  .tag-configurator { grid-template-columns: 1fr; }
+  .tag-photo-column { margin: 0 auto; align-items: center; }
+
   .nav-toggle { display: flex; }
   .nav-links {
     position: absolute; top: 70px; left: 0; right: 0;
