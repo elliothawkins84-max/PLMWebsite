@@ -70,6 +70,10 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .eyebrow, .index-line { font-size: 0.72rem; color: var(--muted); }
 .lead { font-size: clamp(1rem, 1.4vw, 1.2rem); color: #cfcfcf; max-width: 52ch; }
 .fine { font-size: 0.68rem; color: var(--muted); }
+/* A short, scannable spec line under a hero's .lead (e.g. tag diameter/
+   hole/thickness) -- kept separate from the lead's own marketing
+   sentence rather than run together in one paragraph. */
+.hero-specs { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); margin-top: 10px; }
 
 /* ---- Buttons ---- */
 .btn {
