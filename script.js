@@ -1166,7 +1166,7 @@ if (tagRfqModal) {
       kind: 'plmj',
       version: 1,
       createdAt: new Date().toISOString(),
-      specs: { diameterIn: 1.5, holeMm: 3, thicknessMm: 0.8, material: 'aluminum' },
+      specs: { diameterIn: 1.5, holeMm: 3, thicknessMm: 0.71, material: 'aluminum' },
       order: {
         name: formData.get('name') || '',
         email: formData.get('email') || '',
