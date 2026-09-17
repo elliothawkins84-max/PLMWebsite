@@ -1707,7 +1707,12 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .footer-links a:hover { color: var(--fg); }
 /* Full-width copyright line under the brand/links + industries columns
    above, not squeezed in as a third flex column next to them. */
-.footer-inner > .fine { flex-basis: 100%; margin-top: 4px; }
+/* flex-shrink:0 is the part that actually matters -- a bare
+   flex-basis:100% doesn't force a line break by itself, since the
+   browser can still shrink a short text item back down to fit
+   alongside the other two columns on the same row instead of wrapping,
+   which is exactly what was happening. */
+.footer-inner > .fine { flex: 1 0 100%; margin-top: 4px; }
 
 .footer-industries { display: flex; flex-direction: column; gap: 10px; }
 .footer-industries-label { font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
