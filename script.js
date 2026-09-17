@@ -1021,17 +1021,6 @@ async function encodePlmjFile(payloadObj) {
   return out;
 }
 
-function triggerDownload(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
 // API RP Tags RFQ modal: shows a per-color tally of the order table on the
 // left, and the same request-a-quote fields/framework as the business card
 // editor's own Next modal on the right (same field names, same
@@ -1180,25 +1169,60 @@ if (tagRfqModal) {
     };
   };
 
-  const downloadTagOrderPlmj = async (payload) => {
-    const bytes = await encodePlmjFile(payload);
-    const blob = new Blob([bytes], { type: 'application/octet-stream' });
-    const base = (payload.order.name || 'api-rp-tag').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'api-rp-tag';
-    triggerDownload(blob, `${base}-order.plmj`);
+  // Turns the order-table rows into a plain-text summary for the email
+  // body, since the Worker only understands name/email/message/attachment
+  // — same approach as the business card editor's own RFQ request.
+  const summarizeOrderItems = (items) => {
+    if (!items.length) return 'No tags added to the order table.';
+    return items.map((item, i) => {
+      const colorLabel = colorLabels.find(([key]) => key === item.color)?.[1] || item.color;
+      const text = item.lines.filter(Boolean).join(' / ') || '(no text)';
+      return `${i + 1}. ${colorLabel}, ${item.sizeTier} — ${text}`;
+    }).join('\n');
   };
 
   if (form) {
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const submitLabel = submitBtn ? submitBtn.innerHTML : '';
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      // For now this downloads the .plmj locally so it can be opened in
-      // PLMJobViewer and checked over, the same way the business card
-      // editor's RFQ button currently does — actually POSTing it to the
-      // Worker is a separate, deliberately not-yet-wired step.
-      if (statusEl) statusEl.textContent = '';
-      const payload = buildTagOrderPayload();
-      await downloadTagOrderPlmj(payload);
-      form.reset();
-      openSuccessModal();
+      if (statusEl) { statusEl.textContent = ''; statusEl.className = 'form-status'; }
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending…'; }
+
+      try {
+        const payload = buildTagOrderPayload();
+        const formData = new FormData(form);
+        const contextLines = [
+          `${payload.items.length} tag${payload.items.length === 1 ? '' : 's'} requested:`,
+          summarizeOrderItems(payload.items),
+          `Shipping address: ${payload.order.address || 'n/a'}, ${payload.order.city || 'n/a'}, ${payload.order.state || 'n/a'} ${payload.order.zip || 'n/a'}`,
+        ];
+        const userMessage = String(formData.get('message') || '').trim();
+        formData.set('message', `${contextLines.join('\n')}${userMessage ? `\n\n${userMessage}` : ''}`);
+
+        const bytes = await encodePlmjFile(payload);
+        const base = (payload.order.name || 'api-rp-tag').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'api-rp-tag';
+        formData.append('attachment', new Blob([bytes], { type: 'application/octet-stream' }), `${base}-order.plmj`);
+
+        const res = await fetch(RFQ_ENDPOINT, { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          form.reset();
+          openSuccessModal();
+        } else if (statusEl) {
+          statusEl.textContent = data.message || 'Something went wrong — please try again.';
+          statusEl.className = 'form-status error';
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.textContent = 'Network error — please try again.';
+          statusEl.className = 'form-status error';
+        }
+      } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = submitLabel; }
+      }
     });
   }
 }
