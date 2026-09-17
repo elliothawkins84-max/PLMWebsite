@@ -155,7 +155,19 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   display: none; flex-direction: column; gap: 5px;
   background: none; border: none; cursor: pointer; padding: 6px;
 }
-.nav-toggle span { width: 24px; height: 2px; background: var(--fg); }
+.nav-toggle span {
+  width: 24px; height: 2px; background: var(--fg);
+  transition: transform 0.25s ease, opacity 0.2s ease;
+}
+/* Hamburger -> X: top/bottom bars rotate to meet in the middle (7px =
+   the 5px gap + 2px bar height, so they land exactly on the center bar's
+   line), the center bar just fades out. */
+.nav-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+@media (prefers-reduced-motion: reduce) {
+  .nav-toggle span { transition: none; }
+}
 
 /* ---- Placeholders ---- */
 .placeholder {
@@ -2084,10 +2096,25 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
     position: absolute; top: 70px; left: 0; right: 0;
     background: #000; border-bottom: 1px solid var(--line);
     flex-direction: column; align-items: flex-start; gap: 0;
-    padding: 8px 28px 22px; display: none;
+    padding: 8px 28px 22px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px);
+    pointer-events: none;
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out, visibility 0s linear 0.2s;
   }
-  .nav-links.open { display: flex; }
+  .nav-links.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+  }
   .nav-links a { padding: 12px 0; font-size: 0.85rem; }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-links { transition: opacity 0.2s ease-out, visibility 0s linear 0.2s; transform: none; }
+    .nav-links.open { transition: opacity 0.2s ease-out; }
+  }
 
   .hero {
     padding: 39dvh 28px 44px; /* dvh-based so the logo lands in the same relative spot across phone sizes */
