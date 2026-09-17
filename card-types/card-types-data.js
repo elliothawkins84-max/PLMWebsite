@@ -21,21 +21,31 @@
 // "Clear" naming — `id` keeps the `clear-*` form regardless, since it's
 // an internal identifier (also embedded in any already-saved .plm file's
 // cardTypeId) rather than user-facing text.
+// `available` (default true when omitted) gates whether an entry is
+// actually pickable in the card-type modal right now -- the two 0.2mm
+// Black entries below are the only real, orderable stock at the moment,
+// so everything else is marked `available: false` and rendered grayed
+// out with a "Coming soon" badge instead of being removed outright (kept
+// in the list so the gallery still shows the full eventual color range,
+// and so any already-saved .plm file referencing one of these ids still
+// resolves to a real entry instead of nothing).
 window.CARD_TYPES = [
-  { id: 'black-016',  color: 'Black',  swatch: '#0d0d0d', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null },
-  { id: 'black-032',  color: 'Black',  swatch: '#0d0d0d', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null },
-  { id: 'clear-016',  color: 'Silver', swatch: '#8b8f94', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null },
-  { id: 'clear-032',  color: 'Silver', swatch: '#8b8f94', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null },
-  { id: 'yellow-016', color: 'Yellow', swatch: '#c9a83f', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null },
-  { id: 'yellow-032', color: 'Yellow', swatch: '#c9a83f', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null },
-  { id: 'red-016',    color: 'Red',    swatch: '#9c2b3a', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null },
-  { id: 'red-032',    color: 'Red',    swatch: '#9c2b3a', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null },
-  { id: 'blue-016',   color: 'Blue',   swatch: '#215bab', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null },
-  { id: 'blue-032',   color: 'Blue',   swatch: '#215bab', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null },
-  { id: 'orange-016', color: 'Orange', swatch: '#c9781f', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null },
-  { id: 'orange-032', color: 'Orange', swatch: '#c9781f', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null },
-  { id: 'violet-016', color: 'Violet', swatch: '#4a2d7d', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null },
-  { id: 'violet-032', color: 'Violet', swatch: '#4a2d7d', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null },
-  { id: 'green-016',  color: 'Green',  swatch: '#2f7a45', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null },
-  { id: 'green-032',  color: 'Green',  swatch: '#2f7a45', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null },
+  { id: 'black-020-matte',   color: 'Black', finish: 'Matte',   swatch: '#0d0d0d', thicknessIn: '0.008"', thicknessMm: '0.2mm', photo: null, available: true },
+  { id: 'black-020-frosted', color: 'Black', finish: 'Frosted', swatch: '#0d0d0d', thicknessIn: '0.008"', thicknessMm: '0.2mm', photo: null, available: true },
+  { id: 'black-016',  color: 'Black',  swatch: '#0d0d0d', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null, available: false },
+  { id: 'black-032',  color: 'Black',  swatch: '#0d0d0d', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null, available: false },
+  { id: 'clear-016',  color: 'Silver', swatch: '#8b8f94', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null, available: false },
+  { id: 'clear-032',  color: 'Silver', swatch: '#8b8f94', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null, available: false },
+  { id: 'yellow-016', color: 'Yellow', swatch: '#c9a83f', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null, available: false },
+  { id: 'yellow-032', color: 'Yellow', swatch: '#c9a83f', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null, available: false },
+  { id: 'red-016',    color: 'Red',    swatch: '#9c2b3a', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null, available: false },
+  { id: 'red-032',    color: 'Red',    swatch: '#9c2b3a', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null, available: false },
+  { id: 'blue-016',   color: 'Blue',   swatch: '#215bab', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null, available: false },
+  { id: 'blue-032',   color: 'Blue',   swatch: '#215bab', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null, available: false },
+  { id: 'orange-016', color: 'Orange', swatch: '#c9781f', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null, available: false },
+  { id: 'orange-032', color: 'Orange', swatch: '#c9781f', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null, available: false },
+  { id: 'violet-016', color: 'Violet', swatch: '#4a2d7d', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null, available: false },
+  { id: 'violet-032', color: 'Violet', swatch: '#4a2d7d', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null, available: false },
+  { id: 'green-016',  color: 'Green',  swatch: '#2f7a45', thicknessIn: '0.016"', thicknessMm: '0.4mm', photo: null, available: false },
+  { id: 'green-032',  color: 'Green',  swatch: '#2f7a45', thicknessIn: '0.032"', thicknessMm: '0.8mm', photo: null, available: false },
 ];

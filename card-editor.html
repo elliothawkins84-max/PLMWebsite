@@ -136,7 +136,12 @@
         start = performance.now();
         scheduleFrame();
       };
-      logo.src = 'logo-mark.png';
+      // logo-mark.png now has an opaque background baked in (see the
+      // favicon-visibility fix), which made the hatch masking read as a
+      // solid square instead of the P shape -- p-mark.svg is just the P
+      // glyph on a transparent background, so drawImage's destination-in
+      // masking above actually clips to its real outline.
+      logo.src = 'p-mark.svg';
 
       // Sweep each pass in discrete steps rather than a smooth wipe, so
       // the lines visibly land one at a time — a real cross-hatch job
@@ -248,6 +253,14 @@
           overlay.classList.add('is-hidden');
           setTimeout(function () { overlay.remove(); }, FADE_OUT_MS);
         }
+        // Beta notice, ~1s after the editor is actually visible — not
+        // tied to the overlay's own fade timing, just a beat after the
+        // whole reveal has settled. __plmShowBetaNotice is defined in
+        // card-editor.js, which by this point has already finished its
+        // own setup (reveal() only runs once appReady is true).
+        setTimeout(function () {
+          if (window.__plmShowBetaNotice) window.__plmShowBetaNotice();
+        }, 1000);
       }
       var fadeStart = null;
       var holdStart = null;
@@ -323,6 +336,7 @@
         <img src="logo-mark.png" alt="Precision Laser Mark" />
       </a>
       <span class="editor-title">Business Card Editor</span>
+      <button type="button" class="editor-beta-badge" id="beta-badge-btn">Beta</button>
       <div class="editor-topbar-actions">
         <button type="button" class="editor-icon-btn" id="undo-btn" disabled aria-label="Undo" title="Undo (&#8984;Z)">&#8630;</button>
         <button type="button" class="editor-icon-btn" id="redo-btn" disabled aria-label="Redo" title="Redo (&#8984;&#8679;Z)">&#8631;</button>
@@ -998,6 +1012,25 @@
       </ul>
       <div class="editor-modal-actions">
         <button type="button" class="btn btn-sm" id="price-help-modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Beta notice — not opened by any button. Shown once automatically,
+       ~1s after the loading overlay's own engrave animation finishes and
+       the editor is actually visible (see __plmShowBetaNotice, wired up
+       in card-editor.js and called from reveal() in the inline loading
+       script above). -->
+  <div class="editor-modal-overlay" id="beta-notice-modal" aria-hidden="true">
+    <div class="editor-modal editor-beta-modal" role="dialog" aria-modal="true" aria-labelledby="beta-notice-modal-title">
+      <h2 class="editor-modal-title" id="beta-notice-modal-title">Beta</h2>
+      <p class="editor-modal-message">This editor is still in beta testing. If you run into any errors, please email them to <a href="mailto:info@precisionlasermark.com">info@precisionlasermark.com</a>.</p>
+      <div class="editor-beta-modal-footer">
+        <span>Have fun designing!</span>
+        <img src="logo-mark.png" alt="" class="editor-beta-modal-mark" />
+      </div>
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-sm" id="beta-notice-modal-close">Got it</button>
       </div>
     </div>
   </div>

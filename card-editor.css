@@ -70,6 +70,21 @@
   letter-spacing: 0.04em;
   color: var(--fg);
 }
+.editor-beta-badge {
+  margin-left: -12px; /* sits right next to the title, not 20px away like the topbar's default gap */
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.editor-beta-badge:hover { color: var(--fg); border-color: var(--fg); }
 .editor-topbar-actions {
   margin-left: auto;
   display: flex;
@@ -1118,6 +1133,7 @@
   width: 100%;
 }
 .editor-cardtype-option {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1166,6 +1182,55 @@
   letter-spacing: 0.02em;
   color: var(--fg);
   text-align: center;
+}
+.editor-cardtype-section-label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-align: center;
+  margin: 4px 0 -2px;
+}
+.editor-cardtype-option.is-disabled {
+  cursor: not-allowed;
+}
+.editor-cardtype-option.is-disabled:hover .editor-cardtype-option-preview {
+  border-color: transparent;
+}
+.editor-cardtype-option.is-disabled .editor-cardtype-option-preview-canvas {
+  opacity: 0.35;
+}
+.editor-cardtype-option.is-disabled .editor-cardtype-option-thickness {
+  opacity: 0.5;
+}
+.editor-cardtype-option-soon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Centered over just the preview swatch (not the thickness label
+     below it) -- matches .editor-cardtype-option-preview's own
+     aspect-ratio box exactly since it's the first child in this flex
+     column, so this overlay lines up with it without needing to make
+     the preview itself a positioning context (which would also have
+     clipped this badge's opacity/dimming along with the swatch). */
+  aspect-ratio: 86 / 54;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.editor-cardtype-option-soon span {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 9px;
 }
 .editor-price-help-list {
   list-style: none;
@@ -1697,6 +1762,27 @@
   margin-bottom: 20px;
 }
 #plm-dialog-overlay .editor-modal { width: 300px; }
+
+/* Beta notice */
+.editor-beta-modal { width: 300px; }
+.editor-beta-modal .editor-modal-message a { color: var(--fg); text-decoration: none; }
+.editor-beta-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.editor-beta-modal-footer span {
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--muted);
+}
+.editor-beta-modal-mark {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  opacity: 0.85;
+}
 /* Can open while another modal (e.g. Templates) is already open behind it
    — same z-index as every other .editor-modal-overlay otherwise meant it
    was painting BELOW whichever one happened to sit later in the HTML, so

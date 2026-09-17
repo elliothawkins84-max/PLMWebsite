@@ -15,10 +15,11 @@ const MM_PER_IN = 25.4;
 // card-types-data.js) is currently selected — declared at the very top
 // because pushHistory (called as early as the initial baseline snapshot,
 // well before the picker's own section of the script runs) triggers a
-// Mockup repaint that reads this on every render. Defaults to Black at
-// 0.016" (0.4mm), CARD_TYPES' own first entry, rather than no selection —
-// a fresh page load should show a real card, not the "choose one" state.
-let selectedCardTypeId = 'black-016';
+// Mockup repaint that reads this on every render. Defaults to Black
+// Matte at 0.008" (0.2mm), CARD_TYPES' own first entry, rather than no
+// selection — a fresh page load should show a real card, not the
+// "choose one" state.
+let selectedCardTypeId = 'black-020-matte';
 function getSelectedCardTypeColor() {
   const entry = (window.CARD_TYPES || []).find((t) => t.id === selectedCardTypeId);
   return entry ? entry.swatch : null;
@@ -4284,7 +4285,11 @@ if (fabricCanvasEl && window.fabric) {
         // bounds. The 1.5px stroke now centers on the true edge and bleeds
         // ~0.04mm outside the nominal card size on each side, which is
         // negligible next to getting the geometry itself exactly right.
-        const outline = `<g id="card-outline"><rect x="0" y="0" width="${CARD_W_PX}" height="${CARD_H_PX}" rx="27" ry="27" fill="none" stroke="#ffffff" stroke-width="1.5"/></g>`;
+        // Red rather than white/black -- the shop's usual convention for
+        // a cut-only line, and it makes this outline layer easy to pick
+        // out and toggle off by color in Illustrator (same reasoning as
+        // the API RP tag exports' own red cut circles).
+        const outline = `<g id="card-outline"><rect x="0" y="0" width="${CARD_W_PX}" height="${CARD_H_PX}" rx="27" ry="27" fill="none" stroke="#ff0000" stroke-width="1.5"/></g>`;
         // Fabric's own width/height on the <svg> tag are unitless (just
         // "774"/"486"), which every SVG consumer treats as pixels -- at a
         // typical 96dpi that's ~205mm x ~129mm, more than double the real
@@ -5364,6 +5369,36 @@ if (fabricCanvasEl && window.fabric) {
       }
     });
   }
+  // Beta notice — not opened by any button; called once from reveal() in
+  // card-editor.html's inline loading script, ~1s after the editor
+  // actually becomes visible.
+  const betaNoticeModal = document.getElementById('beta-notice-modal');
+  const betaNoticeModalClose = document.getElementById('beta-notice-modal-close');
+  window.__plmShowBetaNotice = () => {
+    if (!betaNoticeModal) return;
+    betaNoticeModal.classList.add('is-open');
+    betaNoticeModal.setAttribute('aria-hidden', 'false');
+  };
+  if (betaNoticeModal) {
+    betaNoticeModal.addEventListener('mousedown', (e) => {
+      if (e.target === betaNoticeModal) {
+        betaNoticeModal.classList.remove('is-open');
+        betaNoticeModal.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+  if (betaNoticeModalClose && betaNoticeModal) {
+    betaNoticeModalClose.addEventListener('click', () => {
+      betaNoticeModal.classList.remove('is-open');
+      betaNoticeModal.setAttribute('aria-hidden', 'true');
+    });
+  }
+  // "Beta" badge next to the title — reopens the same notice on demand.
+  const betaBadgeBtn = document.getElementById('beta-badge-btn');
+  if (betaBadgeBtn) {
+    betaBadgeBtn.addEventListener('click', () => window.__plmShowBetaNotice());
+  }
+
   if (priceHelpModalClose && priceHelpModal) {
     priceHelpModalClose.addEventListener('click', () => {
       priceHelpModal.classList.remove('is-open');
@@ -5493,7 +5528,8 @@ if (fabricCanvasEl && window.fabric) {
       if (cardTypeBtnSwatch) cardTypeBtnSwatch.style.background = '#3a3a3a';
       return;
     }
-    cardTypeBtnValue.textContent = `${entry.color} · ${entry.thicknessIn} (${entry.thicknessMm})`;
+    const colorLabel = entry.finish ? `${entry.color} · ${entry.finish}` : entry.color;
+    cardTypeBtnValue.textContent = `${colorLabel} · ${entry.thicknessIn} (${entry.thicknessMm})`;
     if (cardTypeBtnSwatch) cardTypeBtnSwatch.style.background = entry.swatch;
   }
   // One row per color, with its two thickness options (0.4mm, 0.8mm)
@@ -5501,9 +5537,11 @@ if (fabricCanvasEl && window.fabric) {
   // templates gallery's front/back preview, but here the pair is the
   // two thicknesses of the same color rather than two sides of one design.
   function buildCardTypeOption(entry) {
+    const isAvailable = entry.available !== false;
     const option = document.createElement('button');
     option.type = 'button';
     option.className = 'editor-cardtype-option';
+    if (!isAvailable) option.classList.add('is-disabled');
     if (entry.id === selectedCardTypeId) option.classList.add('is-selected');
     const preview = document.createElement('div');
     preview.className = 'editor-cardtype-option-preview';
@@ -5521,9 +5559,30 @@ if (fabricCanvasEl && window.fabric) {
     }
     const thickness = document.createElement('span');
     thickness.className = 'editor-cardtype-option-thickness';
-    thickness.textContent = `${entry.thicknessIn} (${entry.thicknessMm})`;
+    // The two live options share one thickness (0.2mm), so their finish
+    // name is what actually tells them apart -- shown instead of the
+    // thickness readout the disabled/legacy entries still use.
+    thickness.textContent = entry.finish
+      ? `${entry.finish} · ${entry.thicknessIn} (${entry.thicknessMm})`
+      : `${entry.thicknessIn} (${entry.thicknessMm})`;
     option.appendChild(preview);
+    if (!isAvailable) {
+      // A sibling of `preview`, not a child of it -- so dimming the
+      // swatch underneath (see the .is-disabled CSS) doesn't also fade
+      // this badge itself along with it.
+      const soonBadge = document.createElement('span');
+      soonBadge.className = 'editor-cardtype-option-soon';
+      const soonPill = document.createElement('span');
+      soonPill.textContent = 'Coming soon';
+      soonBadge.appendChild(soonPill);
+      option.appendChild(soonBadge);
+    }
     option.appendChild(thickness);
+    if (!isAvailable) {
+      option.disabled = true;
+      option.setAttribute('aria-disabled', 'true');
+      return option;
+    }
     option.addEventListener('click', () => {
       selectedCardTypeId = entry.id;
       updateCardTypeButton();
@@ -5584,7 +5643,20 @@ if (fabricCanvasEl && window.fabric) {
       cardTypeGrid.scrollTop = 0;
       return;
     }
-    groupCardTypesByColor(types).forEach((group) => cardTypeGrid.appendChild(buildCardTypeRow(group)));
+    // Available types first (what's actually orderable right now), then
+    // everything else grayed out under its own "Coming soon" heading —
+    // rather than interleaving disabled options into the same rows as
+    // live ones, which read as broken instead of intentionally limited.
+    const availableTypes = types.filter((t) => t.available !== false);
+    const comingSoonTypes = types.filter((t) => t.available === false);
+    groupCardTypesByColor(availableTypes).forEach((group) => cardTypeGrid.appendChild(buildCardTypeRow(group)));
+    if (comingSoonTypes.length) {
+      const sectionLabel = document.createElement('div');
+      sectionLabel.className = 'editor-cardtype-section-label';
+      sectionLabel.textContent = 'Coming soon';
+      cardTypeGrid.appendChild(sectionLabel);
+      groupCardTypesByColor(comingSoonTypes).forEach((group) => cardTypeGrid.appendChild(buildCardTypeRow(group)));
+    }
     cardTypeGrid.scrollTop = 0;
   }
   if (cardTypeToggleBtn) cardTypeToggleBtn.addEventListener('click', openCardTypeModal);

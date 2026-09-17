@@ -1492,6 +1492,16 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 }
 .product-list .product-row:first-child { padding-top: 0; }
 .product-list .product-row:last-child { border-bottom: none; }
+.products-more-soon {
+  margin-top: 32px;
+  padding: 22px;
+  border: 1px dashed var(--line);
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
 .product-list .product-row:nth-child(even) .product-row-photo { order: 2; }
 .product-list .product-row:nth-child(even) .product-row-info {
   order: 1;
@@ -1501,6 +1511,21 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .product-row-photo {
   flex: 0 0 360px;
   aspect-ratio: 16 / 9;
+}
+.product-row-video {
+  width: 100%;
+  height: 100%;
+  /* A replaced element's automatic min-width in a flex item defaults to
+     its intrinsic size (this video's own 960px), which otherwise wins
+     over the smaller flex-basis above and blows the box up to the
+     video's full native width despite flex-shrink/grow both being 0 --
+     the standard fix is overriding that automatic minimum. */
+  min-width: 0;
+  min-height: 0;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--line-strong);
+  background: #0d0d0d;
 }
 .product-row-info {
   display: flex;
@@ -1580,6 +1605,17 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 /* ---- Contact ---- */
 .contact { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: start; }
 .contact-head .lead { margin-top: 22px; }
+.custom-list {
+  list-style: none;
+  columns: 2;
+  column-gap: 32px;
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--fg);
+}
+.custom-list li { padding: 4px 0; }
+.custom-list li::before { content: "— "; color: var(--muted); }
 .contact-form { display: flex; flex-direction: column; gap: 22px; }
 .contact-form label { display: flex; flex-direction: column; gap: 10px; }
 .contact-form label span { font-size: 0.68rem; color: var(--muted); }

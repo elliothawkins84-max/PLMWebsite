@@ -63,6 +63,35 @@ if (heroVideoFrame) {
   }
 }
 
+// Product listing videos (products.html): same autoplay/reduced-motion
+// handling as the hero video above, just generalized to however many of
+// these show up on a page instead of one specific element by id.
+const productVideos = [...document.querySelectorAll('.product-row-video')];
+if (productVideos.length) {
+  if (reduceMotion) {
+    productVideos.forEach((video) => {
+      video.removeAttribute('autoplay');
+      video.pause();
+    });
+  } else {
+    const tryPlayAll = () => productVideos.forEach((video) => video.play().catch(() => {}));
+    productVideos.forEach((video) => {
+      video.muted = true;
+      video.setAttribute('muted', '');
+      const tryPlay = () => video.play().catch(() => {});
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => { if (entry.isIntersecting) tryPlay(); });
+      }, { threshold: 0.2 });
+      io.observe(video);
+      video.addEventListener('loadeddata', tryPlay);
+      video.addEventListener('canplay', tryPlay);
+    });
+    window.addEventListener('touchstart', tryPlayAll, { passive: true });
+    window.addEventListener('scroll', tryPlayAll, { passive: true });
+    window.addEventListener('click', tryPlayAll);
+  }
+}
+
 // Parallax: drift the hero video slower than the page scroll. Skipped on
 // touch devices — applying a transform to the video's parent on scroll
 // can interrupt/pause autoplay on mobile Safari, and a tiny scroll often

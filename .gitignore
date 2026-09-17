@@ -1,3 +1,7 @@
 .DS_Store
 worker/.wrangler/
 worker/node_modules/
+node_modules/
+# Raw ~1GB+ 4K source captures -- product-videos/ holds the compressed,
+# actually-deployed output committed to the repo.
+ProductVid/
