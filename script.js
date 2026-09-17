@@ -134,7 +134,10 @@ if (rulerEl) {
 // Specialties: material / wavelength explorer with laser-engrave reveal
 const stage = document.getElementById('stage');
 if (stage) {
-  const chips = Array.from(document.querySelectorAll('.chip'));
+  // Scoped to [data-target] so a plain nav-link chip (e.g. the "Laser
+  // Engraving" services link) never gets wired into the material/wavelength
+  // selection logic below -- it's a real link, not an explorer filter.
+  const chips = Array.from(document.querySelectorAll('.chip[data-target]'));
   let engraveToken = 0;
 
   const prepare = (card) => {
@@ -444,3 +447,758 @@ document.querySelectorAll('.faq-item').forEach((item) => {
     }
   });
 });
+
+// API RP Tags configurator: line-count chips drive how many text fields show,
+// and typing live-updates a text overlay positioned on the tag photo.
+const tagLineChips = document.getElementById('tagLineChips');
+if (tagLineChips) {
+  const overlay = document.getElementById('tagOverlay');
+  const photoWrap = document.querySelector('.tag-photo-wrap');
+  const boundsBox = document.getElementById('tagBoundsBox');
+  const inputRows = [...document.querySelectorAll('.tag-input-row')];
+  const chips = [...tagLineChips.querySelectorAll('.chip')];
+  const placeholders = ['ONE', 'TWO', 'THREE'];
+
+  const fontChipsWrap = document.getElementById('tagFontChips');
+  const fontChips = fontChipsWrap ? [...fontChipsWrap.querySelectorAll('.chip')] : [];
+  const activeFontChip = () => fontChips.find((c) => c.classList.contains('is-on')) || fontChips[1];
+  let appliedPt = 0; // the actual point size last rendered, after fitting to the boundary
+  const TAG_DIAMETER_PT = 1.5 * 72; // the tag is a fixed 1.5in diameter, in points
+  const SAFE_MARGIN_MM = 3; // text must stay this far in from the tag's edge
+  const MIN_PT = 4; // never shrink a line into illegibility
+
+  const colorChipsWrap = document.getElementById('tagColorChips');
+  const colorChips = colorChipsWrap ? [...colorChipsWrap.querySelectorAll('.chip')] : [];
+  const tagBody = document.getElementById('tagBody');
+  const tagHoleRing = document.getElementById('tagHoleRing');
+  const activeColorChip = () => colorChips.find((c) => c.classList.contains('is-on')) || colorChips[0];
+  const setTagColor = (color) => {
+    colorChips.forEach((c) => c.classList.toggle('is-on', c.dataset.color === color));
+    const chip = activeColorChip();
+    if (!chip || !tagBody) return;
+    tagBody.setAttribute('fill', `url(#tagFill${color.charAt(0).toUpperCase()}${color.slice(1)})`);
+    tagBody.setAttribute('stroke', chip.dataset.stroke);
+    if (tagHoleRing) tagHoleRing.setAttribute('stroke', chip.dataset.stroke);
+  };
+
+  const activeChip = () => chips.find((c) => c.classList.contains('is-on'));
+
+  // Converts a point size to on-screen pixels, scaled to however large the
+  // 1.5in tag is actually being rendered right now (it's a responsive grid).
+  const ptToPx = (pt) => {
+    const wrapWidth = photoWrap.getBoundingClientRect().width || 420;
+    return (pt / TAG_DIAMETER_PT) * wrapWidth;
+  };
+
+  // The safe area is a circle inset SAFE_MARGIN_MM from the tag's edge. A
+  // horizontal line of text can only be as wide as that circle's chord at
+  // the line's own vertical offset from the tag's center.
+  const safeChordWidth = (dyPx) => {
+    const tagRect = photoWrap.getBoundingClientRect();
+    const pxPerMm = tagRect.width / (1.5 * 25.4);
+    const safeRadius = tagRect.width / 2 - SAFE_MARGIN_MM * pxPerMm;
+    const inside = safeRadius * safeRadius - dyPx * dyPx;
+    return inside > 0 ? 2 * Math.sqrt(inside) : 0;
+  };
+
+  // The region text is allowed to occupy at all: from the keyring hole's
+  // bottom edge (SVG circle cy=28.874 r=7.874 in its 0-200 viewBox — sized
+  // so the full viewBox width represents the tag's actual 1.5in diameter
+  // exactly, same as ptToPx/safeChordWidth below — a real 3mm-diameter
+  // hole positioned so its own top sits exactly 4mm below the tag's top
+  // edge; bottom edge at y=36.748, i.e. 18.374% down) to near the tag's
+  // own bottom edge — matches .tag-text-overlay's own top/bottom in
+  // styles.css exactly. Each size tier gets this SAME region scaled down
+  // by its own fill fraction, in BOTH width and height, centered on the
+  // same point — so the four tiers are just four nested nested boxes,
+  // entirely independent of whatever text is actually typed.
+  const REGION_TOP_FRAC = 0.18374;
+  const REGION_BOTTOM_FRAC = 0.90;
+  const DEFAULT_GAP_FACTOR = 0.35;
+
+  // The fixed region's geometry in on-screen pixels, recomputed fresh
+  // each call since the tag can resize (responsive layout).
+  const regionGeometry = () => {
+    const tagRect = photoWrap.getBoundingClientRect();
+    const top = tagRect.top + REGION_TOP_FRAC * tagRect.height;
+    const bottom = tagRect.top + REGION_BOTTOM_FRAC * tagRect.height;
+    const centerY = (top + bottom) / 2;
+    const tagCenterY = tagRect.top + tagRect.height / 2;
+    return { tagRect, top, bottom, centerY, height: bottom - top, dyFromTagCenter: centerY - tagCenterY };
+  };
+
+  // Applies a single uniform point size to every line, and a line gap
+  // that's some fraction of that size (tightened independently of font
+  // size when the block needs to shrink vertically — see fitUniformPt).
+  const applyUniformPt = (pt, gapFactor = DEFAULT_GAP_FACTOR) => {
+    const px = ptToPx(pt);
+    overlay.style.gap = `${px * gapFactor}px`;
+    overlay.querySelectorAll('span').forEach((span) => {
+      span.style.fontSize = `${px}px`;
+    });
+  };
+
+  // A generous upper-bound guess: the point size that would make the
+  // widest line exactly fill the region's full width at its vertical
+  // center. fitUniformPt below always searches down from this same
+  // reference regardless of tier — the tier itself is what actually
+  // constrains the result (see allLinesFit) — so a bigger tier can never
+  // request less room than a smaller one already found workable.
+  const REFERENCE_PT = 20;
+  const estimateRequestedPt = () => {
+    const spans = [...overlay.querySelectorAll('span')];
+    if (!spans.length) return MIN_PT;
+    const refPx = ptToPx(REFERENCE_PT);
+    spans.forEach((span) => { span.style.fontSize = `${refPx}px`; });
+    const widestPx = Math.max(...spans.map((span) => span.getBoundingClientRect().width));
+    if (widestPx <= 0) return MIN_PT;
+    const targetPx = safeChordWidth(regionGeometry().dyFromTagCenter);
+    return REFERENCE_PT * (targetPx / widestPx);
+  };
+
+  // True only if every line's rendered width is within fillFraction of
+  // the safe-area chord at its own current vertical position — i.e. within
+  // that tier's own share of the boundary, not the full boundary.
+  const allLinesFitWidth = (fillFraction) => {
+    const tagRect = photoWrap.getBoundingClientRect();
+    const tagCenterY = tagRect.top + tagRect.height / 2;
+    return [...overlay.querySelectorAll('span')].every((span) => {
+      const spanRect = span.getBoundingClientRect();
+      const dy = spanRect.top + spanRect.height / 2 - tagCenterY;
+      return spanRect.width <= fillFraction * safeChordWidth(dy) + 0.5;
+    });
+  };
+
+  // True only if the whole text block's height fits within fillFraction of
+  // the region's own height — this is what actually keeps text clear of
+  // the hole (the region itself starts right at the hole's bottom edge),
+  // scaled down per tier just like width is.
+  const blockFitsHeight = (fillFraction) => {
+    const spans = [...overlay.querySelectorAll('span')];
+    if (!spans.length) return true;
+    const rects = spans.map((span) => span.getBoundingClientRect());
+    const blockHeight = Math.max(...rects.map((r) => r.bottom)) - Math.min(...rects.map((r) => r.top));
+    return blockHeight <= fillFraction * regionGeometry().height + 0.5;
+  };
+
+  const allLinesFit = (fillFraction) => allLinesFitWidth(fillFraction) && blockFitsHeight(fillFraction);
+
+  // True if SOME gap between 0 and the default (comfortable) spacing lets
+  // this point size fit within the given tier's own box — tried at full
+  // spacing first, since that's what applyBestGapForPt will actually
+  // render if this returns true. This is the single source of truth for
+  // whether a size "works", so the search below and the final render can
+  // never disagree with each other.
+  const fitsAtPt = (pt, fillFraction) => {
+    applyUniformPt(pt, DEFAULT_GAP_FACTOR);
+    if (allLinesFit(fillFraction)) return true;
+    if (!allLinesFitWidth(fillFraction)) return false; // tightening the gap can't fix a width overflow
+    applyUniformPt(pt, 0);
+    return allLinesFit(fillFraction);
+  };
+
+  // Renders the given point size at the loosest gap that still fits —
+  // full comfortable spacing if that already works, tightened only as
+  // far as actually needed to fit the tier's own box.
+  const applyBestGapForPt = (pt, fillFraction) => {
+    applyUniformPt(pt, DEFAULT_GAP_FACTOR);
+    if (allLinesFit(fillFraction)) return;
+    let gLo = 0;
+    let gHi = DEFAULT_GAP_FACTOR;
+    applyUniformPt(pt, gLo);
+    if (!allLinesFit(fillFraction)) return; // fitsAtPt(pt, fillFraction) was false; caller shouldn't reach here
+    for (let i = 0; i < 12; i++) {
+      const mid = (gLo + gHi) / 2;
+      applyUniformPt(pt, mid);
+      if (allLinesFit(fillFraction)) gLo = mid; else gHi = mid;
+    }
+    applyUniformPt(pt, gLo);
+  };
+
+  // Finds the largest point size (up to the requested one) that fits
+  // within the given tier's own box, via binary search on fitsAtPt —
+  // which folds gap-tightening into the fit test itself, so the search is
+  // monotonic in pt (a bigger request can never end up smaller than a
+  // smaller one already known to fit) and still prefers shrinking the gap
+  // over shrinking the customer's chosen text size. Searching directly for
+  // the fixed point — rather than iteratively nudging the requested size
+  // down — means the result only depends on the text and geometry, never
+  // on how far the requested size overshot the boundary.
+  const fitUniformPt = (requestedPt, fillFraction) => {
+    if (fitsAtPt(requestedPt, fillFraction)) {
+      applyBestGapForPt(requestedPt, fillFraction);
+      return requestedPt;
+    }
+
+    if (!fitsAtPt(MIN_PT, fillFraction)) {
+      applyBestGapForPt(MIN_PT, fillFraction);
+      return MIN_PT;
+    }
+
+    let lo = MIN_PT;
+    let hi = requestedPt;
+    for (let i = 0; i < 16; i++) {
+      const mid = (lo + hi) / 2;
+      if (fitsAtPt(mid, fillFraction)) lo = mid; else hi = mid;
+    }
+    applyBestGapForPt(lo, fillFraction);
+    return lo;
+  };
+
+  const renderOverlay = () => {
+    const count = Number(activeChip().dataset.lines);
+    const fillFraction = Number(activeFontChip().dataset.fillPct) / 100;
+    overlay.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      const value = inputRows[i].querySelector('input').value.trim();
+      const span = document.createElement('span');
+      span.textContent = value || placeholders[i];
+      span.classList.toggle('is-placeholder', !value);
+      overlay.appendChild(span);
+    }
+
+    const requestedPt = estimateRequestedPt();
+    appliedPt = fitUniformPt(requestedPt, fillFraction);
+    updateBoundsBox(fillFraction);
+  };
+
+  // Draws the purple dashed box for the CURRENTLY SELECTED tier — purely
+  // geometric (the region scaled by fillFraction in both width and
+  // height, centered on the same point every tier shares), so it never
+  // moves or resizes as the customer types; only picking a different tier
+  // changes it. The text itself grows to fill this box and shrinks back
+  // inside it once it would otherwise cross the edge.
+  const updateBoundsBox = (fillFraction) => {
+    if (!boundsBox) return;
+    const g = regionGeometry();
+    const fullWidth = safeChordWidth(g.dyFromTagCenter);
+    const boxWidth = fillFraction * fullWidth;
+    const boxHeight = fillFraction * g.height;
+    const tagCenterX = g.tagRect.left + g.tagRect.width / 2;
+
+    boundsBox.hidden = false;
+    boundsBox.style.left = `${tagCenterX - boxWidth / 2 - g.tagRect.left}px`;
+    boundsBox.style.top = `${g.centerY - boxHeight / 2 - g.tagRect.top}px`;
+    boundsBox.style.width = `${boxWidth}px`;
+    boundsBox.style.height = `${boxHeight}px`;
+  };
+
+  const setLineCount = (count) => {
+    chips.forEach((c) => c.classList.toggle('is-on', Number(c.dataset.lines) === count));
+    inputRows.forEach((row, i) => { row.classList.toggle('is-hidden', i >= count); });
+    renderOverlay();
+    updateQuoteLink();
+  };
+
+  const setFontSize = (chip) => {
+    fontChips.forEach((c) => c.classList.toggle('is-on', c === chip));
+    renderOverlay();
+    updateQuoteLink();
+  };
+
+  const quoteBtn = document.getElementById('tagQuoteBtn');
+  const layoutNames = { 1: 'Single Line', 2: 'Double Line', 3: 'Triple Line' };
+  const updateQuoteLink = () => {
+    if (!quoteBtn) return;
+    const count = Number(activeChip().dataset.lines);
+    const lines = inputRows
+      .slice(0, count)
+      .map((row, i) => `Line ${i + 1}: ${row.querySelector('input').value.trim() || '(blank)'}`)
+      .join('\n');
+    const colorName = activeColorChip() ? activeColorChip().dataset.color : 'blue';
+    const sizeName = activeFontChip().textContent.trim();
+    const body = `API RP Tag quote request\n\nTag size: 1.5in diameter\nColor: ${colorName.charAt(0).toUpperCase()}${colorName.slice(1)}\nLayout: ${layoutNames[count]}\nText size: ${sizeName} (~${Math.round(appliedPt)}pt)\n${lines}\n\nQuantity needed:`;
+    quoteBtn.href = `mailto:info@precisionlasermark.com?subject=${encodeURIComponent('API RP Tag Quote Request')}&body=${encodeURIComponent(body)}`;
+  };
+
+  chips.forEach((c) => c.addEventListener('click', () => setLineCount(Number(c.dataset.lines))));
+  inputRows.forEach((row) => {
+    row.querySelector('input').addEventListener('input', () => {
+      renderOverlay();
+      updateQuoteLink();
+    });
+  });
+
+  fontChips.forEach((c) => c.addEventListener('click', () => setFontSize(c)));
+
+  colorChips.forEach((c) => c.addEventListener('click', () => {
+    setTagColor(c.dataset.color);
+    updateQuoteLink();
+  }));
+
+  window.addEventListener('resize', renderOverlay);
+
+  setTagColor('blue');
+  setLineCount(1);
+}
+
+// API RP Tags order table: a list of tag line-items the customer builds up
+// before submitting the whole order at once. Defaults to 2 rows.
+const tagOrderBody = document.getElementById('tagOrderBody');
+if (tagOrderBody) {
+  const addRowBtn = document.getElementById('tagOrderAddRow');
+  const lineLabelsByType = {
+    1: ['Text'],
+    2: ['Top', 'Bottom'],
+    3: ['Top', 'Middle', 'Bottom'],
+  };
+  const rowAccentByColor = { blue: '#2479de', red: '#d32f2f', green: '#2e8b47' };
+  const setRowAccent = (row, color) => {
+    const hex = rowAccentByColor[color] || rowAccentByColor.blue;
+    row.querySelectorAll('select, .tag-order-text-row input').forEach((el) => {
+      el.style.borderColor = hex;
+    });
+  };
+
+  const renumberRows = () => {
+    [...tagOrderBody.querySelectorAll('.tag-order-row')].forEach((row, i) => {
+      row.querySelector('.tag-order-num').textContent = i + 1;
+    });
+  };
+
+  const updateRowTextFields = (row) => {
+    const lineType = Number(row.querySelector('.tag-order-linetype-select').value);
+    const textRows = [...row.querySelectorAll('.tag-order-text-row')];
+    textRows.forEach((textRow, i) => {
+      textRow.classList.toggle('is-hidden', i >= lineType);
+    });
+    // Forces the browser to flush layout immediately, so the row's border
+    // repaints at its new (shorter) height instead of leaving a stale line
+    // behind from the taller pre-toggle layout.
+    void row.offsetHeight;
+  };
+
+  const createOrderRow = () => {
+    const row = document.createElement('tr');
+    row.className = 'tag-order-row';
+
+    const numCell = document.createElement('td');
+    numCell.className = 'tag-order-num';
+    row.appendChild(numCell);
+
+    const colorCell = document.createElement('td');
+    const colorSelect = document.createElement('select');
+    colorSelect.className = 'tag-order-color-select';
+    [['blue', 'Blue'], ['red', 'Red'], ['green', 'Green']].forEach(([value, label]) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      colorSelect.appendChild(opt);
+    });
+    colorSelect.addEventListener('change', () => setRowAccent(row, colorSelect.value));
+    colorCell.appendChild(colorSelect);
+    row.appendChild(colorCell);
+
+    const sizeCell = document.createElement('td');
+    const sizeSelect = document.createElement('select');
+    sizeSelect.className = 'tag-order-size-select';
+    [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['x-large', 'X-Large']].forEach(([value, label]) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      if (value === 'medium') opt.selected = true;
+      sizeSelect.appendChild(opt);
+    });
+    sizeCell.appendChild(sizeSelect);
+    row.appendChild(sizeCell);
+
+    const lineTypeCell = document.createElement('td');
+    const lineTypeSelect = document.createElement('select');
+    lineTypeSelect.className = 'tag-order-linetype-select';
+    [['1', 'Single Line'], ['2', 'Double Line'], ['3', 'Triple Line']].forEach(([value, label]) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      lineTypeSelect.appendChild(opt);
+    });
+    lineTypeCell.appendChild(lineTypeSelect);
+    row.appendChild(lineTypeCell);
+
+    const textCell = document.createElement('td');
+    textCell.className = 'tag-order-text-cell';
+    // The flex layout lives on this inner wrapper, not the <td> itself —
+    // display:flex directly on a table cell breaks its normal row-stretch
+    // sizing, which desyncs its border from the rest of the row.
+    const textStack = document.createElement('div');
+    textStack.className = 'tag-order-text-stack';
+    ['Text', 'Middle', 'Bottom'].forEach((_, i) => {
+      const textRow = document.createElement('div');
+      textRow.className = 'tag-order-text-row';
+      if (i > 0) textRow.classList.add('is-hidden');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = 18;
+      input.dataset.line = i;
+      input.placeholder = lineLabelsByType[3][i];
+      textRow.appendChild(input);
+      textStack.appendChild(textRow);
+    });
+    textCell.appendChild(textStack);
+    row.appendChild(textCell);
+
+    const actionsCell = document.createElement('td');
+    const actionsWrap = document.createElement('div');
+    actionsWrap.className = 'tag-order-actions';
+
+    const viewBtn = document.createElement('button');
+    viewBtn.type = 'button';
+    viewBtn.className = 'tag-order-view';
+    viewBtn.setAttribute('aria-label', 'View this tag in the builder above');
+    viewBtn.textContent = 'View';
+    actionsWrap.appendChild(viewBtn);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'tag-order-remove';
+    removeBtn.setAttribute('aria-label', 'Remove this tag');
+    removeBtn.textContent = '✕';
+    actionsWrap.appendChild(removeBtn);
+
+    actionsCell.appendChild(actionsWrap);
+    row.appendChild(actionsCell);
+
+    // Relabel Top/Middle/Bottom (or just "Text" for a single line) to match
+    // whichever line type is currently selected for this row.
+    const relabelTextRows = () => {
+      const lineType = Number(lineTypeSelect.value);
+      const labels = lineLabelsByType[lineType];
+      [...textCell.querySelectorAll('.tag-order-text-row input')].forEach((input, i) => {
+        if (labels[i]) input.placeholder = labels[i];
+      });
+    };
+
+    lineTypeSelect.addEventListener('change', () => {
+      updateRowTextFields(row);
+      relabelTextRows();
+    });
+    removeBtn.addEventListener('click', () => {
+      if (tagOrderBody.querySelectorAll('.tag-order-row').length <= 1) return;
+      row.remove();
+      renumberRows();
+    });
+    viewBtn.addEventListener('click', () => {
+      // Drives the sample configurator above through its own real chip
+      // clicks and input events — same as a customer using it by hand —
+      // rather than reaching into that section's own script block, so it
+      // stays a normal DOM consumer just like "Add to Order List" is in
+      // reverse.
+      document.querySelector(`.tag-color-chips .chip[data-color="${colorSelect.value}"]`)?.click();
+      document.querySelector(`#tagLineChips .chip[data-lines="${lineTypeSelect.value}"]`)?.click();
+      [...document.querySelectorAll('#tagFontChips .chip')]
+        .find((c) => c.textContent.trim().toLowerCase().replace(/\s+/g, '-') === sizeSelect.value)
+        ?.click();
+
+      const lineCount = Number(lineTypeSelect.value);
+      const rowLines = [...row.querySelectorAll('.tag-order-text-row input')].map((i) => i.value);
+      [...document.querySelectorAll('.tag-input-row input')].forEach((input, i) => {
+        input.value = i < lineCount ? (rowLines[i] || '') : '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+
+      const scrollTarget = document.querySelector('.tag-configurator');
+      if (scrollTarget) {
+        // A plain scrollIntoView(start) either lands flush with the
+        // configurator (no context above it) or flush with the whole hero
+        // section (the full title, more than needed) — this splits the
+        // difference, leaving just the tail end of the lead paragraph
+        // visible above it.
+        const targetY = scrollTarget.getBoundingClientRect().top + window.scrollY - 160;
+        window.scrollTo({ top: targetY, behavior: 'smooth' });
+      }
+    });
+
+    updateRowTextFields(row);
+    relabelTextRows();
+    setRowAccent(row, colorSelect.value);
+    return row;
+  };
+
+  // Fills an existing row's fields (color/size/line type/text) in place —
+  // shared by a freshly created row and by overriding an already-blank
+  // row (see the "Add to Order List" handler below).
+  const applyRowValues = (row, initial) => {
+    const colorSelect = row.querySelector('.tag-order-color-select');
+    const sizeSelect = row.querySelector('.tag-order-size-select');
+    const lineTypeSelect = row.querySelector('.tag-order-linetype-select');
+    colorSelect.value = initial.color;
+    colorSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    sizeSelect.value = initial.sizeTier;
+    lineTypeSelect.value = String(initial.lineType);
+    lineTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    const inputs = [...row.querySelectorAll('.tag-order-text-row input')];
+    inputs.forEach((input, i) => { input.value = (initial.lines && initial.lines[i]) || ''; });
+  };
+
+  // True if every text line in this row is blank — an "empty" row that a
+  // new tag from the sample configurator can safely take over instead of
+  // adding a whole new one.
+  const rowHasNoText = (row) => [...row.querySelectorAll('.tag-order-text-row input')].every((input) => !input.value.trim());
+
+  // `initial`, when given, pre-fills the new row (color/size/line type/
+  // text) instead of leaving it at the row's own defaults — used by the
+  // "Add to Order List" button on the sample tag configurator above.
+  const addOrderRow = (initial) => {
+    const row = createOrderRow();
+    if (initial) applyRowValues(row, initial);
+    tagOrderBody.appendChild(row);
+    renumberRows();
+    return row;
+  };
+
+  if (addRowBtn) addRowBtn.addEventListener('click', () => addOrderRow());
+
+  // "Add to Order List" on the sample tag configurator above — reads
+  // whatever's currently configured there (color/size/line count/text)
+  // straight off its own DOM, independent of that section's own script
+  // block, and drops it in as a new row here.
+  const addToOrderListBtn = document.getElementById('addToOrderListBtn');
+  if (addToOrderListBtn) {
+    const addToOrderListLabel = addToOrderListBtn.textContent;
+    let addToOrderListTimer = null;
+    addToOrderListBtn.addEventListener('click', () => {
+      const color = document.querySelector('.tag-color-chips .chip.is-on')?.dataset.color || 'blue';
+      const sizeChip = document.querySelector('#tagFontChips .chip.is-on');
+      const sizeTier = sizeChip ? sizeChip.textContent.trim().toLowerCase().replace(/\s+/g, '-') : 'medium';
+      const lineType = Number(document.querySelector('#tagLineChips .chip.is-on')?.dataset.lines || 1);
+      const lines = [...document.querySelectorAll('.tag-input-row input')]
+        .slice(0, lineType)
+        .map((input) => input.value.trim());
+
+      // Reuse the first row with no text entered yet, if there is one,
+      // rather than always tacking on a new one — keeps the table from
+      // filling up with untouched blank rows every time someone clicks.
+      const emptyRow = [...tagOrderBody.querySelectorAll('.tag-order-row')].find(rowHasNoText);
+      if (emptyRow) {
+        applyRowValues(emptyRow, { color, sizeTier, lineType, lines });
+      } else {
+        addOrderRow({ color, sizeTier, lineType, lines });
+      }
+
+      // Swap the button to a confirmation state instead of scrolling the
+      // page down to the table — the row is added either way, this just
+      // avoids yanking the customer away from what they were doing.
+      // Disabled for the same stretch so a second click can't sneak the
+      // same tag in twice while it's still showing "Added".
+      clearTimeout(addToOrderListTimer);
+      addToOrderListBtn.classList.add('is-added');
+      addToOrderListBtn.textContent = 'Added ✓';
+      addToOrderListBtn.disabled = true;
+      addToOrderListTimer = setTimeout(() => {
+        addToOrderListBtn.classList.remove('is-added');
+        addToOrderListBtn.textContent = addToOrderListLabel;
+        addToOrderListBtn.disabled = false;
+      }, 1800);
+    });
+  }
+
+  addOrderRow();
+}
+
+// .plmj container encode: "PLMJ" magic + 1 format byte (0=raw, 1=gzip) + a
+// JSON body — mirrors encodePlmjFile() in card-editor.js exactly, so
+// PLMJobViewer's existing decoder (which only checks the magic bytes and
+// payload.kind, not payload.app) opens this without any change on its end.
+async function encodePlmjFile(payloadObj) {
+  const PLMJ_MAGIC = 'PLMJ';
+  const FORMAT_RAW = 0;
+  const FORMAT_GZIP = 1;
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(payloadObj));
+  let bodyBytes = jsonBytes;
+  let format = FORMAT_RAW;
+  if (typeof CompressionStream !== 'undefined') {
+    const cs = new CompressionStream('gzip');
+    const writer = cs.writable.getWriter();
+    writer.write(jsonBytes);
+    writer.close();
+    bodyBytes = new Uint8Array(await new Response(cs.readable).arrayBuffer());
+    format = FORMAT_GZIP;
+  }
+  const header = new TextEncoder().encode(PLMJ_MAGIC);
+  const out = new Uint8Array(header.length + 1 + bodyBytes.length);
+  out.set(header, 0);
+  out[header.length] = format;
+  out.set(bodyBytes, header.length + 1);
+  return out;
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// API RP Tags RFQ modal: shows a per-color tally of the order table on the
+// left, and the same request-a-quote fields/framework as the business card
+// editor's own Next modal on the right (same field names, same
+// .contact-form styling, same open/close/Escape/backdrop pattern).
+const tagRfqModal = document.getElementById('tag-rfq-modal');
+if (tagRfqModal) {
+  const openBtn = document.getElementById('tagQuoteBtn');
+  const closeBtn = document.getElementById('tag-rfq-modal-close');
+  const summaryList = document.getElementById('tagRfqSummaryList');
+  const form = document.getElementById('tagRfqForm');
+  const statusEl = document.getElementById('tagRfqStatus');
+  const successModal = document.getElementById('tag-rfq-success-modal');
+  const successCloseBtn = document.getElementById('tag-rfq-success-close-btn');
+
+  const colorLabels = [['blue', 'Blue'], ['red', 'Red'], ['green', 'Green']];
+
+  const renderSummary = () => {
+    const orderBody = document.getElementById('tagOrderBody');
+    const counts = { blue: 0, red: 0, green: 0 };
+    if (orderBody) {
+      orderBody.querySelectorAll('.tag-order-row').forEach((row) => {
+        const color = row.querySelector('.tag-order-color-select').value;
+        if (counts[color] !== undefined) counts[color] += 1;
+      });
+    }
+    summaryList.innerHTML = '';
+    colorLabels.forEach(([value, label]) => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'tag-rfq-summary-row';
+
+      const swatch = document.createElement('span');
+      swatch.className = `tag-color-swatch tag-color-swatch--${value}`;
+
+      const count = document.createElement('span');
+      count.className = 'tag-rfq-summary-count';
+      count.textContent = counts[value];
+
+      const dash = document.createElement('span');
+      dash.className = 'tag-rfq-summary-dash';
+      dash.textContent = '-';
+
+      const labelEl = document.createElement('span');
+      labelEl.textContent = label;
+
+      rowEl.appendChild(swatch);
+      rowEl.appendChild(count);
+      rowEl.appendChild(dash);
+      rowEl.appendChild(labelEl);
+      summaryList.appendChild(rowEl);
+    });
+  };
+
+  const openModal = () => {
+    renderSummary();
+    tagRfqModal.classList.add('is-open');
+    tagRfqModal.setAttribute('aria-hidden', 'false');
+  };
+  const closeModal = () => {
+    tagRfqModal.classList.remove('is-open');
+    tagRfqModal.setAttribute('aria-hidden', 'true');
+  };
+
+  const openSuccessModal = () => {
+    closeModal();
+    if (!successModal) return;
+    // Waits out the RFQ modal's own close transition (0.2s) before opening
+    // this one, rather than both firing in the same tick.
+    setTimeout(() => {
+      // Forces the checkmark SVG's draw-on animation to restart by
+      // removing/reinserting it (a class toggle alone is a no-op the 2nd
+      // time since the animation already ran once).
+      const check = successModal.querySelector('.editor-rfq-success-check');
+      if (check) {
+        const parent = check.parentNode;
+        const next = check.nextSibling;
+        parent.removeChild(check);
+        void check.offsetWidth;
+        parent.insertBefore(check, next);
+      }
+      successModal.classList.add('is-open');
+      successModal.setAttribute('aria-hidden', 'false');
+    }, 300);
+  };
+  const closeSuccessModal = () => {
+    if (!successModal) return;
+    successModal.classList.remove('is-open');
+    successModal.setAttribute('aria-hidden', 'true');
+  };
+
+  if (openBtn) openBtn.addEventListener('click', openModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  tagRfqModal.addEventListener('mousedown', (e) => {
+    if (e.target === tagRfqModal) closeModal();
+  });
+  if (successModal) {
+    successModal.addEventListener('mousedown', (e) => {
+      if (e.target === successModal) closeSuccessModal();
+    });
+  }
+  if (successCloseBtn) successCloseBtn.addEventListener('click', closeSuccessModal);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (tagRfqModal.classList.contains('is-open')) closeModal();
+    if (successModal && successModal.classList.contains('is-open')) closeSuccessModal();
+  });
+
+  // Reads every row of the order table into a flat, machine-shaped list —
+  // only as many lines as the row's own line type calls for, same as what
+  // actually renders on the tag (no blank trailing slots).
+  const collectOrderItems = () => {
+    const orderBody = document.getElementById('tagOrderBody');
+    if (!orderBody) return [];
+    return [...orderBody.querySelectorAll('.tag-order-row')].map((row) => {
+      const color = row.querySelector('.tag-order-color-select').value;
+      const sizeTier = row.querySelector('.tag-order-size-select').value;
+      const lineType = Number(row.querySelector('.tag-order-linetype-select').value);
+      const lines = [...row.querySelectorAll('.tag-order-text-row input')]
+        .slice(0, lineType)
+        .map((input) => input.value.trim());
+      return { color, sizeTier, lineType, lines };
+    });
+  };
+
+  // Builds the full .plmj payload for a tag order — same container format
+  // as the business card editor's own .plmj, but flat order-table data
+  // instead of a Fabric.js canvas project, and its own `app` value so
+  // PLMJobViewer can tell the two kinds apart and render each correctly.
+  const buildTagOrderPayload = () => {
+    const formData = new FormData(form);
+    return {
+      app: 'api-rp-tag-order',
+      kind: 'plmj',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      specs: { diameterIn: 1.5, holeMm: 3, thicknessMm: 0.71, material: 'aluminum' },
+      order: {
+        name: formData.get('name') || '',
+        email: formData.get('email') || '',
+        address: formData.get('address') || '',
+        city: formData.get('city') || '',
+        state: formData.get('state') || '',
+        zip: formData.get('zip') || '',
+        message: formData.get('message') || '',
+      },
+      items: collectOrderItems(),
+    };
+  };
+
+  const downloadTagOrderPlmj = async (payload) => {
+    const bytes = await encodePlmjFile(payload);
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    const base = (payload.order.name || 'api-rp-tag').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'api-rp-tag';
+    triggerDownload(blob, `${base}-order.plmj`);
+  };
+
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      // For now this downloads the .plmj locally so it can be opened in
+      // PLMJobViewer and checked over, the same way the business card
+      // editor's RFQ button currently does — actually POSTing it to the
+      // Worker is a separate, deliberately not-yet-wired step.
+      if (statusEl) statusEl.textContent = '';
+      const payload = buildTagOrderPayload();
+      await downloadTagOrderPlmj(payload);
+      form.reset();
+      openSuccessModal();
+    });
+  }
+}
