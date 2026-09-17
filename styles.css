@@ -20,6 +20,15 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Belt-and-suspenders against any single element (a too-wide image, a
+   long unbroken string, a slightly-off calc()) creating page-level
+   horizontal scroll on a phone -- nothing on this site is meant to
+   scroll sideways at the body level (the order table's own horizontal
+   scroll is contained to itself via overflow-x on that element, not
+   this one, so it's unaffected). */
+html, body { overflow-x: hidden; max-width: 100%; }
+img, video { max-width: 100%; height: auto; }
+
 /* Dark scrollbars everywhere a real (non-hidden) one can appear — modals,
    the mobile order table, the card editor's panels — so no browser-default
    white track ever shows against this site's black theme. */
@@ -1616,6 +1625,12 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 }
 .custom-list li { padding: 4px 0; }
 .custom-list li::before { content: "— "; color: var(--muted); }
+/* The 2-column layout above reads out of order on a phone (top-to-bottom
+   in column 1, then column 2) -- a single column keeps it a plain,
+   easy-to-scan list instead. */
+@media (max-width: 640px) {
+  .custom-list { columns: 1; }
+}
 .contact-form { display: flex; flex-direction: column; gap: 22px; }
 .contact-form label { display: flex; flex-direction: column; gap: 10px; }
 .contact-form label span { font-size: 0.68rem; color: var(--muted); }
@@ -1690,6 +1705,9 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .footer-links { display: flex; gap: 22px; flex-wrap: wrap; }
 .footer-links a { font-size: 0.7rem; color: var(--muted); text-decoration: none; }
 .footer-links a:hover { color: var(--fg); }
+/* Full-width copyright line under the brand/links + industries columns
+   above, not squeezed in as a third flex column next to them. */
+.footer-inner > .fine { flex-basis: 100%; margin-top: 4px; }
 
 .footer-industries { display: flex; flex-direction: column; gap: 10px; }
 .footer-industries-label { font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
