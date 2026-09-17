@@ -20,6 +20,18 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Dark scrollbars everywhere a real (non-hidden) one can appear — modals,
+   the mobile order table, the card editor's panels — so no browser-default
+   white track ever shows against this site's black theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
 html { scroll-behavior: smooth; }
 
 /* Native scrollbar is replaced by the .scroll-ruler indicator below. */
@@ -2093,4 +2105,17 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 @media (max-width: 520px) {
   .gallery { grid-template-columns: 1fr; }
   .hero-foot { flex-direction: column; align-items: flex-start; }
+}
+
+/* API RP Tags RFQ modal: the specs/summary column and the form sit side by
+   side on desktop, but there's no room for that on a phone — stack them
+   top/bottom instead, and let the modal itself shrink to fit the viewport
+   (it's a fixed 900px otherwise). */
+@media (max-width: 640px) {
+  #tag-rfq-modal .editor-modal { width: calc(100vw - 32px); padding: 14px 16px; }
+  .editor-next-modal-body { flex-direction: column; gap: 20px; }
+  .editor-next-modal-renderings { width: 100%; position: static; }
+  .editor-next-modal-form-row { flex-direction: column; gap: 10px; }
+  .editor-next-modal-form-row label:nth-child(2),
+  .editor-next-modal-form-row label:nth-child(3) { flex: none; }
 }
