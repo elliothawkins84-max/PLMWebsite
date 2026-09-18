@@ -4584,17 +4584,17 @@ if (fabricCanvasEl && window.fabric) {
       },
     };
   }
-  async function downloadPlmjFile() {
+  async function buildPlmjBlob() {
     const payload = await buildPlmjFile();
     const bytes = await encodePlmjFile(payload);
     const blob = new Blob([bytes], { type: 'application/octet-stream' });
     const base = (payload.order.name || 'business-card').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'business-card';
-    triggerDownload(blob, `${base}-order.plmj`);
+    return { filename: `${base}-order.plmj`, blob };
   }
 
-  // Sends the real request — the button used to just download this same
-  // five-file bundle locally for review; now that it's been checked over,
-  // this attaches it to the actual POST instead.
+  // Sends the real request — attaches the five-file review bundle plus
+  // the .plmj job file (the same file PLMJobViewer opens) to the POST,
+  // instead of downloading anything locally.
   async function sendRealRfqRequest(e) {
     e.preventDefault();
     if (!nextModalStatus || !nextModalRequestBtn) return;
@@ -4635,6 +4635,8 @@ if (fabricCanvasEl && window.fabric) {
       // 'attachment' field name same as a real multi-file input would.
       const bundle = await buildRfqFileBundle();
       bundle.forEach(({ filename, blob }) => formData.append('attachment', blob, filename));
+      const plmjFile = await buildPlmjBlob();
+      formData.append('attachment', plmjFile.blob, plmjFile.filename);
       const res = await fetch(RFQ_ENDPOINT, { method: 'POST', body: formData });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -4652,39 +4654,7 @@ if (fabricCanvasEl && window.fabric) {
       nextModalRequestBtn.innerHTML = submitLabel;
     }
   }
-  // Temporarily back to local-download instead of the real POST (see
-  // sendRealRfqRequest above) — swap the listener below back to
-  // sendRealRfqRequest once the bundle's been re-confirmed good.
-  function triggerDownload(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-  async function downloadRfqTestFiles(e) {
-    e.preventDefault();
-    if (!nextModalStatus || !nextModalRequestBtn) return;
-    nextModalStatus.textContent = '';
-    nextModalStatus.className = 'form-status';
-    nextModalRequestBtn.disabled = true;
-    const submitLabel = nextModalRequestBtn.innerHTML;
-    nextModalRequestBtn.textContent = 'Building…';
-    try {
-      await downloadPlmjFile();
-      showRfqSuccessModal();
-    } catch (err) {
-      nextModalStatus.textContent = 'Could not build the order file — please try again.';
-      nextModalStatus.className = 'form-status error';
-    } finally {
-      nextModalRequestBtn.disabled = false;
-      nextModalRequestBtn.innerHTML = submitLabel;
-    }
-  }
-  if (nextModalForm) nextModalForm.addEventListener('submit', downloadRfqTestFiles);
+  if (nextModalForm) nextModalForm.addEventListener('submit', sendRealRfqRequest);
 
   // Both default to uniform scaling — both checkboxes are "Non-uniform
   // scale", unchecked by default, so either has to be deliberately
