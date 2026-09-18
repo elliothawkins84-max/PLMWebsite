@@ -2048,3 +2048,14 @@
   .editor-shell { display: none; }
   .editor-mobile-block { display: flex; }
 }
+
+/* ---- RFQ survey pop-up (optional questions before the request sends) ---- */
+#survey-modal .editor-modal { width: 440px; max-width: 92vw; max-height: 96vh; overflow-y: auto; }
+#survey-modal .editor-modal-title em { color: var(--muted); font-style: normal; text-transform: none; letter-spacing: 0; }
+.contact-form.editor-survey-form { gap: 10px; margin-bottom: 4px; }
+.editor-survey-form label { gap: 4px; }
+.editor-survey-form input,
+.editor-survey-form textarea { padding: 6px 0; }
+.editor-survey-form textarea { min-height: 44px; }
+#survey-modal .form-status { margin: 8px 0 0; min-height: 1em; }
+#survey-modal .editor-modal-actions { margin-top: 12px; }

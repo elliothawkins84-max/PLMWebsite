@@ -1151,6 +1151,40 @@
     </div>
   </div>
 
+  <!-- Optional survey shown when the Next modal's form is submitted — both
+       buttons here actually send the request (see sendRfqWithSurvey in
+       card-editor.js); the answers go into the email's message body only,
+       never into the .plmj. -->
+  <div class="editor-modal-overlay" id="survey-modal" aria-hidden="true">
+    <div class="editor-modal editor-survey-modal" role="dialog" aria-modal="true" aria-labelledby="survey-modal-title">
+      <h2 class="editor-modal-title" id="survey-modal-title">Quick questions <em>— all optional</em></h2>
+      <p class="editor-modal-message">Help us out with a few quick questions before your request goes through. Skip any (or all) of them.</p>
+      <form class="contact-form editor-survey-form" id="survey-form" onsubmit="return false">
+        <label>
+          <span>How did you hear about us?</span>
+          <input type="text" name="heard" placeholder="Google, a friend, social media..." />
+        </label>
+        <label>
+          <span>What will you use these cards for?</span>
+          <input type="text" name="usage" placeholder="Business, gifts, an event..." />
+        </label>
+        <label>
+          <span>Anything you'd like us to offer that we don't?</span>
+          <textarea name="wishlist" rows="2" placeholder="Other products, materials, finishes..."></textarea>
+        </label>
+        <label>
+          <span>How was the card editor?</span>
+          <textarea name="feedback" rows="2" placeholder="What worked, what didn't..."></textarea>
+        </label>
+      </form>
+      <p class="form-status" id="survey-status" role="status" aria-live="polite"></p>
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="survey-skip-btn">Maybe next time</button>
+        <button type="button" class="btn btn-sm" id="survey-send-btn">Send</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Shown once the request above actually succeeds — see
        showRfqSuccessModal in card-editor.js — replacing the Next modal
        entirely rather than layering on top of it. -->

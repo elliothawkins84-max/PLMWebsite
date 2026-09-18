@@ -3888,7 +3888,6 @@ if (fabricCanvasEl && window.fabric) {
   const nextModalCardTypeLabel = document.getElementById('next-modal-cardtype-label');
   const nextModalForm = document.getElementById('next-modal-rfq-form');
   const nextModalStatus = document.getElementById('next-modal-status');
-  const nextModalRequestBtn = document.getElementById('next-modal-request');
   // Cached from the most recent computeDirectCostForCurrentDesign call
   // this modal triggered, so switching the quantity dropdown re-prices
   // instantly instead of re-running the coverage render on every change.
@@ -4337,7 +4336,7 @@ if (fabricCanvasEl && window.fabric) {
     walk(data.objects);
   }
   // Shared by buildPlmjFile's structured `order` field below (and could
-  // replace sendRealRfqRequest's own inline copy of this same computation
+  // replace sendRfqWithSurvey's own inline copy of this same computation
   // too, if that ever gets un-mothballed) — one place that turns the Next
   // modal's form + pricing state into plain, already-formatted fields.
   function computeOrderContext() {
@@ -4483,17 +4482,54 @@ if (fabricCanvasEl && window.fabric) {
     return { filename: `${base}-order.plmj`, blob };
   }
 
-  // Sends the real request — attaches only the .plmj job file (the same
-  // file PLMJobViewer opens, which already embeds the mockup/proofing
-  // images and SVGs) to the POST, instead of downloading anything locally.
-  async function sendRealRfqRequest(e) {
+  // ---- Optional survey, then the actual send ----
+  // The Next modal's own submit (after the browser's native required-field
+  // validation passes) only opens this survey pop-up; "Send" and "Maybe
+  // next time" both call sendRfqWithSurvey, which is what really POSTs
+  // the request. The answers are folded into the email's message body
+  // only — buildPlmjFile never sees them, so they stay out of the .plmj.
+  const surveyModal = document.getElementById('survey-modal');
+  const surveyForm = document.getElementById('survey-form');
+  const surveyStatus = document.getElementById('survey-status');
+  const surveySendBtn = document.getElementById('survey-send-btn');
+  const surveySkipBtn = document.getElementById('survey-skip-btn');
+  let surveySending = false;
+  function openSurveyModal(e) {
     e.preventDefault();
-    if (!nextModalStatus || !nextModalRequestBtn) return;
-    nextModalStatus.textContent = '';
-    nextModalStatus.className = 'form-status';
-    nextModalRequestBtn.disabled = true;
-    const submitLabel = nextModalRequestBtn.innerHTML;
-    nextModalRequestBtn.textContent = 'Sending…';
+    if (!surveyModal) return;
+    if (surveyStatus) { surveyStatus.textContent = ''; surveyStatus.className = 'form-status'; }
+    surveyModal.classList.add('is-open');
+    surveyModal.setAttribute('aria-hidden', 'false');
+  }
+  function closeSurveyModal() {
+    if (!surveyModal || surveySending) return;
+    surveyModal.classList.remove('is-open');
+    surveyModal.setAttribute('aria-hidden', 'true');
+  }
+  const SURVEY_QUESTIONS = [
+    ['heard', 'How did you hear about us?'],
+    ['usage', 'What will you use these cards for?'],
+    ['wishlist', "Anything you'd like us to offer that we don't?"],
+    ['feedback', 'How was the card editor?'],
+  ];
+  // Only questions actually answered make it into the email; a fully
+  // blank survey adds nothing at all.
+  function surveyMessageBlock() {
+    if (!surveyForm) return '';
+    const data = new FormData(surveyForm);
+    const lines = SURVEY_QUESTIONS
+      .map(([name, label]) => [label, String(data.get(name) || '').trim()])
+      .filter(([, answer]) => answer)
+      .map(([label, answer]) => `${label}\n${answer}`);
+    return lines.length ? `Survey answers:\n\n${lines.join('\n\n')}` : '';
+  }
+  async function sendRfqWithSurvey(clickedBtn) {
+    if (surveySending || !nextModalStatus) return;
+    surveySending = true;
+    if (surveyStatus) { surveyStatus.textContent = ''; surveyStatus.className = 'form-status'; }
+    [surveySendBtn, surveySkipBtn].forEach((b) => { if (b) b.disabled = true; });
+    const clickedLabel = clickedBtn ? clickedBtn.innerHTML : '';
+    if (clickedBtn) clickedBtn.textContent = 'Sending…';
     try {
       const formData = new FormData(nextModalForm);
       // The design's own context (quantity/card type/price), folded
@@ -4519,27 +4555,47 @@ if (fabricCanvasEl && window.fabric) {
         `Shipping address: ${address || 'n/a'}, ${city || 'n/a'}, ${state || 'n/a'} ${zip || 'n/a'}`,
       ];
       const userMessage = String(formData.get('message') || '').trim();
-      formData.set('message', `${contextLines.join('\n')}${userMessage ? `\n\n${userMessage}` : ''}`);
+      const surveyBlock = surveyMessageBlock();
+      formData.set('message', [contextLines.join('\n'), userMessage, surveyBlock].filter(Boolean).join('\n\n'));
       const plmjFile = await buildPlmjBlob();
       formData.append('attachment', plmjFile.blob, plmjFile.filename);
       const res = await fetch(RFQ_ENDPOINT, { method: 'POST', body: formData });
       const data = await res.json();
       if (res.ok && data.success) {
         nextModalForm.reset();
+        if (surveyForm) surveyForm.reset();
+        surveySending = false;
+        closeSurveyModal();
         showRfqSuccessModal();
       } else {
-        nextModalStatus.textContent = data.message || 'Something went wrong — please try again.';
-        nextModalStatus.className = 'form-status error';
+        showSurveyError(data.message || 'Something went wrong — please try again.');
       }
     } catch (err) {
-      nextModalStatus.textContent = 'Network error — please try again.';
-      nextModalStatus.className = 'form-status error';
+      showSurveyError('Network error — please try again.');
     } finally {
-      nextModalRequestBtn.disabled = false;
-      nextModalRequestBtn.innerHTML = submitLabel;
+      surveySending = false;
+      [surveySendBtn, surveySkipBtn].forEach((b) => { if (b) b.disabled = false; });
+      if (clickedBtn) clickedBtn.innerHTML = clickedLabel;
     }
   }
-  if (nextModalForm) nextModalForm.addEventListener('submit', sendRealRfqRequest);
+  // Errors stay on the survey pop-up (still open) so the retry is one
+  // click away, rather than dumping the user back on the form behind it.
+  function showSurveyError(message) {
+    if (!surveyStatus) return;
+    surveyStatus.textContent = message;
+    surveyStatus.className = 'form-status error';
+  }
+  if (nextModalForm) nextModalForm.addEventListener('submit', openSurveyModal);
+  if (surveySendBtn) surveySendBtn.addEventListener('click', () => sendRfqWithSurvey(surveySendBtn));
+  if (surveySkipBtn) surveySkipBtn.addEventListener('click', () => sendRfqWithSurvey(surveySkipBtn));
+  if (surveyModal) {
+    surveyModal.addEventListener('mousedown', (e) => {
+      if (e.target === surveyModal) closeSurveyModal();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && surveyModal && surveyModal.classList.contains('is-open')) closeSurveyModal();
+  });
 
   // Both default to uniform scaling — both checkboxes are "Non-uniform
   // scale", unchecked by default, so either has to be deliberately
