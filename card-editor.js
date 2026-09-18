@@ -4356,6 +4356,14 @@ if (fabricCanvasEl && window.fabric) {
         : pricing.isMinCharge
           ? `$${pricing.total.toFixed(2)} min charge`
           : `$${pricing.total.toFixed(2)} (${qty} × $${pricing.each.toFixed(2)} ea.)`,
+      // Plain numbers alongside the formatted `estimatedTotal` string above,
+      // so a consumer that needs to build its own quote table (PLMJobViewer's
+      // PDF export) doesn't have to parse that string back apart. `each` is
+      // null under the $95 order-minimum floor (see getNextModalPricing) --
+      // there's no real per-card rate at that price, only a flat total.
+      pricePerCard: pricing && !pricing.isMinCharge ? pricing.each : null,
+      subtotal: pricing ? pricing.total : null,
+      isMinCharge: pricing ? pricing.isMinCharge : false,
       address: String(formData.get('address') || '').trim(),
       city: String(formData.get('city') || '').trim(),
       state: String(formData.get('state') || '').trim(),
