@@ -4062,9 +4062,9 @@ if (fabricCanvasEl && window.fabric) {
     return canvas.toDataURL('image/png');
   }
 
-  // ---- RFQ file bundle (mockup, proofing canvas, SVGs, order info) ----
-  // Built for every real request the Next modal sends — see
-  // buildRfqFileBundle/sendRealRfqRequest further down.
+  // ---- Render helpers (mockup, proofing canvas) ----
+  // Used by buildPlmjFile further down to build the mockup/proofing images
+  // embedded in the .plmj job file the Next modal sends.
   // Same wood+aluminum+artwork look as the Mockup panel (paintCardPreview),
   // just resolved as a Promise instead of writing straight to a live
   // canvas element, so a batch of these can be awaited in sequence.
@@ -4336,124 +4336,10 @@ if (fabricCanvasEl && window.fabric) {
     }
     walk(data.objects);
   }
-  // Builds the same five files the local-download test bundle used to
-  // (mockup PNG, proofing/canvas PNG with ruler+safe zone+density labels,
-  // Front.svg, Back.svg, order-info.txt) but returns them as {filename,
-  // blob} pairs instead of downloading them — this is what actually gets
-  // attached to the real request in sendRealRfqRequest below.
-  async function buildRfqFileBundle() {
-    const hasBack = projectHasBackSide();
-    const frontSnap = snapshotForSide('front') || blankCanvasSnapshot;
-    const backSnap = hasBack ? (snapshotForSide('back') || blankCanvasSnapshot) : null;
-    const w = 860;
-    const h = 540;
-    const gap = 24;
-    const files = [];
-
-    // 1) Photoreal mockup, front + back stacked vertically in one PNG.
-    const frontMockup = document.createElement('canvas');
-    frontMockup.width = w;
-    frontMockup.height = h;
-    await renderMockupCanvasAsync(frontMockup, frontSnap);
-    let backMockup = null;
-    if (hasBack) {
-      backMockup = document.createElement('canvas');
-      backMockup.width = w;
-      backMockup.height = h;
-      await renderMockupCanvasAsync(backMockup, backSnap);
-    }
-    const mockupOut = document.createElement('canvas');
-    mockupOut.width = w;
-    mockupOut.height = hasBack ? h * 2 + gap : h;
-    const mctx = mockupOut.getContext('2d');
-    mctx.fillStyle = '#000';
-    mctx.fillRect(0, 0, mockupOut.width, mockupOut.height);
-    mctx.drawImage(frontMockup, 0, 0);
-    if (backMockup) mctx.drawImage(backMockup, 0, h + gap);
-    files.push({ filename: 'mockup-front-back.png', blob: await canvasToBlob(mockupOut) });
-
-    // 2) Proofing colors + texture density, front + back stacked — this
-    // one's meant to read like the editor's own canvas (card border,
-    // safe zone, ruler included, see drawSafeZoneAndBorder/
-    // drawRulerAndLabel/drawTextureDensityLabels above), not just the
-    // bare artwork, so extra margin is reserved around each card for the
-    // ruler and its own "Front — 86 × 54mm" label underneath.
-    const rulerLeftW = 44;
-    const rulerTopH = 34;
-    const labelH = 22;
-    const sideW = rulerLeftW + w;
-    const sideH = rulerTopH + h + labelH;
-    const proofFront = await renderProofingCanvasAsync(w, h, frontSnap);
-    const proofBack = hasBack ? await renderProofingCanvasAsync(w, h, backSnap) : null;
-    const proofOut = document.createElement('canvas');
-    proofOut.width = sideW;
-    proofOut.height = hasBack ? sideH * 2 + gap : sideH;
-    const pctx = proofOut.getContext('2d');
-    pctx.fillStyle = '#000';
-    pctx.fillRect(0, 0, proofOut.width, proofOut.height);
-    // Explicit destination size (not just x/y) so this always scales down
-    // to fit its slot even if the source canvas's own backing store ever
-    // ends up larger than w×h for any reason — belt-and-suspenders on
-    // top of disabling retina scaling above.
-    pctx.drawImage(proofFront, rulerLeftW, rulerTopH, w, h);
-    drawRulerAndLabel(pctx, rulerLeftW, rulerTopH, w, h, w / CARD_W_PX, 'Front');
-    if (proofBack) {
-      const backTop = sideH + gap;
-      pctx.drawImage(proofBack, rulerLeftW, backTop + rulerTopH, w, h);
-      drawRulerAndLabel(pctx, rulerLeftW, backTop + rulerTopH, w, h, w / CARD_W_PX, 'Back');
-    }
-    files.push({ filename: 'canvas.png', blob: await canvasToBlob(proofOut) });
-
-    // 3) + 4) Front.svg / Back.svg — vector design + card outline.
-    files.push({
-      filename: 'Front.svg',
-      blob: new Blob([await buildCardSvgAsync(frontSnap)], { type: 'image/svg+xml' }),
-    });
-    if (hasBack) {
-      files.push({
-        filename: 'Back.svg',
-        blob: new Blob([await buildCardSvgAsync(backSnap)], { type: 'image/svg+xml' }),
-      });
-    }
-
-    // 5) Plain-text order info + color legend — the same quantity/card
-    // type/price/shipping context that goes into the real request's own
-    // message body (see sendRealRfqRequest below), plus the same
-    // name/color key as the Finish toolbar and the proofing PNG above,
-    // all in one file so the shop has everything about this order
-    // without needing to cross-reference the email itself.
-    const order = computeOrderContext();
-    const usedFinishKeys = new Set();
-    collectUsedFinishKeys(frontSnap, usedFinishKeys);
-    if (hasBack) collectUsedFinishKeys(backSnap, usedFinishKeys);
-    const usedFinishLegendLines = FINISH_LEGEND_ORDER
-      .filter(([key]) => usedFinishKeys.has(key))
-      .map(([key, label]) => `${label}: ${FINISH_COLOR_NAMES[key]}`);
-    const infoLines = [
-      'Order info',
-      '==========',
-      `Name: ${order.name || 'n/a'}`,
-      `Email: ${order.email || 'n/a'}`,
-      `Quantity: ${order.quantity || 'n/a'}`,
-      `Card type: ${order.cardTypeLabel}`,
-      `Estimated total: ${order.estimatedTotal}`,
-      `Shipping address: ${order.address || 'n/a'}, ${order.city || 'n/a'}, ${order.state || 'n/a'} ${order.zip || 'n/a'}`,
-      `Message: ${order.message || 'n/a'}`,
-      '',
-      'Card finish color legend',
-      '(matches the Finish toolbar and canvas.png — only finishes actually used on this card are listed)',
-      '',
-      ...(usedFinishLegendLines.length ? usedFinishLegendLines : ['(no finishes assigned yet)']),
-    ].join('\n');
-    files.push({ filename: 'order-info.txt', blob: new Blob([infoLines], { type: 'text/plain' }) });
-
-    return files;
-  }
-  // Shared by buildRfqFileBundle's order-info.txt and buildPlmjFile's
-  // structured `order` field below (and could replace sendRealRfqRequest's
-  // own inline copy of this same computation too, if that ever gets
-  // un-mothballed) — one place that turns the Next modal's form + pricing
-  // state into plain, already-formatted fields.
+  // Shared by buildPlmjFile's structured `order` field below (and could
+  // replace sendRealRfqRequest's own inline copy of this same computation
+  // too, if that ever gets un-mothballed) — one place that turns the Next
+  // modal's form + pricing state into plain, already-formatted fields.
   function computeOrderContext() {
     const formData = nextModalForm ? new FormData(nextModalForm) : new FormData();
     const qty = nextModalQuantity ? parseInt(nextModalQuantity.value, 10) || 0 : 0;
@@ -4478,15 +4364,12 @@ if (fabricCanvasEl && window.fabric) {
     };
   }
   // ---- Single-file .plmj job bundle ----
-  // Same five things buildRfqFileBundle above produces (mockup, proofing
-  // canvas, both SVGs, order info) but as one gzip-compressed JSON
-  // container (mirrors the .plm project format's own PLM1 magic-header
-  // approach — see encodeProjectFile) instead of five loose files, so
-  // "Request a Quote" downloads one thing and PLMJobViewer has one file
-  // to open. Kept as its own render pass rather than reusing
-  // buildRfqFileBundle's stacked/composited canvases: PLMJobViewer wants
-  // front and back as separate images it can lay out itself, not a single
-  // pre-stacked PNG with its own black page-margin background.
+  // Mockup, proofing canvas, both SVGs, and order info, all as one
+  // gzip-compressed JSON container (mirrors the .plm project format's own
+  // PLM1 magic-header approach — see encodeProjectFile) so "Request a
+  // Quote" sends one file and PLMJobViewer has one file to open. Front and
+  // back are kept as separate images rather than stacked into one PNG,
+  // since PLMJobViewer wants to lay them out itself.
   const PLMJ_MAGIC = 'PLMJ';
   async function encodePlmjFile(payloadObj) {
     const jsonBytes = new TextEncoder().encode(JSON.stringify(payloadObj));
@@ -4592,9 +4475,9 @@ if (fabricCanvasEl && window.fabric) {
     return { filename: `${base}-order.plmj`, blob };
   }
 
-  // Sends the real request — attaches the five-file review bundle plus
-  // the .plmj job file (the same file PLMJobViewer opens) to the POST,
-  // instead of downloading anything locally.
+  // Sends the real request — attaches only the .plmj job file (the same
+  // file PLMJobViewer opens, which already embeds the mockup/proofing
+  // images and SVGs) to the POST, instead of downloading anything locally.
   async function sendRealRfqRequest(e) {
     e.preventDefault();
     if (!nextModalStatus || !nextModalRequestBtn) return;
@@ -4629,12 +4512,6 @@ if (fabricCanvasEl && window.fabric) {
       ];
       const userMessage = String(formData.get('message') || '').trim();
       formData.set('message', `${contextLines.join('\n')}${userMessage ? `\n\n${userMessage}` : ''}`);
-      // The full five-file bundle (mockup PNG, proofing/canvas PNG,
-      // Front.svg, Back.svg, order-info.txt — see buildRfqFileBundle)
-      // rather than just the two raw renderings, all sharing the
-      // 'attachment' field name same as a real multi-file input would.
-      const bundle = await buildRfqFileBundle();
-      bundle.forEach(({ filename, blob }) => formData.append('attachment', blob, filename));
       const plmjFile = await buildPlmjBlob();
       formData.append('attachment', plmjFile.blob, plmjFile.filename);
       const res = await fetch(RFQ_ENDPOINT, { method: 'POST', body: formData });
@@ -4876,7 +4753,7 @@ if (fabricCanvasEl && window.fabric) {
   // [finish key, display label] pairs, in the same order the Finish
   // toolbar itself lists them — used to filter order-info.txt's color
   // legend down to only the finishes actually present on this card (see
-  // collectUsedFinishKeys/buildRfqFileBundle), not the full fixed set.
+  // collectUsedFinishKeys/buildPlmjFile), not the full fixed set.
   const FINISH_LEGEND_ORDER = [
     ['none', "Don't Engrave"],
     ['stroke', 'Stroke'],
