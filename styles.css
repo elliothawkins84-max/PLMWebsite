@@ -26,7 +26,15 @@
    scroll sideways at the body level (the order table's own horizontal
    scroll is contained to itself via overflow-x on that element, not
    this one, so it's unaffected). */
-html, body { overflow-x: hidden; max-width: 100%; }
+/* overflow-x: hidden on html breaks position: sticky for any descendant
+   (the header included) -- it stops the viewport from being a valid
+   scroll container for sticky to anchor to, so the header still
+   scrolled up out of view despite `position: sticky`. `body` already
+   carries its own overflow-x: hidden further down (kept for the
+   .mat-card tilt fix, see that rule's own comment) and that one doesn't
+   have this problem, so it's enough on its own -- no separate html rule
+   needed. max-width:100% has no such side effect and stays on both. */
+html, body { max-width: 100%; }
 img, video { max-width: 100%; height: auto; }
 
 /* Dark scrollbars everywhere a real (non-hidden) one can appear — modals,
