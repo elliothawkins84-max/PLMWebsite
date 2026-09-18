@@ -4506,21 +4506,26 @@ if (fabricCanvasEl && window.fabric) {
     surveyModal.classList.remove('is-open');
     surveyModal.setAttribute('aria-hidden', 'true');
   }
-  const SURVEY_QUESTIONS = [
-    ['heard', 'How did you hear about us?'],
-    ['usage', 'What will you use these cards for?'],
-    ['wishlist', "Anything you'd like us to offer that we don't?"],
-    ['feedback', 'How was the card editor?'],
+  const SURVEY_RATING_LABELS = { 1: 'Not great', 2: 'Meh', 3: 'Good', 4: 'Cool', 5: 'Blown away' };
+  const SURVEY_TEXT_QUESTIONS = [
+    ['issues', 'Did you encounter any issues?'],
+    ['features', "Are there any features you'd like added to this editor?"],
+    ['other', 'Anything else you would like to share?'],
   ];
   // Only questions actually answered make it into the email; a fully
   // blank survey adds nothing at all.
   function surveyMessageBlock() {
     if (!surveyForm) return '';
     const data = new FormData(surveyForm);
-    const lines = SURVEY_QUESTIONS
-      .map(([name, label]) => [label, String(data.get(name) || '').trim()])
-      .filter(([, answer]) => answer)
-      .map(([label, answer]) => `${label}\n${answer}`);
+    const lines = [];
+    const rating = String(data.get('rating') || '');
+    if (SURVEY_RATING_LABELS[rating]) {
+      lines.push(`How was your overall card editor experience?\n${rating} of 5 (${SURVEY_RATING_LABELS[rating]})`);
+    }
+    SURVEY_TEXT_QUESTIONS.forEach(([name, label]) => {
+      const answer = String(data.get(name) || '').trim();
+      if (answer) lines.push(`${label}\n${answer}`);
+    });
     return lines.length ? `Survey answers:\n\n${lines.join('\n\n')}` : '';
   }
   async function sendRfqWithSurvey(clickedBtn) {

@@ -2059,3 +2059,12 @@
 .editor-survey-form textarea { min-height: 44px; }
 #survey-modal .form-status { margin: 8px 0 0; min-height: 1em; }
 #survey-modal .editor-modal-actions { margin-top: 12px; }
+.editor-survey-rating { display: flex; flex-direction: column; gap: 8px; }
+.editor-survey-rating-label { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.editor-survey-faces { display: flex; justify-content: space-between; gap: 6px; }
+.editor-survey-face { flex: 1; display: flex; justify-content: center; cursor: pointer; color: var(--muted); }
+.editor-survey-face input { position: absolute; opacity: 0; pointer-events: none; }
+.editor-survey-face svg { width: 42px; height: 42px; transition: color 0.15s, transform 0.15s; }
+.editor-survey-face:hover svg { color: var(--fg); transform: scale(1.08); }
+.editor-survey-face input:checked + svg { color: var(--fg); transform: scale(1.18); }
+.editor-survey-face input:focus-visible + svg { outline: 1px solid var(--fg); outline-offset: 3px; border-radius: 50%; }

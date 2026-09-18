@@ -1158,23 +1158,44 @@
   <div class="editor-modal-overlay" id="survey-modal" aria-hidden="true">
     <div class="editor-modal editor-survey-modal" role="dialog" aria-modal="true" aria-labelledby="survey-modal-title">
       <h2 class="editor-modal-title" id="survey-modal-title">Quick questions <em>— all optional</em></h2>
-      <p class="editor-modal-message">Help us out with a few quick questions before your request goes through. Skip any (or all) of them.</p>
+      <p class="editor-modal-message">We'd love your feedback before your request goes through. Skip any (or all) of it.</p>
       <form class="contact-form editor-survey-form" id="survey-form" onsubmit="return false">
+        <div class="editor-survey-rating" role="radiogroup" aria-labelledby="survey-rating-label">
+          <span id="survey-rating-label" class="editor-survey-rating-label">How was your overall card editor experience?</span>
+          <div class="editor-survey-faces">
+          <label class="editor-survey-face" title="Not great">
+            <input type="radio" name="rating" value="1" aria-label="Not great" />
+            <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="20" cy="20" r="18" /><circle cx="14" cy="16" r="1.4" fill="currentColor" /><circle cx="26" cy="16" r="1.4" fill="currentColor" /><path d="M13 29 Q20 22 27 29" /></svg>
+          </label>
+          <label class="editor-survey-face" title="Meh">
+            <input type="radio" name="rating" value="2" aria-label="Meh" />
+            <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="20" cy="20" r="18" /><circle cx="14" cy="16" r="1.4" fill="currentColor" /><circle cx="26" cy="16" r="1.4" fill="currentColor" /><path d="M14 27 H26" /></svg>
+          </label>
+          <label class="editor-survey-face" title="Good">
+            <input type="radio" name="rating" value="3" aria-label="Good" />
+            <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="20" cy="20" r="18" /><circle cx="14" cy="16" r="1.4" fill="currentColor" /><circle cx="26" cy="16" r="1.4" fill="currentColor" /><path d="M13 24 Q20 33 27 24" /></svg>
+          </label>
+          <label class="editor-survey-face" title="Cool">
+            <input type="radio" name="rating" value="4" aria-label="Cool" />
+            <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="20" cy="20" r="18" /><path d="M6 15 H34" /><path d="M8 15 H18 V19 Q18 22 15 22 H11 Q8 22 8 19 Z" fill="currentColor" /><path d="M22 15 H32 V19 Q32 22 29 22 H25 Q22 22 22 19 Z" fill="currentColor" /><path d="M13 27 Q20 33 27 27" /></svg>
+          </label>
+          <label class="editor-survey-face" title="Blown away">
+            <input type="radio" name="rating" value="5" aria-label="Blown away" />
+            <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="20" cy="20" r="18" /><circle cx="14" cy="15" r="3.6" /><circle cx="26" cy="15" r="3.6" /><circle cx="14" cy="15" r="1.2" fill="currentColor" /><circle cx="26" cy="15" r="1.2" fill="currentColor" /><ellipse cx="20" cy="28" rx="4.5" ry="5" /></svg>
+          </label>
+          </div>
+        </div>
         <label>
-          <span>How did you hear about us?</span>
-          <input type="text" name="heard" placeholder="Google, a friend, social media..." />
+          <span>Did you encounter any issues?</span>
+          <textarea name="issues" rows="2" placeholder="Anything that broke, confused you, or felt off..."></textarea>
         </label>
         <label>
-          <span>What will you use these cards for?</span>
-          <input type="text" name="usage" placeholder="Business, gifts, an event..." />
+          <span>Are there any features you'd like added to this editor?</span>
+          <textarea name="features" rows="2" placeholder="Tools, options, templates..."></textarea>
         </label>
         <label>
-          <span>Anything you'd like us to offer that we don't?</span>
-          <textarea name="wishlist" rows="2" placeholder="Other products, materials, finishes..."></textarea>
-        </label>
-        <label>
-          <span>How was the card editor?</span>
-          <textarea name="feedback" rows="2" placeholder="What worked, what didn't..."></textarea>
+          <span>Anything else you would like to share?</span>
+          <textarea name="other" rows="2" placeholder="Anything at all..."></textarea>
         </label>
       </form>
       <p class="form-status" id="survey-status" role="status" aria-live="polite"></p>
