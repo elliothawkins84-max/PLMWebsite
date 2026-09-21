@@ -1029,7 +1029,20 @@ if (fabricCanvasEl && window.fabric) {
     reader.onload = () => {
       const svgText = String(reader.result);
       fabric.loadSVGFromString(svgText, (objects, options) => {
-        const valid = (objects || []).filter(Boolean);
+        // A Line has no fill, so White finish (fill only) would erase it
+        // in the renderer; a two-point Path behaves like every other
+        // stroke-only import instead.
+        const valid = (objects || []).filter(Boolean).map((o) => {
+          if (o.type !== 'line') return o;
+          const { x1, y1, x2, y2 } = o.calcLinePoints();
+          const c = o.getCenterPoint();
+          return new fabric.Path(`M ${x1} ${y1} L ${x2} ${y2}`, {
+            originX: 'center', originY: 'center', left: c.x, top: c.y,
+            scaleX: o.scaleX, scaleY: o.scaleY, angle: o.angle, skewX: o.skewX, skewY: o.skewY,
+            stroke: o.stroke, strokeWidth: o.strokeWidth, strokeLineCap: o.strokeLineCap,
+            strokeLineJoin: o.strokeLineJoin, strokeMiterLimit: o.strokeMiterLimit, fill: '',
+          });
+        });
         if (!valid.length) {
           plmAlert('Could not import that file — no supported shapes were found in it.');
           return;
@@ -1047,7 +1060,14 @@ if (fabricCanvasEl && window.fabric) {
         // everything else. Checks each shape's own fill/stroke first
         // (done above), so this only touches whichever channel it
         // actually paints with.
-        valid.forEach((o) => applyFinishColor(o, FINISH_COLORS.white));
+        const whiten = (o) => {
+          if (o.type === 'group') { o.getObjects().forEach(whiten); return; }
+          // Source artwork's own opacity would keep it from reading as a
+          // plain White fill.
+          o.set({ opacity: 1 });
+          applyFinishColor(o, FINISH_COLORS.white);
+        };
+        valid.forEach(whiten);
         const group = new fabric.Group(valid, { originX: 'left', originY: 'top', centeredRotation: false });
 
         // If the SVG declares a real-world width/height (e.g. width="40mm"),
@@ -1077,6 +1097,23 @@ if (fabricCanvasEl && window.fabric) {
         } else if (declaredHmm && refH) {
           group.scale((declaredHmm * PX_PER_MM) / refH);
         }
+
+        // Stroke-only artwork (lines, unfilled paths) keeps the width it was
+        // authored at, which after scaling is often a sub-pixel hairline
+        // that vanishes in the renderer. Give each a real, uniform stroke
+        // width (never thinner than the render hairline) so it shows up.
+        const importScale = group.scaleX || 1;
+        const fixStrokes = (o) => {
+          if (o.type === 'group') { o.getObjects().forEach(fixStrokes); return; }
+          const strokeOnly = !!o.stroke && !o.fill;
+          if (o.type === 'line' || strokeOnly) {
+            const widthPx = Math.max((o.strokeWidth || 0) * importScale, RENDER_LINE_WIDTH_PX);
+            o.set({ strokeUniform: true, strokeWidth: widthPx });
+            if (o.type !== 'line') o._strokeWidthPx = widthPx;
+          }
+        };
+        group.getObjects().forEach(fixStrokes);
+        group.setCoords();
 
         // Only shrink further if the (now true-to-life) import doesn't
         // actually fit on the card — never scale up, and don't touch the
@@ -2860,9 +2897,11 @@ if (fabricCanvasEl && window.fabric) {
       // read as plain white, but gives Frosted White (the perfectly
       // smooth, brighter finish) an obvious step up rather than the
       // two looking identical.
-      const grain = buildWhiteFillPattern(obj);
-      if (outlineOnly) applyOutlineOnlyPaint(obj, grain);
-      else obj.set({ fill: grain, stroke: null, opacity: 1 });
+      // An outline is only a hairline wide — the grain pattern is
+      // invisible at that size and, as a stroke paint, was making thin
+      // imported outlines disappear — so those trace in plain white.
+      if (outlineOnly) applyOutlineOnlyPaint(obj, 'rgb(253,253,253)');
+      else obj.set({ fill: buildWhiteFillPattern(obj), stroke: null, opacity: 1 });
       return;
     }
     if (finish === 'frosted-white') {
@@ -2917,7 +2956,9 @@ if (fabricCanvasEl && window.fabric) {
         // is sized to just the card, so shift back to card-relative.
         obj.set({ left: obj.left - CARD_OFFSET_X, top: obj.top - CARD_OFFSET_Y });
         obj.setCoords();
-        styleForRender(obj);
+        // One object that can't be styled shouldn't blank the whole
+        // mockup (an exception here would skip the callback entirely).
+        try { styleForRender(obj); } catch (err) { console.error('Mockup: could not style object', obj.type, err); }
       });
       staticCanvas.renderAll();
       callback(staticCanvas.toDataURL({ format: 'png' }));
@@ -4843,7 +4884,7 @@ if (fabricCanvasEl && window.fabric) {
       obj.set({ stroke: color });
       return;
     }
-    if (!SHAPE_FILL_TYPES.includes(obj.type) && obj.type !== 'i-text') return;
+    if (!SHAPE_FILL_TYPES.includes(obj.type) && !['i-text', 'text', 'textbox'].includes(obj.type)) return;
     // Whichever of fill/stroke is actually painting something gets the
     // finish color — a shape can have both (a filled shape with its own
     // outline), just one, or in principle neither, in which case fill is
@@ -4852,8 +4893,8 @@ if (fabricCanvasEl && window.fabric) {
     // Fabric's own SVG parser as an empty string, not null, and `!=
     // null` doesn't catch that — silently painting a fill onto a path
     // that was meant to be stroke-only.
-    const hasFill = !!obj.fill && obj.fill !== 'none';
-    const hasStroke = !!obj.stroke && obj.stroke !== 'none';
+    const hasFill = !!obj.fill && obj.fill !== 'none' && obj.fill !== 'transparent';
+    const hasStroke = !!obj.stroke && obj.stroke !== 'none' && obj.stroke !== 'transparent';
     const next = {};
     if (hasFill) next.fill = color;
     if (hasStroke) next.stroke = color;
