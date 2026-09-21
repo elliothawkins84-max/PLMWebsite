@@ -2213,3 +2213,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   .editor-next-modal-form-row label:nth-child(2),
   .editor-next-modal-form-row label:nth-child(3) { flex: none; }
 }
+
+.footer-links { align-items: center; }
+.footer-links a.footer-icon { display: inline-flex; line-height: 0; }
+.footer-links a.footer-icon svg { width: 20px; height: 20px; }
