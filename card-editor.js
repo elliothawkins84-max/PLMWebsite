@@ -2527,6 +2527,7 @@ if (fabricCanvasEl && window.fabric) {
   // physical line regardless of which finish it's tracing.
   const RENDER_LINE_WIDTH_MM = 0.08;
   const RENDER_LINE_WIDTH_PX = RENDER_LINE_WIDTH_MM * PX_PER_MM;
+  const THIN_RING_MAX_MM = 0.35;
   function roundRectPath(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -2915,7 +2916,13 @@ if (fabricCanvasEl && window.fabric) {
       obj.set({ opacity: 0 });
       return;
     }
-    if (shapeFillModeFor(obj) === 'stroke') {
+    // A ring narrower than this is thinner than the two hairlines that
+    // would trace its edges, so they'd just smear together into a fuzzy
+    // double line (thin imported outlines, mostly) — trace one clean
+    // hairline down its center instead, below.
+    const ringMm = (obj._strokeWidthPx || 0.5 * PX_PER_MM) / PX_PER_MM;
+    const thinRing = ringMm < THIN_RING_MAX_MM;
+    if (shapeFillModeFor(obj) === 'stroke' && !thinRing) {
       // The shape itself is ALSO drawn in Stroke fill-mode — it already
       // has a real, physical stroke ring (see applyStrokeRender). Trace
       // that ring's own two edges as a pair of offset hairlines instead
@@ -2942,7 +2949,7 @@ if (fabricCanvasEl && window.fabric) {
     // at (a vector "stroke-width" is a screen-display concept, not
     // a kerf width) — so every Stroke-finish shape traces at the
     // same representative line width here, not its own real one.
-    obj.set({ fill: null, stroke: 'rgb(250,250,250)', strokeWidth: RENDER_LINE_WIDTH_PX, strokeUniform: true, opacity: 1 });
+    obj.set({ fill: null, stroke: 'rgb(250,250,250)', strokeWidth: RENDER_LINE_WIDTH_PX, strokeUniform: true, opacity: 1, clipPath: null });
   }
   function renderStrokeOutlinesToDataURL(snapshotJson, resolutionScale, callback) {
     const off = document.createElement('canvas');
