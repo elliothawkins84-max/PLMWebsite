@@ -744,8 +744,11 @@
   width: 100%;
   height: auto;
   margin-bottom: 20px;
+  border-radius: 14px;
+  max-height: calc(100vh - 200px);
+  object-fit: contain;
 }
-#finish-help-modal .editor-modal { width: 520px; max-width: calc(100vw - 32px); }
+#finish-help-modal .editor-modal { width: 900px; max-width: calc(100vw - 32px); }
 .editor-text-toolbar #text-rotation {
   width: 52px;
   -moz-appearance: textfield;
