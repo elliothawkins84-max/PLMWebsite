@@ -739,7 +739,13 @@
   font-family: var(--mono);
   font-size: 0.72rem;
 }
-#finish-help-modal .editor-modal { width: 320px; }
+.editor-finish-help-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 20px;
+}
+#finish-help-modal .editor-modal { width: 520px; max-width: calc(100vw - 32px); }
 .editor-text-toolbar #text-rotation {
   width: 52px;
   -moz-appearance: textfield;
