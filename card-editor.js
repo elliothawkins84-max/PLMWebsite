@@ -2921,7 +2921,11 @@ if (fabricCanvasEl && window.fabric) {
     // double line (thin imported outlines, mostly) — trace one clean
     // hairline down its center instead, below.
     const ringMm = (obj._strokeWidthPx || 0.5 * PX_PER_MM) / PX_PER_MM;
-    const thinRing = ringMm < THIN_RING_MAX_MM;
+    // Arbitrary paths (imported artwork, boolean-op results) also trace as
+    // one hairline: the offset-edge clip that builds the two hairlines is
+    // only accurate for simple primitives, and on a complex path it
+    // smears into a blurry halo around every line.
+    const thinRing = ringMm < THIN_RING_MAX_MM || !['rect', 'circle', 'ellipse', 'triangle'].includes(obj.type);
     if (shapeFillModeFor(obj) === 'stroke' && !thinRing) {
       // The shape itself is ALSO drawn in Stroke fill-mode — it already
       // has a real, physical stroke ring (see applyStrokeRender). Trace
