@@ -641,6 +641,61 @@ if (fabricCanvasEl && window.fabric) {
   // that still always resolves to the outermost group, same as before —
   // this only adds the extra (otherwise unused) subTargets data alongside it.
   fabric.Group.prototype.subTargetCheck = true;
+  // An underline is always a plain, fixed hairline — like the Stroke
+  // finish's own outline — never the text's own fill, and never
+  // user-changeable. Two reasons: physically, an underline reads as a
+  // thin engraved line regardless of what finish paints the letters
+  // above it, not as a solid area; and technically, Fabric's own
+  // underline renderer (_renderTextDecoration, upstream in fabric.js)
+  // paints with `ctx.fillStyle = this.fill` directly — which silently
+  // does nothing (leaving whatever fillStyle a previous draw call left
+  // behind, usually black) the moment `fill` is a Pattern or Gradient
+  // instead of a plain color string, exactly what every finish besides
+  // Frosted White assigns for the mockup preview. Swapping `fill` to a
+  // fixed, always-valid color for the instant this one decoration draws
+  // sidesteps that without touching Fabric's own text-layout math.
+  // `this.canvas` distinguishes the live editor (still on fabricCanvas)
+  // from every offscreen mockup/coverage pass (each its own throwaway
+  // StaticCanvas), so the underline reads as Stroke's own proofing
+  // green there and as the mockup's real render-ink white everywhere
+  // else, matching how an actual Stroke-finish object already looks in
+  // each of those same two contexts.
+  // Extra slack around a text object's own per-object render cache — the
+  // offscreen bitmap Fabric actually paints glyphs into, reused as-is on
+  // every frame until something changes (this is what makes Diamond
+  // Lattice's dense repeated pattern read as smooth instead of speckled
+  // noise at small sizes — see the objectCaching note in styleForRender
+  // below — so caching itself stays on for everything, text included).
+  // Fabric's own fabric.Text already grows that bitmap by one fontSize
+  // in each dimension specifically to cover italic/skew overhang, but
+  // it's split evenly on both sides around the object's center — so a
+  // font whose glyphs are drawn wider than their own advance width (an
+  // intentionally tight/overlapping display font, more so once
+  // italicized) can still have real ink land outside even that padded
+  // canvas, on one side, past where its cache buffer's own pixels end —
+  // not clipped by anything this app draws, just literally off the edge
+  // of a too-small offscreen bitmap. Doubling Fabric's own padding here
+  // costs a little extra memory per text object (never per-shape — this
+  // only touches fabric.Text) and fixes that without ever disabling
+  // caching.
+  const nativeTextCacheDims = fabric.Text.prototype._getCacheCanvasDimensions;
+  fabric.Text.prototype._getCacheCanvasDimensions = function () {
+    const dims = nativeTextCacheDims.call(this);
+    dims.width += this.fontSize * dims.zoomX;
+    dims.height += this.fontSize * dims.zoomY;
+    return dims;
+  };
+  const nativeRenderTextDecoration = fabric.Text.prototype._renderTextDecoration;
+  fabric.Text.prototype._renderTextDecoration = function (ctx, type) {
+    if (type !== 'underline') return nativeRenderTextDecoration.call(this, ctx, type);
+    const realFill = this.fill;
+    this.fill = this.canvas === fabricCanvas ? FINISH_COLORS.stroke : 'rgb(250,250,250)';
+    try {
+      nativeRenderTextDecoration.call(this, ctx, type);
+    } finally {
+      this.fill = realFill;
+    }
+  };
   fabricCanvas = new fabric.Canvas('fabric-canvas', {
     width: PASTEBOARD_W,
     height: PASTEBOARD_H,
