@@ -5,7 +5,7 @@
   "description": "Build tooling for precisionlasermark.com — minifies the site's JS/CSS for production so the deployed source is harder to casually read/copy. The plain files (script.js, styles.css, card-editor.js, card-editor.css, etc.) stay the ones you actually edit; run `npm run build` to regenerate the .min.js/.min.css siblings right before deploying.",
   "scripts": {
     "build": "npm run build:js && npm run build:css",
-    "build:js": "esbuild script.js card-editor.js card-types/card-types-data.js templates/templates-data.js --minify --outdir=. --out-extension:.js=.min.js --allow-overwrite",
+    "build:js": "esbuild script.js card-editor.js card-types/card-types-data.js templates/templates-data.js fonts/fonts-data.js --minify --outdir=. --out-extension:.js=.min.js --allow-overwrite",
     "build:css": "esbuild styles.css card-editor.css --minify --outdir=. --out-extension:.css=.min.css --allow-overwrite"
   },
   "devDependencies": {

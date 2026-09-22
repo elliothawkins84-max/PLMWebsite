@@ -535,6 +535,10 @@ function initCustomSelect(select) {
       item.className = 'editor-custom-select-option';
       item.setAttribute('role', 'option');
       item.textContent = opt.textContent;
+      // Font picker only (populateFontOptions is the one place that sets
+      // this) — every other custom-select's options are plain text, so
+      // this is a no-op for them.
+      if (opt.dataset.previewFont) item.style.fontFamily = opt.dataset.previewFont;
       const isSelected = i === select.selectedIndex;
       item.classList.toggle('is-selected', isSelected);
       item.setAttribute('aria-selected', String(isSelected));
@@ -554,6 +558,7 @@ function initCustomSelect(select) {
   function syncLabel() {
     const opt = select.options[select.selectedIndex];
     label.textContent = opt ? opt.textContent : '';
+    label.style.fontFamily = opt && opt.dataset.previewFont ? opt.dataset.previewFont : '';
   }
   function open() {
     renderPanel();
@@ -1313,6 +1318,30 @@ if (fabricCanvasEl && window.fabric) {
   // ---- Text formatting toolbar: font, size, alignment ----
   const textToolbar = document.getElementById('text-toolbar');
   const fontFamilySelect = document.getElementById('text-font-family');
+  // Rebuilds the font dropdown's actual <option>s from a plain
+  // {name, preview}[] list — used both for the built-in list at startup
+  // (window.EDITOR_FONTS, fonts/fonts-data.js) and for "Load system
+  // fonts" replacing it with whatever's actually installed. `preview` is
+  // a full CSS font stack for rendering that option's own row in its own
+  // font (see initCustomSelect's renderPanel) — kept off the option's
+  // `value`/`fontFamily` itself, which stays a single real font name
+  // since it's compared by exact string elsewhere (pickBestFontData,
+  // thumbSignatureFor, a saved .plm file's own fontFamily field).
+  function populateFontOptions(fonts, preferredValue) {
+    if (!fontFamilySelect || !fonts.length) return;
+    const previous = preferredValue !== undefined ? preferredValue : fontFamilySelect.value;
+    fontFamilySelect.innerHTML = '';
+    fonts.forEach(({ name, preview }) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      opt.dataset.previewFont = preview || name;
+      fontFamilySelect.appendChild(opt);
+    });
+    const names = fonts.map((f) => f.name);
+    fontFamilySelect.value = names.includes(previous) ? previous : names[0];
+  }
+  populateFontOptions(window.EDITOR_FONTS || [{ name: 'Arial', preview: 'Arial, Helvetica, sans-serif' }]);
   const fontSizeInput = document.getElementById('text-font-size');
   const textStyleButtons = document.querySelectorAll('.editor-text-style-btn');
   // Font family/size/align/style all apply to "the selected text" the
@@ -6218,15 +6247,9 @@ if (fabricCanvasEl && window.fabric) {
           });
           const families = [...new Set(fonts.map((f) => f.family))].sort((a, b) => a.localeCompare(b));
           if (!families.length || !fontFamilySelect) return;
-          const current = fontFamilySelect.value;
-          fontFamilySelect.innerHTML = '';
-          families.forEach((family) => {
-            const opt = document.createElement('option');
-            opt.value = family;
-            opt.textContent = family;
-            fontFamilySelect.appendChild(opt);
-          });
-          fontFamilySelect.value = families.includes(current) ? current : families[0];
+          // A real installed font's own name is already exactly what's
+          // needed to preview it (no separate fallback stack to pick).
+          populateFontOptions(families.map((name) => ({ name, preview: name })));
           fontFamilySelect.dispatchEvent(new Event('change'));
         } catch (err) {
           // User declined the permission prompt, or it's unavailable for
