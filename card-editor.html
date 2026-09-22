@@ -1047,6 +1047,30 @@
     </div>
   </div>
 
+  <!-- Welcome — shown once, right after the Beta notice closes (see
+       __plmShowBetaNotice/welcomeModal in card-editor.js). Not opened by
+       any button, and doesn't reopen on its own once dismissed either
+       way — starting with a template closes this and opens the
+       Templates gallery in its place; starting blank just closes it. -->
+  <div class="editor-modal-overlay" id="welcome-modal" aria-hidden="true">
+    <div class="editor-modal editor-welcome-modal" role="dialog" aria-modal="true" aria-labelledby="welcome-modal-title">
+      <h2 class="editor-modal-title" id="welcome-modal-title">Welcome!</h2>
+      <p class="editor-modal-message">Ready to design your card? Start from one of our layouts, or dive into a blank canvas.</p>
+      <div class="editor-welcome-options">
+        <button type="button" class="editor-welcome-btn" id="welcome-template-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>
+          <span class="editor-welcome-btn-title">Start with a Template</span>
+          <span class="editor-welcome-btn-sub">Pick a ready-made layout</span>
+        </button>
+        <button type="button" class="editor-welcome-btn" id="welcome-blank-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="12" y1="9" x2="12" y2="15"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+          <span class="editor-welcome-btn-title">Blank Canvas</span>
+          <span class="editor-welcome-btn-sub">Start from scratch</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Templates gallery — opened by the Templates toolbar button. Rows
        are built in JS from window.CARD_TEMPLATES (templates/templates-
        data.js), each a single big clickable button showing the actual

@@ -1876,6 +1876,45 @@ select option {
   object-fit: contain;
   opacity: 0.85;
 }
+
+/* Welcome — the two options need to read as equally weighted, big,
+   obvious choices (not a small in-passing setting), so they're their
+   own dedicated buttons rather than the usual .btn. */
+.editor-welcome-modal { width: 560px; max-width: calc(100vw - 32px); }
+.editor-welcome-options {
+  display: flex;
+  gap: 12px;
+}
+.editor-welcome-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 16px;
+  background: transparent;
+  border: 1.5px solid var(--line);
+  color: var(--fg);
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.editor-welcome-btn:hover { background: rgba(255, 255, 255, 0.08); border-color: var(--fg); }
+.editor-welcome-btn svg { width: 36px; height: 36px; flex: none; }
+.editor-welcome-btn-title {
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.editor-welcome-btn-sub {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+}
+@media (max-width: 480px) {
+  .editor-welcome-options { flex-direction: column; }
+}
 /* Can open while another modal (e.g. Templates) is already open behind it
    — same z-index as every other .editor-modal-overlay otherwise meant it
    was painting BELOW whichever one happened to sit later in the HTML, so

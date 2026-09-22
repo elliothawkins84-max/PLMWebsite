@@ -5582,20 +5582,48 @@ if (fabricCanvasEl && window.fabric) {
     betaNoticeModal.classList.add('is-open');
     betaNoticeModal.setAttribute('aria-hidden', 'false');
   };
+  // Welcome — the "template or blank canvas" pick, shown once right
+  // after the Beta notice is dismissed (either button), the very first
+  // time. Later reopens of the Beta notice (the "Beta" badge, clicked
+  // any time during a session) close back out normally without ever
+  // triggering this again.
+  const welcomeModal = document.getElementById('welcome-modal');
+  const welcomeTemplateBtn = document.getElementById('welcome-template-btn');
+  const welcomeBlankBtn = document.getElementById('welcome-blank-btn');
+  let hasShownWelcome = false;
+  function closeBetaNotice() {
+    if (!betaNoticeModal) return;
+    betaNoticeModal.classList.remove('is-open');
+    betaNoticeModal.setAttribute('aria-hidden', 'true');
+    if (!hasShownWelcome && welcomeModal) {
+      hasShownWelcome = true;
+      welcomeModal.classList.add('is-open');
+      welcomeModal.setAttribute('aria-hidden', 'false');
+    }
+  }
+  function closeWelcomeModal() {
+    if (!welcomeModal) return;
+    welcomeModal.classList.remove('is-open');
+    welcomeModal.setAttribute('aria-hidden', 'true');
+  }
   if (betaNoticeModal) {
     betaNoticeModal.addEventListener('mousedown', (e) => {
-      if (e.target === betaNoticeModal) {
-        betaNoticeModal.classList.remove('is-open');
-        betaNoticeModal.setAttribute('aria-hidden', 'true');
-      }
+      if (e.target === betaNoticeModal) closeBetaNotice();
     });
   }
-  if (betaNoticeModalClose && betaNoticeModal) {
-    betaNoticeModalClose.addEventListener('click', () => {
-      betaNoticeModal.classList.remove('is-open');
-      betaNoticeModal.setAttribute('aria-hidden', 'true');
+  if (betaNoticeModalClose) betaNoticeModalClose.addEventListener('click', closeBetaNotice);
+  if (welcomeModal) {
+    welcomeModal.addEventListener('mousedown', (e) => {
+      if (e.target === welcomeModal) closeWelcomeModal();
     });
   }
+  if (welcomeTemplateBtn) {
+    welcomeTemplateBtn.addEventListener('click', () => {
+      closeWelcomeModal();
+      openTemplatesModal();
+    });
+  }
+  if (welcomeBlankBtn) welcomeBlankBtn.addEventListener('click', closeWelcomeModal);
   // "Beta" badge next to the title — reopens the same notice on demand.
   const betaBadgeBtn = document.getElementById('beta-badge-btn');
   if (betaBadgeBtn) {
