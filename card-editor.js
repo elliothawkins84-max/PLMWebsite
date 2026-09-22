@@ -790,7 +790,7 @@ if (fabricCanvasEl && window.fabric) {
       // would otherwise fight with the Shapes tool's click-drag-to-draw.
       fabricCanvas.selection = btn.id !== 'tool-shapes';
       if (btn.id === 'tool-text') {
-        showObjectToolbarFor({ type: 'i-text', fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
+        showObjectToolbarFor({ type: 'i-text', fontFamily: defaultTextFontFamily(), fontSize: defaultTextFontSize(), textAlign: 'left' });
       } else if (btn.id === 'tool-shapes') {
         showObjectToolbarFor({ type: currentShapeType });
       } else if (!fabricCanvas.getActiveObject()) {
@@ -811,8 +811,8 @@ if (fabricCanvasEl && window.fabric) {
     const text = new fabric.IText('', {
       left: pointer.x,
       top: pointer.y,
-      fontFamily: 'Arial',
-      fontSize: 24,
+      fontFamily: defaultTextFontFamily(),
+      fontSize: defaultTextFontSize(),
       fill: '#ffffff',
       textAlign: 'left',
       // Default anchor is top-left (matches the default originX/Y below,
@@ -1425,6 +1425,22 @@ if (fabricCanvasEl && window.fabric) {
   }
   populateFontOptions(window.EDITOR_FONTS || [{ name: 'Arial', preview: 'Arial, Helvetica, sans-serif' }]);
   const fontSizeInput = document.getElementById('text-font-size');
+  // What a brand-new text object should start as — whatever the font/
+  // size fields are CURRENTLY showing, not a hardcoded Arial/24. Without
+  // this, picking a font in the dropdown before placing a new text box
+  // (nothing selected yet, so there's no live object to apply it to) had
+  // nowhere to go: the dropdown's own value was cosmetic only, and both
+  // the Text tool's own toolbar reset (below) and the actual new-object
+  // creation (the canvas's mouse:down handler further down) hardcoded
+  // Arial/24 independently of it, so typing right after picking a font
+  // silently came out in Arial anyway.
+  function defaultTextFontFamily() {
+    return (fontFamilySelect && fontFamilySelect.value) || 'Arial';
+  }
+  function defaultTextFontSize() {
+    const n = fontSizeInput && parseInt(fontSizeInput.value, 10);
+    return n > 0 ? n : 24;
+  }
   const textStyleButtons = document.querySelectorAll('.editor-text-style-btn');
   // Font family/size/align/style all apply to "the selected text" the
   // same way — a single i-text object, or (mixed selections are already
@@ -5088,7 +5104,7 @@ if (fabricCanvasEl && window.fabric) {
   function hideObjectToolbar() {
     if (!textToolbar) return;
     if (isTextToolActive()) {
-      showObjectToolbarFor({ type: 'i-text', fontFamily: 'Arial', fontSize: 24, textAlign: 'left' });
+      showObjectToolbarFor({ type: 'i-text', fontFamily: defaultTextFontFamily(), fontSize: defaultTextFontSize(), textAlign: 'left' });
       return;
     }
     if (isShapesToolActive()) {
