@@ -460,7 +460,6 @@
   transform: translateY(0);
   transition: opacity 0.16s ease-out, transform 0.16s ease-out;
 }
-.editor-text-toolbar select,
 .editor-text-toolbar input {
   background: transparent;
   border: 1px solid var(--line);
@@ -469,6 +468,33 @@
   font-size: 0.82rem;
   letter-spacing: 0.03em;
   padding: 6px 8px;
+}
+.editor-text-toolbar select {
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  padding: 6px 8px;
+}
+/* Windows renders a <select>'s open dropdown list with the OS's own
+   colors, not the page's, unless the select (and its options) declare a
+   real background-color — "transparent" (the toolbar's own selects, up
+   above, used to rely on that) doesn't count, and falls back to the OS
+   default of a white list, which combined with our white text
+   (var(--fg)) reads as blank. color-scheme tells the browser to use its
+   dark native-control palette as a further fallback wherever an
+   explicit color isn't enough (e.g. the scrollbar inside a long list).
+   Applies to every native <select> in the editor, not just the font
+   picker — deliberately after the toolbar rule above so it wins the
+   background-color regardless of selector specificity. */
+select {
+  background-color: var(--bg);
+  color: var(--fg);
+  color-scheme: dark;
+}
+select option {
+  background-color: var(--bg);
+  color: var(--fg);
 }
 .editor-text-toolbar input[type="number"] { width: 56px; }
 /* Fixed width regardless of option list — without this, loading the
