@@ -678,6 +678,40 @@ if (fabricCanvasEl && window.fabric) {
   // objectCaching note in styleForRender below), so this is scoped to
   // i-text alone, not a blanket fabric.Object change.
   fabric.IText.prototype.objectCaching = false;
+  // The actual cause of text "going outside the box and not showing up
+  // in the mockup" — found by tracing Fabric's own fill code, not a
+  // guess: fabric.Text.prototype.handleFiller, whenever the fill is a
+  // Pattern/Gradient with its own patternTransform/gradientTransform set
+  // (every finish here except Frosted White, which is a plain color and
+  // skips this path), bakes that fill into a brand-new canvas sized to
+  // EXACTLY this.width x this.height (see
+  // _applyPatternGradientTransformText, upstream), then uses it as a
+  // "no-repeat" pattern from then on. Any real glyph ink Fabric draws
+  // outside that exact box — the same advance-width-vs-real-ink-extent
+  // gap the custom font dropdown and underline fixes above are also
+  // about — lands outside that baked image and simply gets no paint at
+  // all. Padding the object generously right before Fabric bakes that
+  // rectangle, then restoring it immediately after, gives real ink room
+  // to actually receive paint without ever changing the object's real
+  // reported size/position (this runs during the render itself, so
+  // nothing outside this one synchronous call ever sees the pad).
+  const nativeHandleFiller = fabric.Text.prototype.handleFiller;
+  fabric.Text.prototype.handleFiller = function (ctx, property, filler) {
+    if (!filler || !filler.toLive || !(filler.patternTransform || filler.gradientTransform || filler.gradientUnits === 'percentage')) {
+      return nativeHandleFiller.call(this, ctx, property, filler);
+    }
+    const pad = this.fontSize || 0;
+    const realWidth = this.width;
+    const realHeight = this.height;
+    this.width = realWidth + pad * 2;
+    this.height = realHeight + pad * 2;
+    try {
+      return nativeHandleFiller.call(this, ctx, property, filler);
+    } finally {
+      this.width = realWidth;
+      this.height = realHeight;
+    }
+  };
   const nativeRenderTextDecoration = fabric.Text.prototype._renderTextDecoration;
   fabric.Text.prototype._renderTextDecoration = function (ctx, type) {
     if (type !== 'underline') return nativeRenderTextDecoration.call(this, ctx, type);
