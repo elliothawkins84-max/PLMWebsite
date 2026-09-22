@@ -1314,6 +1314,47 @@ if (fabricCanvasEl && window.fabric) {
   const textToolbar = document.getElementById('text-toolbar');
   const fontFamilySelect = document.getElementById('text-font-family');
   const fontSizeInput = document.getElementById('text-font-size');
+  const textStyleButtons = document.querySelectorAll('.editor-text-style-btn');
+  // Font family/size/align/style all apply to "the selected text" the
+  // same way — a single i-text object, or (mixed selections are already
+  // excluded from text mode, see showObjectToolbarFor) every i-text
+  // inside a multi-selection. A plain `activeSelection.set(...)` looks
+  // like it would do this on its own, but Fabric's ActiveSelection only
+  // forwards a handful of special-cased properties down to its members —
+  // an arbitrary one like fontFamily/fontWeight just sets on the
+  // (invisible) selection object itself and never reaches the actual
+  // text, so every one of these toolbar controls needs to loop over the
+  // real objects itself instead of relying on that.
+  function forEachSelectedText(obj, fn) {
+    if (!obj) return;
+    if (obj.type === 'i-text') fn(obj);
+    else if (obj.type === 'activeSelection') obj.getObjects().forEach((o) => { if (o.type === 'i-text') fn(o); });
+  }
+  // The single text object (or first one in a multi-selection) whose
+  // current values the toolbar's fields/buttons should reflect — same
+  // "first text member" convention showObjectToolbarFor already uses
+  // for font family/size.
+  function firstSelectedText(obj) {
+    if (!obj) return null;
+    if (obj.type === 'i-text') return obj;
+    if (obj.type === 'activeSelection') return obj.getObjects().find((o) => o.type === 'i-text') || null;
+    return null;
+  }
+  function isTextStyleActive(textObj, style) {
+    if (!textObj) return false;
+    if (style === 'bold') {
+      const w = textObj.fontWeight;
+      return w === 'bold' || (typeof w === 'number' ? w >= 600 : parseInt(w, 10) >= 600);
+    }
+    if (style === 'italic') return textObj.fontStyle === 'italic';
+    if (style === 'underline') return !!textObj.underline;
+    return false;
+  }
+  function setTextStyleOn(textObj, style, active) {
+    if (style === 'bold') textObj.set('fontWeight', active ? 'bold' : 'normal');
+    else if (style === 'italic') textObj.set('fontStyle', active ? 'italic' : 'normal');
+    else if (style === 'underline') textObj.set('underline', active);
+  }
   const alignButtons = document.querySelectorAll('.editor-align-btn[data-align]');
   const rotationInput = document.getElementById('text-rotation');
   const anchorDots = document.querySelectorAll('#anchor-icon .anchor-dot');
@@ -4911,6 +4952,11 @@ if (fabricCanvasEl && window.fabric) {
       if (fontFamilySelect) fontFamilySelect.value = rep.fontFamily || 'Arial';
       if (fontSizeInput) fontSizeInput.value = Math.round(rep.fontSize || 24);
       alignButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.align === (rep.textAlign || 'left')));
+      textStyleButtons.forEach((b) => {
+        const active = isTextStyleActive(rep, b.dataset.style);
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-pressed', String(active));
+      });
     } else {
       const rep = members.find((m) => SHAPE_TYPES.includes(m.type)) || obj;
       shapeTypeButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.shape === rep.type));
@@ -6131,7 +6177,7 @@ if (fabricCanvasEl && window.fabric) {
     fontFamilySelect.addEventListener('change', () => {
       const obj = fabricCanvas.getActiveObject();
       if (!obj) return;
-      obj.set('fontFamily', fontFamilySelect.value);
+      forEachSelectedText(obj, (o) => o.set('fontFamily', fontFamilySelect.value));
       fabricCanvas.requestRenderAll();
       pushHistory();
     });
@@ -6196,7 +6242,7 @@ if (fabricCanvasEl && window.fabric) {
       if (!obj) return;
       const size = parseInt(fontSizeInput.value, 10);
       if (!Number.isNaN(size) && size > 0) {
-        obj.set('fontSize', size);
+        forEachSelectedText(obj, (o) => o.set('fontSize', size));
         fabricCanvas.requestRenderAll();
         refreshTransformFields(obj);
       }
@@ -6210,8 +6256,27 @@ if (fabricCanvasEl && window.fabric) {
     btn.addEventListener('click', () => {
       const obj = fabricCanvas.getActiveObject();
       if (!obj) return;
-      obj.set('textAlign', btn.dataset.align);
+      forEachSelectedText(obj, (o) => o.set('textAlign', btn.dataset.align));
       alignButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
+      fabricCanvas.requestRenderAll();
+      pushHistory();
+    });
+  });
+  textStyleButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const obj = fabricCanvas.getActiveObject();
+      if (!obj) return;
+      const style = btn.dataset.style;
+      const rep = firstSelectedText(obj);
+      if (!rep) return;
+      // Toggle direction comes from the representative object's current
+      // state (same one the button's own pressed state reflects) so a
+      // mixed-state multi-selection all moves the same way in one click,
+      // rather than each object flipping independently.
+      const next = !isTextStyleActive(rep, style);
+      forEachSelectedText(obj, (o) => setTextStyleOn(o, style, next));
+      btn.classList.toggle('is-active', next);
+      btn.setAttribute('aria-pressed', String(next));
       fabricCanvas.requestRenderAll();
       pushHistory();
     });
