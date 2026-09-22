@@ -2179,6 +2179,22 @@ select option {
 @media (max-width: 900px) {
   .editor-shell { display: none; }
   .editor-mobile-block { display: flex; }
+  /* Every pop-up/overlay (Beta, Welcome, Templates, card type, Next/RFQ,
+     survey, the various small help/confirm dialogs, the right-click
+     menu, the settings popup, the keyboard-shortcuts overlay, toasts) is
+     markup up at the end of <body>, a sibling of .editor-shell rather
+     than nested inside it — hiding .editor-shell above doesn't touch
+     any of them, and several open themselves automatically (the Beta
+     notice, then Welcome) regardless of screen size. None of them are
+     usable once the editor itself is blocked, so force them off here
+     too rather than trust each one's own is-open toggle. */
+  .editor-modal-overlay,
+  .editor-context-menu,
+  .editor-settings-popup,
+  .editor-help-overlay,
+  .editor-toast {
+    display: none !important;
+  }
 }
 
 /* ---- RFQ survey pop-up (optional questions before the request sends) ---- */
