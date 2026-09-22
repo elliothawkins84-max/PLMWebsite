@@ -469,24 +469,11 @@
   letter-spacing: 0.03em;
   padding: 6px 8px;
 }
-.editor-text-toolbar select {
-  border: 1px solid var(--line);
-  font-family: var(--mono);
-  font-size: 0.82rem;
-  letter-spacing: 0.03em;
-  padding: 6px 8px;
-}
-/* Windows renders a <select>'s open dropdown list with the OS's own
-   colors, not the page's, unless the select (and its options) declare a
-   real background-color — "transparent" (the toolbar's own selects, up
-   above, used to rely on that) doesn't count, and falls back to the OS
-   default of a white list, which combined with our white text
-   (var(--fg)) reads as blank. color-scheme tells the browser to use its
-   dark native-control palette as a further fallback wherever an
-   explicit color isn't enough (e.g. the scrollbar inside a long list).
-   Applies to every native <select> in the editor, not just the font
-   picker — deliberately after the toolbar rule above so it wins the
-   background-color regardless of selector specificity. */
+/* A leftover safety net for any native <select> that isn't routed
+   through the custom dropdown below (initCustomSelect in card-editor.js)
+   — every <select> the editor actually shows the user is, but this keeps
+   a stray one from ever going white-on-white on Windows the way the
+   font picker used to. */
 select {
   background-color: var(--bg);
   color: var(--fg);
@@ -497,15 +484,86 @@ select option {
   color: var(--fg);
 }
 .editor-text-toolbar input[type="number"] { width: 56px; }
-/* Fixed width regardless of option list — without this, loading the
-   full system font list (some names much longer than the built-in six)
-   grows the select to fit its widest option and reflows the whole
-   toolbar. */
-#text-font-family {
-  width: 130px;
+
+/* ---- Custom dropdown, standing in for a native <select> ---- */
+/* A native <select>'s open list is drawn by the OS — Windows, mobile
+   Safari and others each render it with their own colors regardless of
+   anything set here, so the same page reads differently by platform.
+   initCustomSelect (card-editor.js) layers this identically-styled
+   button+panel over the original <select>, which stays in the DOM
+   (visually hidden below) purely so existing code can keep reading/
+   writing it normally. */
+.editor-custom-select { position: relative; }
+.editor-custom-select-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.editor-custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.editor-custom-select-trigger:hover,
+.editor-custom-select.is-open .editor-custom-select-trigger { background: rgba(255, 255, 255, 0.08); }
+.editor-custom-select-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.editor-custom-select-caret { width: 12px; height: 12px; flex: none; color: var(--muted); transition: transform .15s ease-out; }
+.editor-custom-select.is-open .editor-custom-select-caret { transform: rotate(180deg); }
+.editor-custom-select-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  max-height: 240px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.editor-custom-select-option {
+  padding: 7px 8px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.editor-custom-select-option:hover,
+.editor-custom-select-option.is-active { background: rgba(255, 255, 255, 0.1); }
+.editor-custom-select-option.is-selected { color: var(--bg); background: var(--fg); }
+.editor-custom-select-option.is-selected.is-active { background: var(--fg); }
+/* Font picker — fixed width regardless of option list, so loading the
+   full system font list (some names much longer than the built-in six)
+   doesn't grow the toolbar and reflow everything else in it. */
+#text-font-family-wrapper { width: 130px; flex: none; }
+/* Quantity — fills the same width the plain <select> used to. */
+.editor-next-modal-select-field .editor-custom-select { flex: 1; min-width: 0; }
+.editor-next-modal-select-field .editor-custom-select-trigger {
+  font-size: 0.72rem;
+  padding: 7px 8px;
 }
 .editor-text-toolbar-divider { width: 1px; height: 20px; background: var(--line); }
 .editor-align-btn {

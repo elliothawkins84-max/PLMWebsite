@@ -465,6 +465,166 @@ function showChromeOnlyToast(featureName) {
   }, 3000);
 }
 
+// ---- Custom dropdown, replacing a native <select> ----
+// A native <select>'s open list is drawn by the OS, not the page — even
+// with every color explicitly set (see the `select`/`select option`
+// rules in card-editor.css this replaces the need for), Windows,
+// mobile Safari and others each render it with their own look, so the
+// same page reads differently depending on what the visitor's OS
+// happens to do with a <select>. This instead layers a fully custom,
+// identically-styled button+panel (same pattern as the Text align /
+// Position / Stroke settings dropdowns elsewhere in this file) on top
+// of the original <select>, which stays in the DOM — hidden, but still
+// real — purely so every existing call site that reads/writes it
+// (`.value`, `.options`, `.innerHTML`, `.appendChild`, `change`
+// listeners) keeps working untouched; this only adds a visual layer
+// and forwards clicks into it.
+const allCustomSelects = [];
+function closeCustomSelects(except) {
+  allCustomSelects.forEach((cs) => {
+    if (cs !== except) cs.close();
+  });
+}
+function initCustomSelect(select) {
+  if (!select || select.dataset.customSelectInit) return;
+  select.dataset.customSelectInit = '1';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'editor-custom-select';
+  if (select.className) wrapper.className += ` ${select.className}`;
+  if (select.id) wrapper.id = `${select.id}-wrapper`;
+  select.parentNode.insertBefore(wrapper, select);
+  select.classList.add('editor-custom-select-native');
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'editor-custom-select-trigger';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  const ariaLabel = select.getAttribute('aria-label');
+  if (ariaLabel) trigger.setAttribute('aria-label', ariaLabel);
+  if (select.title) trigger.title = select.title;
+  const label = document.createElement('span');
+  label.className = 'editor-custom-select-label';
+  trigger.appendChild(label);
+  trigger.insertAdjacentHTML(
+    'beforeend',
+    '<svg class="editor-custom-select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg>',
+  );
+  const panel = document.createElement('div');
+  panel.className = 'editor-custom-select-panel';
+  panel.setAttribute('role', 'listbox');
+  panel.hidden = true;
+  wrapper.appendChild(select);
+  wrapper.appendChild(trigger);
+  wrapper.appendChild(panel);
+  let activeIndex = -1;
+  function setActive(index) {
+    const items = panel.querySelectorAll('.editor-custom-select-option');
+    activeIndex = Math.max(0, Math.min(index, items.length - 1));
+    items.forEach((item, i) => item.classList.toggle('is-active', i === activeIndex));
+    const activeItem = items[activeIndex];
+    if (activeItem) activeItem.scrollIntoView({ block: 'nearest' });
+  }
+  // Rebuilt from the real <select>'s current <option>s every time the
+  // panel opens — cheap, and always correct even after the font list
+  // or quantity options get swapped out from under it (innerHTML
+  // rebuilds elsewhere in this file, not routed through this component).
+  function renderPanel() {
+    panel.innerHTML = '';
+    [...select.options].forEach((opt, i) => {
+      const item = document.createElement('div');
+      item.className = 'editor-custom-select-option';
+      item.setAttribute('role', 'option');
+      item.textContent = opt.textContent;
+      const isSelected = i === select.selectedIndex;
+      item.classList.toggle('is-selected', isSelected);
+      item.setAttribute('aria-selected', String(isSelected));
+      if (isSelected) activeIndex = i;
+      item.addEventListener('mousedown', (e) => {
+        // mousedown (not click) so this commits before the trigger's own
+        // blur-driven close logic would otherwise race it.
+        e.preventDefault();
+        select.value = opt.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        close();
+        trigger.focus();
+      });
+      panel.appendChild(item);
+    });
+  }
+  function syncLabel() {
+    const opt = select.options[select.selectedIndex];
+    label.textContent = opt ? opt.textContent : '';
+  }
+  function open() {
+    renderPanel();
+    panel.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    wrapper.classList.add('is-open');
+    closeCustomSelects(api);
+    setActive(select.selectedIndex);
+  }
+  function close() {
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    wrapper.classList.remove('is-open');
+  }
+  trigger.addEventListener('click', () => {
+    if (panel.hidden) open();
+    else close();
+  });
+  trigger.addEventListener('keydown', (e) => {
+    if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key) && panel.hidden) {
+      e.preventDefault();
+      open();
+      return;
+    }
+    if (panel.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(activeIndex + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(activeIndex - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); setActive(0); }
+    else if (e.key === 'End') { e.preventDefault(); setActive(select.options.length - 1); }
+    else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const opt = select.options[activeIndex];
+      if (opt) {
+        select.value = opt.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      close();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    } else if (e.key === 'Tab') {
+      close();
+    }
+  });
+  select.addEventListener('change', syncLabel);
+  // Most of the value changes this select goes through are a plain
+  // `select.value = ...` from elsewhere in this file (switching to a
+  // newly-selected text object's own font, re-picking a quantity after
+  // the price recalculates) with no 'change' event dispatched — the
+  // listener above alone would leave the trigger's own label showing
+  // the previous value until the user happened to open the panel.
+  // Intercepting the property itself catches every one of those call
+  // sites for free, with nothing to change at any of them.
+  const nativeValueDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  Object.defineProperty(select, 'value', {
+    configurable: true,
+    get() { return nativeValueDescriptor.get.call(select); },
+    set(v) {
+      nativeValueDescriptor.set.call(select, v);
+      syncLabel();
+    },
+  });
+  syncLabel();
+  const api = { close };
+  allCustomSelects.push(api);
+  return api;
+}
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('.editor-custom-select')) closeCustomSelects();
+});
+
 // ---- Fabric.js canvas — the first real (non-placeholder) tool: Text ----
 const fabricCanvasEl = document.getElementById('fabric-canvas');
 let fabricCanvas = null;
@@ -7214,6 +7374,15 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('selection:updated', refreshLayersListIfNeeded);
   fabricCanvas.on('selection:cleared', refreshLayersListIfNeeded);
   refreshLayersList();
+
+  // ---- Custom dropdowns for the three native <select>s ----
+  // Same look on every OS/browser instead of each one's own native list
+  // — see initCustomSelect's own comment above for why. Run after each
+  // select is done being populated for the first time (the quantity
+  // list depends on the selected card type, already resolved by here).
+  initCustomSelect(fontFamilySelect);
+  initCustomSelect(finishTextureAngle);
+  initCustomSelect(nextModalQuantity);
 
   // ---- Signal ready to the loading overlay ----
   // Runs last, after everything above — the canvas, previews, and (if
