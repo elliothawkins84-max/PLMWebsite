@@ -660,31 +660,24 @@ if (fabricCanvasEl && window.fabric) {
   // green there and as the mockup's real render-ink white everywhere
   // else, matching how an actual Stroke-finish object already looks in
   // each of those same two contexts.
-  // Extra slack around a text object's own per-object render cache — the
-  // offscreen bitmap Fabric actually paints glyphs into, reused as-is on
-  // every frame until something changes (this is what makes Diamond
-  // Lattice's dense repeated pattern read as smooth instead of speckled
-  // noise at small sizes — see the objectCaching note in styleForRender
-  // below — so caching itself stays on for everything, text included).
-  // Fabric's own fabric.Text already grows that bitmap by one fontSize
-  // in each dimension specifically to cover italic/skew overhang, but
-  // it's split evenly on both sides around the object's center — so a
-  // font whose glyphs are drawn wider than their own advance width (an
-  // intentionally tight/overlapping display font, more so once
-  // italicized) can still have real ink land outside even that padded
-  // canvas, on one side, past where its cache buffer's own pixels end —
-  // not clipped by anything this app draws, just literally off the edge
-  // of a too-small offscreen bitmap. Doubling Fabric's own padding here
-  // costs a little extra memory per text object (never per-shape — this
-  // only touches fabric.Text) and fixes that without ever disabling
-  // caching.
-  const nativeTextCacheDims = fabric.Text.prototype._getCacheCanvasDimensions;
-  fabric.Text.prototype._getCacheCanvasDimensions = function () {
-    const dims = nativeTextCacheDims.call(this);
-    dims.width += this.fontSize * dims.zoomX;
-    dims.height += this.fontSize * dims.zoomY;
-    return dims;
-  };
+  // Text never uses Fabric's per-object render cache — the offscreen
+  // bitmap it would otherwise paint glyphs into once and reuse as-is,
+  // sized to the object's own computed box plus a fixed slice of
+  // padding. That sizing is really an *estimate* of how far ink can
+  // reach outside the box (italic/skew overhang, mainly), and no fixed
+  // amount of padding is safe for every font: a script/cursive face's
+  // swashes, or a tight/overlapping display face's glyphs drawn wider
+  // than their own advance width, can still land outside a too-small
+  // cache canvas — not clipped by anything this app draws, just
+  // literally off the edge of that offscreen bitmap, on the live canvas
+  // and in the mockup alike (an earlier fix here just grew the padding,
+  // which only pushed the same failure mode out to a bigger swash).
+  // Caching itself stays on for everything else (shapes especially —
+  // Diamond Lattice's dense repeated pattern needs it to read as smooth
+  // instead of speckled noise at small preview sizes, see the
+  // objectCaching note in styleForRender below), so this is scoped to
+  // i-text alone, not a blanket fabric.Object change.
+  fabric.IText.prototype.objectCaching = false;
   const nativeRenderTextDecoration = fabric.Text.prototype._renderTextDecoration;
   fabric.Text.prototype._renderTextDecoration = function (ctx, type) {
     if (type !== 'underline') return nativeRenderTextDecoration.call(this, ctx, type);
