@@ -492,7 +492,7 @@ if (tagLineChips) {
   const fontChips = fontChipsWrap ? [...fontChipsWrap.querySelectorAll('.chip')] : [];
   const activeFontChip = () => fontChips.find((c) => c.classList.contains('is-on')) || fontChips[1];
   let appliedPt = 0; // the actual point size last rendered, after fitting to the boundary
-  const TAG_DIAMETER_PT = 1.5 * 72; // the tag is a fixed 1.5in diameter, in points
+  const TAG_DIAMETER_PT = 2 * 72; // the tag is a fixed 2in diameter, in points
   const SAFE_MARGIN_MM = 3; // text must stay this far in from the tag's edge
   const MIN_PT = 4; // never shrink a line into illegibility
 
@@ -513,7 +513,7 @@ if (tagLineChips) {
   const activeChip = () => chips.find((c) => c.classList.contains('is-on'));
 
   // Converts a point size to on-screen pixels, scaled to however large the
-  // 1.5in tag is actually being rendered right now (it's a responsive grid).
+  // 2in tag is actually being rendered right now (it's a responsive grid).
   const ptToPx = (pt) => {
     const wrapWidth = photoWrap.getBoundingClientRect().width || 420;
     return (pt / TAG_DIAMETER_PT) * wrapWidth;
@@ -524,24 +524,24 @@ if (tagLineChips) {
   // the line's own vertical offset from the tag's center.
   const safeChordWidth = (dyPx) => {
     const tagRect = photoWrap.getBoundingClientRect();
-    const pxPerMm = tagRect.width / (1.5 * 25.4);
+    const pxPerMm = tagRect.width / (2 * 25.4);
     const safeRadius = tagRect.width / 2 - SAFE_MARGIN_MM * pxPerMm;
     const inside = safeRadius * safeRadius - dyPx * dyPx;
     return inside > 0 ? 2 * Math.sqrt(inside) : 0;
   };
 
   // The region text is allowed to occupy at all: from the keyring hole's
-  // bottom edge (SVG circle cy=28.874 r=7.874 in its 0-200 viewBox — sized
-  // so the full viewBox width represents the tag's actual 1.5in diameter
+  // bottom edge (SVG circle cy=21.654 r=5.906 in its 0-200 viewBox — sized
+  // so the full viewBox width represents the tag's actual 2in diameter
   // exactly, same as ptToPx/safeChordWidth below — a real 3mm-diameter
   // hole positioned so its own top sits exactly 4mm below the tag's top
-  // edge; bottom edge at y=36.748, i.e. 18.374% down) to near the tag's
+  // edge; bottom edge at y=27.560, i.e. 13.780% down) to near the tag's
   // own bottom edge — matches .tag-text-overlay's own top/bottom in
   // styles.css exactly. Each size tier gets this SAME region scaled down
   // by its own fill fraction, in BOTH width and height, centered on the
   // same point — so the four tiers are just four nested nested boxes,
   // entirely independent of whatever text is actually typed.
-  const REGION_TOP_FRAC = 0.18374;
+  const REGION_TOP_FRAC = 0.13780;
   const REGION_BOTTOM_FRAC = 0.90;
   const DEFAULT_GAP_FACTOR = 0.35;
 
@@ -736,7 +736,7 @@ if (tagLineChips) {
       .join('\n');
     const colorName = activeColorChip() ? activeColorChip().dataset.color : 'blue';
     const sizeName = activeFontChip().textContent.trim();
-    const body = `API RP Tag quote request\n\nTag size: 1.5in diameter\nColor: ${colorName.charAt(0).toUpperCase()}${colorName.slice(1)}\nLayout: ${layoutNames[count]}\nText size: ${sizeName} (~${Math.round(appliedPt)}pt)\n${lines}\n\nQuantity needed:`;
+    const body = `API RP Tag quote request\n\nTag size: 2in diameter\nColor: ${colorName.charAt(0).toUpperCase()}${colorName.slice(1)}\nLayout: ${layoutNames[count]}\nText size: ${sizeName} (~${Math.round(appliedPt)}pt)\n${lines}\n\nQuantity needed:`;
     quoteBtn.href = `mailto:info@precisionlasermark.com?subject=${encodeURIComponent('API RP Tag Quote Request')}&body=${encodeURIComponent(body)}`;
   };
 
@@ -1184,7 +1184,7 @@ if (tagRfqModal) {
       kind: 'plmj',
       version: 1,
       createdAt: new Date().toISOString(),
-      specs: { diameterIn: 1.5, holeMm: 3, thicknessMm: 0.71, material: 'aluminum' },
+      specs: { diameterIn: 2, holeMm: 3, thicknessMm: 0.71, material: 'aluminum' },
       order: {
         name: formData.get('name') || '',
         email: formData.get('email') || '',
