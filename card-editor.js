@@ -1389,7 +1389,43 @@ if (fabricCanvasEl && window.fabric) {
     reader.readAsText(file);
   }
   if (uploadBtn && importFileInput) {
-    uploadBtn.addEventListener('click', () => importFileInput.click());
+    // Upload goes through a short "quick note" pop-up first (SVG only,
+    // everything comes in white — see importSvgFile above), and only its
+    // own "Choose SVG File" button actually opens the file picker. That
+    // click is still a real user gesture, so the picker opens normally.
+    const uploadNoteModal = document.getElementById('upload-note-modal');
+    const uploadNoteChoose = document.getElementById('upload-note-choose');
+    const uploadNoteCancel = document.getElementById('upload-note-cancel');
+    const isUploadNoteOpen = () => !!(uploadNoteModal && uploadNoteModal.classList.contains('is-open'));
+    const closeUploadNote = () => {
+      if (!uploadNoteModal) return;
+      uploadNoteModal.classList.remove('is-open');
+      uploadNoteModal.setAttribute('aria-hidden', 'true');
+    };
+    uploadBtn.addEventListener('click', () => {
+      if (!uploadNoteModal) {
+        importFileInput.click();
+        return;
+      }
+      uploadNoteModal.classList.add('is-open');
+      uploadNoteModal.setAttribute('aria-hidden', 'false');
+      if (uploadNoteChoose) uploadNoteChoose.focus();
+    });
+    if (uploadNoteChoose) {
+      uploadNoteChoose.addEventListener('click', () => {
+        closeUploadNote();
+        importFileInput.click();
+      });
+    }
+    if (uploadNoteCancel) uploadNoteCancel.addEventListener('click', closeUploadNote);
+    if (uploadNoteModal) {
+      uploadNoteModal.addEventListener('mousedown', (e) => {
+        if (e.target === uploadNoteModal) closeUploadNote();
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isUploadNoteOpen()) closeUploadNote();
+    });
     importFileInput.addEventListener('change', () => {
       const file = importFileInput.files[0];
       importFileInput.value = ''; // allow re-importing the same file later
@@ -1664,7 +1700,7 @@ if (fabricCanvasEl && window.fabric) {
     }
     return minSin;
   }
-  // The double-stroke-clip trick (below, and buildDoubleStrokeClip) only
+  // The stroke-clip trick (see applyStrokeRender's triangle branch) only
   // works if the object's own *native* stroke — the thing that actually
   // gets painted, before the clip carves it down to the true offset
   // ring — reaches at least as far as that true offset does. A plain
@@ -1751,15 +1787,15 @@ if (fabricCanvasEl && window.fabric) {
   // local (pre-scale) width/height/radius would then have that same
   // delta scaled AGAIN by the object's own scale once rendered — correct
   // only at scale 1, and increasingly wrong (eventually invisible, once
-  // the resulting hairline drifts outside the real stroke painted under
-  // it — see buildDoubleStrokeClip) for a shape that's been resized by
+  // the resulting edge drifts outside the real stroke painted under
+  // it) for a shape that's been resized by
   // dragging rather than by its base width/height. Dividing delta by the
   // relevant axis scale up front cancels that out.
   // The true-offset triangle vertices for a given real (already-scaled)
   // delta, in LOCAL (pre-scale) coordinates — shared by
   // makeStrokeOffsetShapeFor (a single boundary, as a Polygon) and
-  // buildTriangleDoubleStrokeClip (four boundaries combined into one
-  // even-odd Path) so both use the exact same math.
+  // buildTriangleRingClip (two boundaries combined into one even-odd
+  // Path) so both use the exact same math.
   function triangleOffsetLocalPoints(obj, delta) {
     const sx = obj.scaleX || 1;
     const sy = obj.scaleY || 1;
@@ -1838,57 +1874,10 @@ if (fabricCanvasEl && window.fabric) {
     outerBoundary.set({ clipPath: innerBoundary });
     return outerBoundary;
   }
-  // A shape that's both drawn in Stroke fill-mode AND assigned the
-  // Stroke finish has a real physical stroke ring with two distinct
-  // edges — this traces a hairline at each one (unioned via being two
-  // children of a Group clipPath, which draws all its children and
-  // keeps their combined coverage) so it reads as two offset lines
-  // rather than the ring filled solid edge-to-edge.
-  // A clipPath can only ever reveal parts of what the clipped object
-  // itself already paints — it can't extend visible area beyond the
-  // object's own geometry. A plain fill stops exactly at the shape's
-  // true (unstroked) edge, which is *inside* where the outer hairline
-  // needs to land, so the caller must instead give the object a real,
-  // wide-enough paint before applying this clip: for rect/circle/
-  // ellipse, a native `stroke` (which straddles the path in both
-  // directions, unlike fill) — `strokeWidth` here is that minimum
-  // width, wide enough to cover both hairlines. A triangle's hairline
-  // bands are only ~0.7px wide (RENDER_LINE_WIDTH_PX) — reliable at
-  // that precision only against a plain solid fill, since a native
-  // stroke's own thin-line antialiasing and join geometry lose that
-  // precision once combined with a nested clip (confirmed: the exact
-  // same clip, applied to an unbounded fill, reveals both bands
-  // correctly). So for a triangle this instead grows the caller's own
-  // fill area — `growWidth`/`growHeight` — generously past the clip's
-  // own reach, entirely safe on the always-detached clone this runs
-  // against (the real edited object is never touched here).
-  // Four concentric triangle boundaries (outer band's outer/inner edge,
-  // then inner band's outer/inner edge — outermost to innermost) combined
-  // into ONE Path with an even-odd fill rule: outside the first contour
-  // is empty, between 1st/2nd is filled (the outer hairline), between
-  // 2nd/3rd is empty again, between 3rd/4th is filled (the inner
-  // hairline), inside the 4th is empty. Deliberately not a
-  // fabric.Group of two independently-built band shapes (the more
-  // "obvious" way to union two regions) — fabric.Group repositions its
-  // children to be relative to the GROUP's own bounding-box center,
-  // which is a *different* point than the true shape center each band
-  // was independently computed relative to (a non-equilateral triangle's
-  // offset boundaries don't share a bounding box center), so the two
-  // bands silently landed misaligned. One Path built from one consistent
-  // set of true-center-relative points sidesteps that entirely.
-  function buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand) {
-    const contours = [outerDelta + halfBand, outerDelta - halfBand, innerDelta + halfBand, innerDelta - halfBand]
-      .map((d) => triangleOffsetLocalPoints(obj, d));
-    const d = contours.map((pts) => `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`).join(' ');
-    const path = new fabric.Path(d, { fillRule: 'evenodd', left: 0, top: 0, originX: 'left', originY: 'top' });
-    // Same true-center pinning as makeStrokeOffsetShapeFor's triangle
-    // branch — Path centers on its own bounding box (pathOffset) too.
-    path.set({ left: path.pathOffset.x - path.width / 2, top: path.pathOffset.y - path.height / 2 });
-    return path;
-  }
-  // Same even-odd technique as buildTriangleDoubleStrokeClip, just the
-  // plain single-ring case (outer edge, inner edge — one band, not two
-  // hairlines): a triangle's own applied clipPath (from applyStrokeRender)
+  // A triangle's ring (outer edge, inner edge) built as ONE even-odd
+  // Path from true-center-relative points — not a fabric.Group of two
+  // shapes, which would re-center its children on the group's own
+  // bounding box and misalign them. A triangle's own applied clipPath (from applyStrokeRender)
   // is fine for the LIVE editing canvas, but reusing it as-is for the
   // *proofing* render (see applyOutlineOnlyPaint) relies on that
   // clipPath's underlying paint being a big native round-joined stroke —
@@ -1929,27 +1918,6 @@ if (fabricCanvasEl && window.fabric) {
     }
     obj.set({ fill: null, stroke: paint, opacity: 1 });
   }
-  function buildDoubleStrokeClip(obj) {
-    const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
-    const align = obj.strokeAlign || 'center';
-    let outerDelta;
-    let innerDelta;
-    if (align === 'outside') { outerDelta = desired; innerDelta = 0; }
-    else if (align === 'inside') { outerDelta = 0; innerDelta = -desired; }
-    else { outerDelta = desired / 2; innerDelta = -desired / 2; }
-    const halfBand = RENDER_LINE_WIDTH_PX / 2;
-    const reach = Math.max(Math.abs(outerDelta), Math.abs(innerDelta)) + halfBand;
-    if (obj.type === 'triangle') {
-      const clipPath = buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand);
-      const growth = 1 + (reach * 6) / Math.min(obj.width, obj.height);
-      return { clipPath, paintMode: 'fill', growWidth: obj.width * growth, growHeight: obj.height * growth };
-    }
-    const outerBand = makeEdgeBandClip(obj, outerDelta, halfBand);
-    const innerBand = makeEdgeBandClip(obj, innerDelta, halfBand);
-    const clipPath = new fabric.Group([outerBand, innerBand], { left: 0, top: 0, originX: 'center', originY: 'center' });
-    const { strokeWidth, strokeLineJoin } = bigStrokeSettingsFor(obj, reach);
-    return { clipPath, paintMode: 'stroke', strokeWidth, strokeLineJoin };
-  }
   // Applies obj._strokeWidthPx (the width the user actually asked for)
   // and obj.strokeAlign to the object's real, renderable strokeWidth/
   // clipPath. Called whenever either of those, or fill/stroke mode,
@@ -1980,8 +1948,7 @@ if (fabricCanvasEl && window.fabric) {
       // strokeWidth/clipPath branches below do for every other shape)
       // reads as a blunt/cut corner even at "center" placement. Build
       // the visible stroke as an exact offset-polygon ring instead (the
-      // same nested-clip trick buildDoubleStrokeClip uses for its
-      // hairline bands, just spanning the whole width here), so every
+      // nested-clip trick makeEdgeBandClip builds), so every
       // corner comes to a genuine point regardless of angle, width, or
       // placement.
       let outerDelta;
@@ -2855,7 +2822,6 @@ if (fabricCanvasEl && window.fabric) {
   // physical line regardless of which finish it's tracing.
   const RENDER_LINE_WIDTH_MM = 0.08;
   const RENDER_LINE_WIDTH_PX = RENDER_LINE_WIDTH_MM * PX_PER_MM;
-  const THIN_RING_MAX_MM = 0.35;
   function roundRectPath(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -3244,44 +3210,26 @@ if (fabricCanvasEl && window.fabric) {
       obj.set({ opacity: 0 });
       return;
     }
-    // A ring narrower than this is thinner than the two hairlines that
-    // would trace its edges, so they'd just smear together into a fuzzy
-    // double line (thin imported outlines, mostly) — trace one clean
-    // hairline down its center instead, below.
-    const ringMm = (obj._strokeWidthPx || 0.5 * PX_PER_MM) / PX_PER_MM;
-    // Arbitrary paths (imported artwork, boolean-op results) also trace as
-    // one hairline: the offset-edge clip that builds the two hairlines is
-    // only accurate for simple primitives, and on a complex path it
-    // smears into a blurry halo around every line.
-    const thinRing = ringMm < THIN_RING_MAX_MM || !['rect', 'circle', 'ellipse', 'triangle'].includes(obj.type);
-    if (shapeFillModeFor(obj) === 'stroke' && !thinRing) {
-      // The shape itself is ALSO drawn in Stroke fill-mode — it already
-      // has a real, physical stroke ring (see applyStrokeRender). Trace
-      // that ring's own two edges as a pair of offset hairlines instead
-      // of the single base-path trace below, which would otherwise
-      // ignore the user's chosen stroke width/placement entirely. Needs
-      // a wide-enough underlying paint first, since the clip can only
-      // reveal area the object already paints and fill alone never
-      // reaches outward past the shape's true edge — see
-      // buildDoubleStrokeClip for why that's a native `stroke` for most
-      // shapes but a grown fill specifically for a triangle.
-      const result = buildDoubleStrokeClip(obj);
-      if (result.paintMode === 'fill') {
-        obj.set({ fill: 'rgb(250,250,250)', stroke: null, opacity: 1, clipPath: result.clipPath, width: result.growWidth, height: result.growHeight });
-      } else {
-        obj.set({
-          fill: null, stroke: 'rgb(250,250,250)', strokeWidth: result.strokeWidth, strokeLineJoin: result.strokeLineJoin,
-          strokeUniform: true, opacity: 1, clipPath: result.clipPath,
-        });
-      }
-      return;
+    // Every Stroke-finish object — shapes, lines, imported paths, text,
+    // regardless of its own stroke width or Fill/Stroke mode — traces as
+    // the same single fine hairline (RENDER_LINE_WIDTH_PX): a laser cuts
+    // one fixed-width line, and a vector "stroke-width" is a screen-
+    // display concept, not a kerf width. (A thick Stroke-mode ring used
+    // to trace as two hairlines, one per edge; now it's one down the
+    // middle, like everything else.)
+    // strokeUniform keeps that width fixed however the object is scaled —
+    // but Fabric's text objects don't honor strokeUniform, so their
+    // stroke would still be multiplied by the full accumulated scale
+    // (an imported SVG's text sits inside a group scaled up several
+    // times, which drew it visibly bold). Dividing by that scale here
+    // lands text on the same hairline as everything else.
+    let lineWidth = RENDER_LINE_WIDTH_PX;
+    if (obj.type === 'text' || obj.type === 'i-text' || obj.type === 'textbox') {
+      const { scaleX, scaleY } = fabric.util.qrDecompose(obj.calcTransformMatrix());
+      const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2 || 1;
+      lineWidth = RENDER_LINE_WIDTH_PX / avgScale;
     }
-    // A real laser always cuts the same fine hairline regardless of
-    // whatever width a source SVG's stroke happened to be authored
-    // at (a vector "stroke-width" is a screen-display concept, not
-    // a kerf width) — so every Stroke-finish shape traces at the
-    // same representative line width here, not its own real one.
-    obj.set({ fill: null, stroke: 'rgb(250,250,250)', strokeWidth: RENDER_LINE_WIDTH_PX, strokeUniform: true, opacity: 1, clipPath: null });
+    obj.set({ fill: null, stroke: 'rgb(250,250,250)', strokeWidth: lineWidth, strokeUniform: true, opacity: 1, clipPath: null });
   }
   function renderStrokeOutlinesToDataURL(snapshotJson, resolutionScale, callback) {
     const off = document.createElement('canvas');
@@ -5588,6 +5536,12 @@ if (fabricCanvasEl && window.fabric) {
     helpOverlay.classList.remove('is-open');
     helpOverlay.setAttribute('aria-hidden', 'true');
     if (helpBtn) helpBtn.setAttribute('aria-expanded', 'false');
+    // Only the automatic first-visit showing hands off to Welcome — a
+    // later HELP-button click just closes normally.
+    if (welcomePendingAfterHelp) {
+      welcomePendingAfterHelp = false;
+      openWelcomeModal();
+    }
   }
   if (helpBtn) helpBtn.addEventListener('click', openHelpMode);
   if (helpOverlay) helpOverlay.addEventListener('click', closeHelpMode);
@@ -5689,15 +5643,28 @@ if (fabricCanvasEl && window.fabric) {
   const welcomeTemplateBtn = document.getElementById('welcome-template-btn');
   const welcomeBlankBtn = document.getElementById('welcome-blank-btn');
   let hasShownWelcome = false;
+  let welcomePendingAfterHelp = false;
   function closeBetaNotice() {
     if (!betaNoticeModal) return;
     betaNoticeModal.classList.remove('is-open');
     betaNoticeModal.setAttribute('aria-hidden', 'true');
-    if (!hasShownWelcome && welcomeModal) {
+    if (!hasShownWelcome) {
       hasShownWelcome = true;
-      welcomeModal.classList.add('is-open');
-      welcomeModal.setAttribute('aria-hidden', 'false');
+      // First-visit sequence: Beta -> the help overlay (so the HELP
+      // button's existence is obvious up front) -> Welcome. Welcome
+      // waits on the help overlay's own close (see closeHelpMode).
+      if (helpOverlay) {
+        welcomePendingAfterHelp = true;
+        openHelpMode();
+      } else {
+        openWelcomeModal();
+      }
     }
+  }
+  function openWelcomeModal() {
+    if (!welcomeModal) return;
+    welcomeModal.classList.add('is-open');
+    welcomeModal.setAttribute('aria-hidden', 'false');
   }
   function closeWelcomeModal() {
     if (!welcomeModal) return;

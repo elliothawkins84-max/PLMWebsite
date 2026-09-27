@@ -341,6 +341,7 @@
         <button type="button" class="editor-icon-btn" id="undo-btn" disabled aria-label="Undo" title="Undo (&#8984;Z)">&#8630;</button>
         <button type="button" class="editor-icon-btn" id="redo-btn" disabled aria-label="Redo" title="Redo (&#8984;&#8679;Z)">&#8631;</button>
         <input type="file" id="import-project-input" accept=".plm" hidden />
+        <button type="button" class="btn btn-ghost btn-sm" id="help-btn" aria-haspopup="true" aria-expanded="false">Help</button>
         <button type="button" class="btn btn-ghost btn-sm" id="import-btn">Import</button>
         <button type="button" class="btn btn-ghost btn-sm" id="save-btn">Save</button>
         <button type="button" class="btn btn-sm" id="next-btn">Next</button>
@@ -433,7 +434,6 @@
           </button>
         </div>
 
-        <button type="button" class="editor-help-btn" id="help-btn" aria-label="Help" aria-haspopup="true" aria-expanded="false" title="Help">?</button>
       </nav>
 
       <!-- Layers side panel — opened by the Layers toolbar button,
@@ -898,6 +898,7 @@
       <h3>File</h3>
       <ul>
         <li><strong>Undo / Redo</strong> — step backward or forward through your edits.</li>
+        <li><strong>Help</strong> — show this guide again any time.</li>
         <li><strong>Import</strong> — open a design file saved earlier.</li>
         <li><strong>Save</strong> — download your design as a file you can import again later.</li>
         <li><strong>Next</strong> — select quantity, fill out information, and request.</li>
@@ -988,6 +989,76 @@
        the card. Cancel drops the import entirely; Scale to Fit shrinks
        it down to the card; Keep True Size adds it at its real size,
        which will overflow onto the pasteboard around the card. -->
+  <!-- Shown every time Upload is clicked, before the file picker opens —
+       explains that uploads are SVG-only and that every shape comes in
+       white (see importSvgFile in card-editor.js), with a do/don't
+       illustration: a filled background turns into one big white block
+       that hides the artwork; a transparent artboard comes through as
+       intended. "Choose SVG File" is what actually opens the picker. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="upload-note-p" viewBox="0 0 297 297"><path fill-rule="evenodd" d="M239,292.5h-108.1v-26.7h103.8c8.2,0,16.1-3.2,21.9-9.1,5.8-5.8,9.1-13.7,9.1-21.9V58c0-7.1-2.8-13.9-7.8-18.9s-11.7-7.8-18.9-7.8H58c-7.1,0-13.9,2.8-18.9,7.8s-7.8,11.7-7.8,18.9v181.1c0,7.1,2.8,13.9,7.8,18.9s11.7,7.8,18.9,7.8h19.6V104.3c0-7.1,2.8-13.9,7.8-18.9s11.9-7.8,18.9-7.8h88.5c7.1,0,13.9,2.8,18.9,7.8s7.8,11.9,7.8,18.9v88.5c0,7.1-2.8,13.9-7.8,18.9s-11.9,7.8-18.9,7.8h-61.8v-26.7h48.4c3.6,0,7-1.4,9.5-4s3.9-5.8,3.9-9.4v-61.7c0-3.6-1.4-7-4-9.5s-5.8-3.9-9.4-3.9h-61.7c-3.6,0-7,1.4-9.5,4s-3.9,5.8-3.9,9.4v174.8h-46.3c-14.2,0-27.8-5.5-37.8-15.6s-15.6-23.7-15.6-37.9V58c0-14.2,5.5-27.8,15.6-37.8S43.8,4.5,58,4.5h181.1c14.2,0,27.8,5.5,37.8,15.6s15.6,23.7,15.6,37.9v181.1c0,14.2-5.5,27.8-15.6,37.8s-23.7,15.6-37.9,15.6Z"/></symbol>
+      <pattern id="upload-note-checker" width="12" height="12" patternUnits="userSpaceOnUse">
+        <rect width="12" height="12" fill="#e9e9e9"/>
+        <rect width="6" height="6" fill="#c9c9c9"/>
+        <rect x="6" y="6" width="6" height="6" fill="#c9c9c9"/>
+      </pattern>
+    </defs>
+  </svg>
+  <div class="editor-modal-overlay" id="upload-note-modal" aria-hidden="true">
+    <div class="editor-modal editor-upload-note-modal" role="dialog" aria-modal="true" aria-labelledby="upload-note-title">
+      <h2 class="editor-modal-title" id="upload-note-title">Quick note for uploading your files</h2>
+      <p class="editor-modal-message">We only accept <strong>SVG</strong> files. When your file is uploaded, <strong>everything in it is converted to white</strong> — including any background shape, which will cover the rest of your artwork. Export your design on a <strong>transparent artboard</strong> (no background) before uploading.</p>
+      <p class="editor-modal-message">If a background does come through, it shows up as its own layer in the <strong>Layers</strong> panel, where you can select and delete it — but removing it from your file before uploading is best practice.</p>
+
+      <div class="upload-note-row is-wrong">
+        <figure class="upload-note-fig">
+          <svg class="upload-note-artboard" viewBox="0 0 100 100" aria-hidden="true">
+            <rect width="100" height="100" fill="#2479de"/>
+            <use href="#upload-note-p" x="24" y="24" width="52" height="52" fill="#ffffff"/>
+          </svg>
+          <figcaption>Your file: background included</figcaption>
+        </figure>
+        <svg class="upload-note-arrow" viewBox="0 0 32 16" aria-hidden="true"><path d="M2 8h26M21 2l7 6-7 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <figure class="upload-note-fig">
+          <svg class="upload-note-card" viewBox="0 0 160 100" aria-hidden="true"><rect x="1" y="1" width="158" height="98" rx="9" fill="#101010" stroke="#3a3a3a"/>
+            <rect x="50" y="20" width="60" height="60" fill="#fafafa"/>
+            <use href="#upload-note-p" x="55" y="25" width="50" height="50" fill="#fafafa"/>
+          </svg>
+          <figcaption>On the card: one white block</figcaption>
+        </figure>
+        <span class="upload-note-mark is-wrong" aria-label="Don't do this">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11"/><path d="M8 8l8 8M16 8l-8 8"/></svg>
+        </span>
+      </div>
+
+      <div class="upload-note-row is-right">
+        <figure class="upload-note-fig">
+          <svg class="upload-note-artboard" viewBox="0 0 100 100" aria-hidden="true">
+            <rect width="100" height="100" fill="url(#upload-note-checker)"/>
+            <use href="#upload-note-p" x="24" y="24" width="52" height="52" fill="#2479de"/>
+          </svg>
+          <figcaption>Your file: transparent background</figcaption>
+        </figure>
+        <svg class="upload-note-arrow" viewBox="0 0 32 16" aria-hidden="true"><path d="M2 8h26M21 2l7 6-7 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <figure class="upload-note-fig">
+          <svg class="upload-note-card" viewBox="0 0 160 100" aria-hidden="true"><rect x="1" y="1" width="158" height="98" rx="9" fill="#101010" stroke="#3a3a3a"/>
+            <use href="#upload-note-p" x="55" y="25" width="50" height="50" fill="#fafafa"/>
+          </svg>
+          <figcaption>On the card: just your artwork</figcaption>
+        </figure>
+        <span class="upload-note-mark is-right" aria-label="Do this">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11"/><path d="M7 12.5l3.2 3.2L17 9"/></svg>
+        </span>
+      </div>
+
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="upload-note-cancel">Cancel</button>
+        <button type="button" class="btn btn-sm" id="upload-note-choose">Choose SVG File</button>
+      </div>
+    </div>
+  </div>
+
   <div class="editor-modal-overlay" id="svg-oversize-modal" aria-hidden="true">
     <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="svg-oversize-modal-title">
       <h2 class="editor-modal-title" id="svg-oversize-modal-title">Image too large</h2>
