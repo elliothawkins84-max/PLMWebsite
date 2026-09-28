@@ -1926,6 +1926,49 @@ if (fabricCanvasEl && window.fabric) {
     }
     obj.set({ fill: null, stroke: paint, opacity: 1 });
   }
+  // A Stroke-mode triangle's two hairlines (outer edge, inner edge of its
+  // ring) as ONE even-odd Path of four offset contours, built from true-
+  // center-relative points — a fabric.Group of two band paths would
+  // re-center its children on the group's own bounding box, which for a
+  // non-equilateral triangle isn't the true shape center, and the two
+  // hairlines would land misaligned.
+  function buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand) {
+    const contours = [outerDelta + halfBand, outerDelta - halfBand, innerDelta + halfBand, innerDelta - halfBand]
+      .map((d) => triangleOffsetLocalPoints(obj, d));
+    const d = contours.map((pts) => `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`).join(' ');
+    const path = new fabric.Path(d, { fillRule: 'evenodd', left: 0, top: 0, originX: 'left', originY: 'top' });
+    // Path centers on its own bounding box (pathOffset) — pin it back to
+    // the true shape center instead.
+    path.set({ left: path.pathOffset.x - path.width / 2, top: path.pathOffset.y - path.height / 2 });
+    return path;
+  }
+  // Clip that reveals just two fine hairlines — one along each edge of a
+  // Stroke-mode shape's ring, at its real width and inside/center/outside
+  // placement — for the Stroke finish's render. The clip can only reveal
+  // area the object already paints, so it also returns a wide-enough
+  // underlying paint: a big native stroke for most shapes, a grown fill
+  // for a triangle (see buildTriangleDoubleStrokeClip).
+  function buildDoubleStrokeClip(obj) {
+    const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
+    const align = obj.strokeAlign || 'center';
+    let outerDelta;
+    let innerDelta;
+    if (align === 'outside') { outerDelta = desired; innerDelta = 0; }
+    else if (align === 'inside') { outerDelta = 0; innerDelta = -desired; }
+    else { outerDelta = desired / 2; innerDelta = -desired / 2; }
+    const halfBand = RENDER_LINE_WIDTH_PX / 2;
+    const reach = Math.max(Math.abs(outerDelta), Math.abs(innerDelta)) + halfBand;
+    if (obj.type === 'triangle') {
+      const clipPath = buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand);
+      const growth = 1 + (reach * 6) / Math.min(obj.width, obj.height);
+      return { clipPath, paintMode: 'fill', growWidth: obj.width * growth, growHeight: obj.height * growth };
+    }
+    const outerBand = makeEdgeBandClip(obj, outerDelta, halfBand);
+    const innerBand = makeEdgeBandClip(obj, innerDelta, halfBand);
+    const clipPath = new fabric.Group([outerBand, innerBand], { left: 0, top: 0, originX: 'center', originY: 'center' });
+    const { strokeWidth, strokeLineJoin } = bigStrokeSettingsFor(obj, reach);
+    return { clipPath, paintMode: 'stroke', strokeWidth, strokeLineJoin };
+  }
   // Applies obj._strokeWidthPx (the width the user actually asked for)
   // and obj.strokeAlign to the object's real, renderable strokeWidth/
   // clipPath. Called whenever either of those, or fill/stroke mode,
@@ -2853,6 +2896,10 @@ if (fabricCanvasEl && window.fabric) {
   // physical line regardless of which finish it's tracing.
   const RENDER_LINE_WIDTH_MM = 0.08;
   const RENDER_LINE_WIDTH_PX = RENDER_LINE_WIDTH_MM * PX_PER_MM;
+  // A Stroke-mode ring narrower than this can't show two separate edge
+  // hairlines — they'd smear into one fuzzy double line — so it traces
+  // as a single centered hairline instead (see styleForRender).
+  const THIN_RING_MAX_MM = 0.35;
   function roundRectPath(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -3241,13 +3288,36 @@ if (fabricCanvasEl && window.fabric) {
       obj.set({ opacity: 0 });
       return;
     }
-    // Every Stroke-finish object — shapes, lines, imported paths, text,
-    // regardless of its own stroke width or Fill/Stroke mode — traces as
-    // the same single fine hairline (RENDER_LINE_WIDTH_PX): a laser cuts
-    // one fixed-width line, and a vector "stroke-width" is a screen-
-    // display concept, not a kerf width. (A thick Stroke-mode ring used
-    // to trace as two hairlines, one per edge; now it's one down the
-    // middle, like everything else.)
+    // A shape that's itself in Stroke fill-mode is a ring with real width
+    // (see applyStrokeRender), so the Stroke finish outlines that ring —
+    // one hairline along its outer edge and one along its inner edge, at
+    // the user's chosen width and inside/center/outside placement — where
+    // a Fill-mode shape just gets its single outer edge traced (below).
+    // Only for the simple primitives: the offset-edge clip is only
+    // accurate for those, and on an arbitrary path (imported artwork,
+    // Union/Subtract results) it smears into a halo. A ring thinner than
+    // THIN_RING_MAX_MM also falls through to the single hairline.
+    const ringMm = (obj._strokeWidthPx || 0.5 * PX_PER_MM) / PX_PER_MM;
+    const isPrimitive = ['rect', 'circle', 'ellipse', 'triangle'].includes(obj.type);
+    if (shapeFillModeFor(obj) === 'stroke' && isPrimitive && ringMm >= THIN_RING_MAX_MM) {
+      const result = buildDoubleStrokeClip(obj);
+      if (result.paintMode === 'fill') {
+        // Growing the box would shift anything not anchored at its center.
+        const center = obj.getCenterPoint();
+        obj.set({ fill: 'rgb(250,250,250)', stroke: null, opacity: 1, clipPath: result.clipPath, width: result.growWidth, height: result.growHeight });
+        obj.setPositionByOrigin(center, 'center', 'center');
+      } else {
+        obj.set({
+          fill: null, stroke: 'rgb(250,250,250)', strokeWidth: result.strokeWidth, strokeLineJoin: result.strokeLineJoin,
+          strokeUniform: true, opacity: 1, clipPath: result.clipPath,
+        });
+      }
+      return;
+    }
+    // Everything else — Fill-mode shapes, lines, imported paths, text —
+    // traces as one single fine hairline (RENDER_LINE_WIDTH_PX): a laser
+    // cuts one fixed-width line, and a vector "stroke-width" is a screen-
+    // display concept, not a kerf width.
     // strokeUniform keeps that width fixed however the object is scaled —
     // but Fabric's text objects don't honor strokeUniform, so their
     // stroke would still be multiplied by the full accumulated scale
