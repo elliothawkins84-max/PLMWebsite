@@ -1871,15 +1871,19 @@ if (fabricCanvasEl && window.fabric) {
       return new fabric.Ellipse({ ...common, rx: Math.max(0.01, obj.rx + delta / sx), ry: Math.max(0.01, obj.ry + delta / sy) });
     }
     if (obj.type === 'rect') {
-      // A rounded corner's offset is a concentric arc: its radius grows by
-      // exactly delta going outward and shrinks by delta going inward
-      // (bottoming out at a sharp corner) — the same curve the shape's
-      // real native stroke edge follows. Keeping the original radius here
-      // made an outward boundary's corner too tight, poking out past the
-      // painted ring so a wide Stroke-mode ring's outer hairline broke
-      // off at every corner. A sharp corner stays sharp (the ring is
-      // drawn with miter joins).
-      const offsetRadius = (r, d) => (r > 0 ? Math.max(0, r + d) : 0);
+      // Going outward, a rounded corner's offset is a concentric arc —
+      // radius grows by exactly delta. Going inward, the concentric
+      // answer (r - d) hits zero as soon as the ring is thicker than the
+      // corner radius, leaving a sharp inner corner inside a rounded
+      // outer one, which looks wrong. r² / (r + d) instead: nearly
+      // identical to r - d for a thin ring (so the ring stays an even
+      // thickness), but it never reaches zero — a thick ring keeps a
+      // proportionally rounded inner corner. A sharp corner stays sharp
+      // (the ring is drawn with miter joins).
+      const offsetRadius = (r, d) => {
+        if (r <= 0) return 0;
+        return d >= 0 ? r + d : (r * r) / (r - d);
+      };
       return new fabric.Rect({
         ...common,
         width: Math.max(0.01, obj.width + (delta / sx) * 2),
@@ -2015,7 +2019,10 @@ if (fabricCanvasEl && window.fabric) {
     const outerBand = makeEdgeBandClip(obj, outerDelta, halfBand);
     const innerBand = makeEdgeBandClip(obj, innerDelta, halfBand);
     const clipPath = new fabric.Group([outerBand, innerBand], { left: 0, top: 0, originX: 'center', originY: 'center' });
-    const { strokeWidth, strokeLineJoin } = bigStrokeSettingsFor(obj, reach);
+    // A rounded rect's inner hairline follows a rounder-than-concentric
+    // corner (see makeStrokeOffsetShapeFor) that sits a bit further in.
+    const radiusReal = obj.type === 'rect' ? Math.max(obj.rx || 0, obj.ry || 0) * Math.max(obj.scaleX || 1, obj.scaleY || 1) : 0;
+    const { strokeWidth, strokeLineJoin } = bigStrokeSettingsFor(obj, reach + radiusReal);
     return { clipPath, paintMode: 'stroke', strokeWidth, strokeLineJoin };
   }
   // Applies obj._strokeWidthPx (the width the user actually asked for)
@@ -2067,6 +2074,23 @@ if (fabricCanvasEl && window.fabric) {
       const { strokeWidth: bigWidth, strokeLineJoin } = bigStrokeSettingsFor(obj, Math.max(Math.abs(outerDelta), Math.abs(innerDelta)));
       const clip = makeEdgeBandClip(obj, (innerDelta + outerDelta) / 2, (outerDelta - innerDelta) / 2);
       obj.set({ strokeWidth: bigWidth, strokeLineJoin, strokeUniform: true, clipPath: clip });
+    } else if (obj.type === 'rect' && (obj.rx || obj.ry)) {
+      // A native stroke's inner edge is always the concentric r - d
+      // (sharp once the ring is thicker than the radius). Draw the ring as
+      // an explicit band between a true outer edge and an inner edge
+      // rounded per makeStrokeOffsetShapeFor's formula, over a native
+      // stroke wide enough to fill it — the rounded inner corner sits up
+      // to ~r·0.3 further from the path than the plain offset, hence the
+      // extra radius in the reach.
+      let outerDelta;
+      let innerDelta;
+      if (align === 'outside') { outerDelta = desired; innerDelta = 0; }
+      else if (align === 'inside') { outerDelta = 0; innerDelta = -desired; }
+      else { outerDelta = desired / 2; innerDelta = -desired / 2; }
+      const radiusReal = Math.max(obj.rx || 0, obj.ry || 0) * Math.max(obj.scaleX || 1, obj.scaleY || 1);
+      const reach = Math.max(Math.abs(outerDelta), Math.abs(innerDelta)) + radiusReal;
+      const clip = makeEdgeBandClip(obj, (innerDelta + outerDelta) / 2, (outerDelta - innerDelta) / 2);
+      obj.set({ strokeWidth: reach * 2 + 2, strokeLineJoin: 'miter', strokeUniform: true, clipPath: clip });
     } else if (align === 'center') {
       obj.set({ strokeWidth: desired, strokeUniform: true, clipPath: null });
     } else {
