@@ -1832,11 +1832,21 @@ if (fabricCanvasEl && window.fabric) {
       return new fabric.Ellipse({ ...common, rx: Math.max(0.01, obj.rx + delta / sx), ry: Math.max(0.01, obj.ry + delta / sy) });
     }
     if (obj.type === 'rect') {
+      // A rounded corner's offset is a concentric arc: its radius grows by
+      // exactly delta going outward and shrinks by delta going inward
+      // (bottoming out at a sharp corner) — the same curve the shape's
+      // real native stroke edge follows. Keeping the original radius here
+      // made an outward boundary's corner too tight, poking out past the
+      // painted ring so a wide Stroke-mode ring's outer hairline broke
+      // off at every corner. A sharp corner stays sharp (the ring is
+      // drawn with miter joins).
+      const offsetRadius = (r, d) => (r > 0 ? Math.max(0, r + d) : 0);
       return new fabric.Rect({
         ...common,
         width: Math.max(0.01, obj.width + (delta / sx) * 2),
         height: Math.max(0.01, obj.height + (delta / sy) * 2),
-        rx: obj.rx, ry: obj.ry,
+        rx: offsetRadius(obj.rx || 0, delta / sx),
+        ry: offsetRadius(obj.ry || 0, delta / sy),
       });
     }
     if (obj.type === 'triangle') {
