@@ -47,6 +47,14 @@ const CARD_OFFSET_Y = (PASTEBOARD_H - CARD_H_PX) / 2;
 // the exact same boundary the user actually sees drawn on the card.
 const SAFE_ZONE_INSET_PX = 9;
 
+// ---- Overlapping-layers check state ----
+// Declared up here, not next to the check itself, because pushHistory()
+// (which schedules the check) already runs during setup — well before
+// that part of the file executes.
+let overlapCheckTimer = null;
+const overlapsBySide = {};
+let selectOverlapAfterCheck = false;
+
 // ---- Live price estimate constants ----
 // Calibrated against a real timed run: 6 double-sided cards (a logo side
 // plus a fairly full info side, White finish plus a Stroke portrait) took
@@ -2329,6 +2337,7 @@ if (fabricCanvasEl && window.fabric) {
     updateUndoRedoButtons();
     renderCardPreview(currentSide);
     updatePriceEstimate();
+    scheduleOverlapCheck();
   }
   function restoreHistorySnapshot(snapshot) {
     isRestoringHistory = true;
@@ -2349,6 +2358,7 @@ if (fabricCanvasEl && window.fabric) {
       updateUndoRedoButtons();
       renderCardPreview(currentSide);
       updatePriceEstimate();
+      scheduleOverlapCheck();
     });
   }
   function undo() {
@@ -2454,6 +2464,9 @@ if (fabricCanvasEl && window.fabric) {
   function switchToSide(sideName) {
     if (sideName === currentSide) return;
     sideHistories[currentSide] = { undo: undoStack, redo: redoStack };
+    // Re-measured from its saved snapshot, in case an edit landed inside
+    // the overlap check's debounce window right before switching away.
+    delete overlapsBySide[currentSide];
     loadSideAndSwitch(sideName);
   }
 
@@ -2514,6 +2527,8 @@ if (fabricCanvasEl && window.fabric) {
     }
     const backPreview = renderingsBody && renderingsBody.querySelector('.editor-renderings-canvas[data-side="back"]');
     if (backPreview) backPreview.remove();
+    delete overlapsBySide.back;
+    scheduleOverlapCheck();
   }
   if (addBackBtn) {
     addBackBtn.addEventListener('click', () => {
@@ -2737,6 +2752,7 @@ if (fabricCanvasEl && window.fabric) {
     clearSnapGuides();
     hideObjectToolbar();
     Object.keys(sideHistories).forEach((key) => delete sideHistories[key]);
+    Object.keys(overlapsBySide).forEach((key) => delete overlapsBySide[key]);
     sideHistories.front = { undo: [JSON.stringify(payload.front)], redo: [] };
     if (payload.back) {
       ensureBackSideUI();
@@ -3966,6 +3982,263 @@ if (fabricCanvasEl && window.fabric) {
     }
     replaceWithBooleanResult(ordered, result.regions, bottom);
   }
+
+  // ---- Overlapping layers check ----
+  // The laser runs every layer as its own pass, so any spot two engraved
+  // layers share gets engraved twice. This flags every pair of top-level
+  // layers whose engraved areas overlap on the card and surfaces it as
+  // the top bar's red warning button. Uses the same geometry as Union/
+  // Subtract (localPolygonsFor) so it sees exactly what those tools would
+  // operate on. Rules:
+  //  - "Don't Engrave" layers, and anything off the card, never count.
+  //  - A Stroke-finish (or stroke-only, no fill) layer engraves only its
+  //    outline, so it's tested as a line against the other layer's area —
+  //    a stroke ring drawn around text doesn't count unless the ring
+  //    itself crosses the text.
+  //  - Two outlines merely crossing each other are ignored (they share
+  //    only points, not area — e.g. the Line Cube template).
+  //  - Overlaps inside a single group (e.g. an imported SVG's own
+  //    sub-paths) aren't checked — only layer against layer.
+  const OVERLAP_MIN_AREA_PX = 4; // ~0.05mm²; shapes that merely touch don't count
+  const OVERLAP_OUTLINE_STEP_PX = 1.5;
+  const OVERLAP_MIN_OUTLINE_HITS = 3;
+  const OVERLAP_CARD_REGION = {
+    regions: [[
+      [CARD_OFFSET_X, CARD_OFFSET_Y], [CARD_OFFSET_X + CARD_W_PX, CARD_OFFSET_Y],
+      [CARD_OFFSET_X + CARD_W_PX, CARD_OFFSET_Y + CARD_H_PX], [CARD_OFFSET_X, CARD_OFFSET_Y + CARD_H_PX],
+    ]],
+    inverted: false,
+  };
+  // Tracing a text object's outline rasterizes it, so cache per object
+  // until its text/font actually changes (moving it doesn't — the rings
+  // are local, the transform is applied separately).
+  const overlapTextRingCache = new WeakMap();
+
+  function scheduleOverlapCheck() {
+    clearTimeout(overlapCheckTimer);
+    overlapCheckTimer = setTimeout(runOverlapCheck, 350);
+  }
+  function overlapEngraveKind(o) {
+    const finish = getFinish(o);
+    if (finish === 'none') return null;
+    if (finish === 'stroke') return 'outline';
+    if (o.type === 'line') return 'area';
+    const paints = (c) => !!c && c !== 'none' && c !== 'transparent';
+    if (paints(o.fill)) return 'area';
+    return paints(o.stroke) ? 'outline' : null;
+  }
+  function overlapLocalRings(o) {
+    if (o.type !== 'i-text') return localPolygonsFor(o, null);
+    const key = [o.text, o.fontFamily, o.fontSize, o.fontWeight, o.fontStyle, o.textAlign, o.lineHeight, o.width, o.height].join('|');
+    const hit = overlapTextRingCache.get(o);
+    if (hit && hit.key === key) return hit.rings;
+    const rings = localPolygonsFor(o, null);
+    overlapTextRingCache.set(o, { key, rings });
+    return rings;
+  }
+  // Flattens a layer (recursing into groups) into leaf "units", each an
+  // absolute-coordinate ring set tagged as area or outline.
+  function overlapUnitsFor(obj, out = []) {
+    if (obj.visible === false) return out;
+    if (obj.type === 'group') {
+      obj.getObjects().forEach((child) => overlapUnitsFor(child, out));
+      return out;
+    }
+    const kind = overlapEngraveKind(obj);
+    if (!kind) return out;
+    let local;
+    try {
+      local = overlapLocalRings(obj);
+    } catch (e) {
+      return out;
+    }
+    const matrix = obj.calcTransformMatrix();
+    const rings = local
+      .map(sanitizeRing)
+      .filter((ring) => ring.length >= 3)
+      .map((ring) => ring.map(([x, y]) => {
+        const p = fabric.util.transformPoint({ x, y }, matrix);
+        return [p.x, p.y];
+      }));
+    if (!rings.length) return out;
+    const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    rings.forEach((ring) => ring.forEach(([x, y]) => {
+      box.minX = Math.min(box.minX, x); box.maxX = Math.max(box.maxX, x);
+      box.minY = Math.min(box.minY, y); box.maxY = Math.max(box.maxY, y);
+    }));
+    const offCard = box.maxX < CARD_OFFSET_X || box.minX > CARD_OFFSET_X + CARD_W_PX
+      || box.maxY < CARD_OFFSET_Y || box.minY > CARD_OFFSET_Y + CARD_H_PX;
+    if (!offCard) out.push({ kind, rings, box });
+    return out;
+  }
+  function overlapRingsArea(regions) {
+    return regions.reduce((sum, ring) => {
+      let a = 0;
+      for (let i = 0; i < ring.length; i++) {
+        const [x1, y1] = ring[i];
+        const [x2, y2] = ring[(i + 1) % ring.length];
+        a += x1 * y2 - x2 * y1;
+      }
+      return sum + Math.abs(a) / 2;
+    }, 0);
+  }
+  // Even-odd, matching how the Union/Subtract results (and imported
+  // compound paths) actually fill.
+  function overlapPointInRings(x, y, rings) {
+    let inside = false;
+    rings.forEach((ring) => {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i];
+        const [xj, yj] = ring[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+    });
+    return inside;
+  }
+  function overlapUnitsCollide(a, b) {
+    if (a.box.maxX < b.box.minX || b.box.maxX < a.box.minX || a.box.maxY < b.box.minY || b.box.maxY < a.box.minY) return false;
+    if (a.kind === 'outline' && b.kind === 'outline') return false;
+    if (a.kind === 'area' && b.kind === 'area') {
+      try {
+        const shared = PolyBool.intersect({ regions: a.rings, inverted: false }, { regions: b.rings, inverted: false });
+        if (!shared.regions.length) return false;
+        const onCard = PolyBool.intersect(shared, OVERLAP_CARD_REGION);
+        return overlapRingsArea(onCard.regions) > OVERLAP_MIN_AREA_PX;
+      } catch (e) {
+        return false; // too complex for PolyBool to resolve — don't flag what we can't measure
+      }
+    }
+    const [line, area] = a.kind === 'outline' ? [a, b] : [b, a];
+    let hits = 0;
+    for (const ring of line.rings) {
+      for (let i = 0; i < ring.length; i++) {
+        const [x1, y1] = ring[i];
+        const [x2, y2] = ring[(i + 1) % ring.length];
+        const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / OVERLAP_OUTLINE_STEP_PX));
+        for (let s = 0; s < steps; s++) {
+          const x = x1 + ((x2 - x1) * s) / steps;
+          const y = y1 + ((y2 - y1) * s) / steps;
+          if (x < area.box.minX || x > area.box.maxX || y < area.box.minY || y > area.box.maxY) continue;
+          if (x < CARD_OFFSET_X || x > CARD_OFFSET_X + CARD_W_PX || y < CARD_OFFSET_Y || y > CARD_OFFSET_Y + CARD_H_PX) continue;
+          if (overlapPointInRings(x, y, area.rings) && ++hits >= OVERLAP_MIN_OUTLINE_HITS) return true;
+        }
+      }
+    }
+    return false;
+  }
+  function findOverlapPairs(objects) {
+    const layers = objects
+      .filter((o) => !o.excludeFromExport)
+      .map((obj) => ({ obj, units: overlapUnitsFor(obj) }))
+      .filter((l) => l.units.length);
+    const pairs = [];
+    for (let i = 0; i < layers.length; i++) {
+      for (let j = i + 1; j < layers.length; j++) {
+        const hit = layers[i].units.some((ua) => layers[j].units.some((ub) => overlapUnitsCollide(ua, ub)));
+        if (hit) pairs.push([layers[i].obj, layers[j].obj]);
+      }
+    }
+    return pairs;
+  }
+  function runOverlapCheck() {
+    overlapCheckTimer = null;
+    if (typeof PolyBool === 'undefined') return;
+    overlapsBySide[currentSide] = findOverlapPairs(fabricCanvas.getObjects());
+    // The other side's content can't change while it isn't showing, so
+    // it's measured once (from its latest snapshot) and cached until the
+    // user switches back to it or loads a different project.
+    const other = currentSide === 'front' ? 'back' : 'front';
+    const otherHistory = sideHistories[other];
+    if (!otherHistory) {
+      delete overlapsBySide[other];
+    } else if (!overlapsBySide[other]) {
+      const snapshot = JSON.parse(otherHistory.undo[otherHistory.undo.length - 1] || '{}');
+      overlapsBySide[other] = [];
+      fabric.util.enlivenObjects(snapshot.objects || [], (objs) => {
+        if (other === currentSide) return; // switched sides meanwhile — the live check covers it
+        overlapsBySide[other] = findOverlapPairs(objs);
+        updateOverlapUI();
+      });
+    }
+    updateOverlapUI();
+    if (selectOverlapAfterCheck) {
+      selectOverlapAfterCheck = false;
+      selectFirstOverlap();
+    }
+  }
+
+  const overlapBtn = document.getElementById('overlap-btn');
+  const overlapBtnCount = document.getElementById('overlap-btn-count');
+  const overlapModal = document.getElementById('overlap-modal');
+  const overlapSummary = document.getElementById('overlap-summary');
+  const overlapShowBtn = document.getElementById('overlap-show');
+  const overlapCloseBtn = document.getElementById('overlap-close');
+  function overlapCounts() {
+    return { front: (overlapsBySide.front || []).length, back: (overlapsBySide.back || []).length };
+  }
+  function updateOverlapUI() {
+    if (!overlapBtn) return;
+    const counts = overlapCounts();
+    const total = counts.front + counts.back;
+    overlapBtn.hidden = total === 0;
+    if (overlapBtnCount) overlapBtnCount.textContent = String(total);
+    overlapBtn.setAttribute('aria-label', `${total} overlapping layer ${total === 1 ? 'pair' : 'pairs'} — click for details`);
+    if (!total && overlapModal && overlapModal.classList.contains('is-open')) closeOverlapModal();
+    if (overlapSummary) {
+      const where = ['front', 'back']
+        .filter((side) => counts[side])
+        .map((side) => `${counts[side]} on the ${side === 'front' ? 'Front' : 'Back'}`);
+      overlapSummary.textContent = total === 1
+        ? `Two layers on your card overlap (${where[0].replace(/^1 /, '')}).`
+        : `${total} pairs of layers on your card overlap (${where.join(', ')}).`;
+    }
+  }
+  function openOverlapModal() {
+    if (!overlapModal) return;
+    overlapModal.classList.add('is-open');
+    overlapModal.setAttribute('aria-hidden', 'false');
+    if (overlapShowBtn) overlapShowBtn.focus();
+  }
+  function closeOverlapModal() {
+    if (!overlapModal) return;
+    overlapModal.classList.remove('is-open');
+    overlapModal.setAttribute('aria-hidden', 'true');
+  }
+  // Selects the first overlapping pair on the side being viewed (switching
+  // sides first if every overlap is on the other one), so a right-click
+  // lands straight on Union/Subtract.
+  function selectFirstOverlap() {
+    const pairs = overlapsBySide[currentSide] || [];
+    if (!pairs.length) {
+      const other = currentSide === 'front' ? 'back' : 'front';
+      if ((overlapsBySide[other] || []).length) {
+        selectOverlapAfterCheck = true;
+        switchToSide(other);
+      }
+      return;
+    }
+    const [a, b] = pairs[0];
+    if (!fabricCanvas.getObjects().includes(a) || !fabricCanvas.getObjects().includes(b)) return;
+    fabricCanvas.discardActiveObject();
+    fabricCanvas.setActiveObject(new fabric.ActiveSelection([a, b], { canvas: fabricCanvas }));
+    fabricCanvas.requestRenderAll();
+  }
+  if (overlapBtn) overlapBtn.addEventListener('click', openOverlapModal);
+  if (overlapCloseBtn) overlapCloseBtn.addEventListener('click', closeOverlapModal);
+  if (overlapShowBtn) {
+    overlapShowBtn.addEventListener('click', () => {
+      closeOverlapModal();
+      selectFirstOverlap();
+    });
+  }
+  if (overlapModal) {
+    overlapModal.addEventListener('mousedown', (e) => {
+      if (e.target === overlapModal) closeOverlapModal();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlapModal && overlapModal.classList.contains('is-open')) closeOverlapModal();
+  });
 
   // ---- Live price estimate (surface-area based) ----
   // Approximates shop cost from whatever's actually on the card, reusing

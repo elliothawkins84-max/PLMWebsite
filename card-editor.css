@@ -2037,6 +2037,58 @@ select option {
 .upload-note-mark.is-wrong svg { stroke: #ef4444; }
 .upload-note-mark.is-right svg { stroke: #22c55e; }
 
+/* ---- Overlapping layers (top-bar warning + explainer pop-up) ---- */
+.editor-overlap-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  color: #ef4444;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  animation: overlap-btn-in 0.3s ease-out;
+}
+.editor-overlap-btn[hidden] { display: none; }
+.editor-overlap-btn:hover { background: rgba(239, 68, 68, 0.2); }
+.editor-overlap-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@keyframes overlap-btn-in {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+.editor-overlap-modal { width: 580px; max-height: 96vh; overflow-y: auto; }
+.editor-overlap-modal .upload-note-row.is-right .upload-note-mark { margin-left: auto; }
+.editor-overlap-heading {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg);
+  margin: 8px 0 8px;
+}
+.editor-overlap-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--fg);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.editor-overlap-tool svg { width: 13px; height: 13px; }
+.editor-overlap-fine { font-size: 0.66rem; color: var(--muted); line-height: 1.5; margin: 0 0 18px; }
+
 /* ---- Next / order review modal ---- */
 /* Wide two-column layout — renderings on the left (front, then back
    stacked on top of one another, matching the Renderings panel's own

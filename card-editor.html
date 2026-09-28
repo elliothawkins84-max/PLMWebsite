@@ -338,6 +338,10 @@
       <span class="editor-title">Business Card Editor</span>
       <button type="button" class="editor-beta-badge" id="beta-badge-btn">Beta</button>
       <div class="editor-topbar-actions">
+        <button type="button" class="editor-overlap-btn" id="overlap-btn" hidden aria-haspopup="dialog" title="Overlapping layers — click for details">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 22 20.5H2L12 3.2Z"/><path d="M12 9.5v5M12 17.4v.1"/></svg>
+          <span class="editor-overlap-btn-count" id="overlap-btn-count">1</span>
+        </button>
         <button type="button" class="editor-icon-btn" id="undo-btn" disabled aria-label="Undo" title="Undo (&#8984;Z)">&#8630;</button>
         <button type="button" class="editor-icon-btn" id="redo-btn" disabled aria-label="Redo" title="Redo (&#8984;&#8679;Z)">&#8631;</button>
         <input type="file" id="import-project-input" accept=".plm" hidden />
@@ -1055,6 +1059,77 @@
       <div class="editor-modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" id="upload-note-cancel">Cancel</button>
         <button type="button" class="btn btn-sm" id="upload-note-choose">Choose SVG File</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Opened from the top bar's red warning button (#overlap-btn), which
+       only appears while two engraved layers overlap — see the overlap
+       check in card-editor.js. Same row/figure layout as the upload note
+       above. -->
+  <div class="editor-modal-overlay" id="overlap-modal" aria-hidden="true">
+    <div class="editor-modal editor-upload-note-modal editor-overlap-modal" role="dialog" aria-modal="true" aria-labelledby="overlap-title">
+      <h2 class="editor-modal-title" id="overlap-title">Overlapping layers</h2>
+      <p class="editor-modal-message" id="overlap-summary">Some layers on your card overlap.</p>
+      <p class="editor-modal-message">The laser engraves <strong>each layer separately</strong>, so anywhere two layers overlap gets <strong>engraved twice</strong> — that spot comes out deeper and darker than the rest of your design.</p>
+
+      <div class="upload-note-row is-wrong">
+        <figure class="upload-note-fig">
+          <svg class="upload-note-card" viewBox="0 0 160 100" aria-hidden="true"><rect x="1" y="1" width="158" height="98" rx="9" fill="#101010" stroke="#3a3a3a"/>
+            <rect x="40" y="24" width="46" height="46" fill="#fafafa" fill-opacity="0.85" stroke="#2479de" stroke-width="1.5" stroke-dasharray="3 2"/>
+            <circle cx="96" cy="56" r="25" fill="#fafafa" fill-opacity="0.85" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3 2"/>
+          </svg>
+          <figcaption>Two layers on top of each other</figcaption>
+        </figure>
+        <svg class="upload-note-arrow" viewBox="0 0 32 16" aria-hidden="true"><path d="M2 8h26M21 2l7 6-7 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <figure class="upload-note-fig">
+          <svg class="upload-note-card" viewBox="0 0 160 100" aria-hidden="true">
+            <defs><clipPath id="overlap-fig-square"><rect x="40" y="24" width="46" height="46"/></clipPath></defs>
+            <rect x="1" y="1" width="158" height="98" rx="9" fill="#101010" stroke="#3a3a3a"/>
+            <rect x="40" y="24" width="46" height="46" fill="#fafafa"/>
+            <circle cx="96" cy="56" r="25" fill="#fafafa"/>
+            <circle cx="96" cy="56" r="25" fill="#ef4444" clip-path="url(#overlap-fig-square)"/>
+            <text x="79" y="55" text-anchor="middle" font-size="9" font-weight="700" font-family="ui-monospace, Menlo, monospace" fill="#ffffff">2×</text>
+          </svg>
+          <figcaption>On the card: the overlap is engraved twice</figcaption>
+        </figure>
+        <span class="upload-note-mark is-wrong" aria-label="Don't do this">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11"/><path d="M8 8l8 8M16 8l-8 8"/></svg>
+        </span>
+      </div>
+
+      <p class="editor-overlap-heading">How to fix it</p>
+      <p class="editor-modal-message">Select both layers (hold <strong>Shift</strong> and click each one), then <strong>right-click</strong> and choose <strong>Union</strong> or <strong>Subtract</strong> so nothing overlaps.</p>
+
+      <div class="upload-note-row is-right">
+        <figure class="upload-note-fig">
+          <svg class="upload-note-card" viewBox="0 0 160 100" aria-hidden="true"><rect x="1" y="1" width="158" height="98" rx="9" fill="#101010" stroke="#3a3a3a"/>
+            <rect x="40" y="24" width="46" height="46" fill="none" stroke="#22c55e" stroke-width="3"/>
+            <circle cx="96" cy="56" r="25" fill="none" stroke="#22c55e" stroke-width="3"/>
+            <rect x="40" y="24" width="46" height="46" fill="#fafafa"/>
+            <circle cx="96" cy="56" r="25" fill="#fafafa"/>
+          </svg>
+          <figcaption><span class="editor-overlap-tool"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="12" r="7" fill="currentColor"/><circle cx="15" cy="12" r="7" fill="currentColor"/></svg>Union</span>merges them into one shape</figcaption>
+        </figure>
+        <figure class="upload-note-fig">
+          <svg class="upload-note-card" viewBox="0 0 160 100" aria-hidden="true">
+            <defs><mask id="overlap-fig-bite"><rect width="160" height="100" fill="#fff"/><circle cx="96" cy="56" r="25" fill="#000"/></mask></defs>
+            <rect x="1" y="1" width="158" height="98" rx="9" fill="#101010" stroke="#3a3a3a"/>
+            <rect x="40" y="24" width="46" height="46" fill="#fafafa" mask="url(#overlap-fig-bite)"/>
+            <circle cx="96" cy="56" r="25" fill="none" stroke="#6b6b6b" stroke-width="1.2" stroke-dasharray="3 3"/>
+          </svg>
+          <figcaption><span class="editor-overlap-tool"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="12" r="7" fill="currentColor"/><circle cx="15" cy="12" r="7" fill="var(--bg)"/><circle cx="15" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2"/></svg>Subtract</span>cuts the top layer out of the one below</figcaption>
+        </figure>
+        <span class="upload-note-mark is-right" aria-label="Do this">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11"/><path d="M7 12.5l3.2 3.2L17 9"/></svg>
+        </span>
+      </div>
+
+      <p class="editor-overlap-fine">Layers set to <em>Don't Engrave</em> are ignored, and two Stroke outlines simply crossing each other are fine.</p>
+
+      <div class="editor-modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="overlap-close">Got it</button>
+        <button type="button" class="btn btn-sm" id="overlap-show">Show me</button>
       </div>
     </div>
   </div>
