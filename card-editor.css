@@ -30,8 +30,14 @@
   height: 100vh;
 }
 .editor-shell.is-entering { opacity: 0; transform: translateY(10px); }
-.editor-shell.is-ready { animation: editor-shell-in 0.4s ease forwards; }
+/* No `forwards` fill: holding the end frame would keep
+   transform: translateY(0) on the shell for good, which quietly makes it
+   a stacking context — nothing inside (e.g. the HELP button while help
+   is open) could then rise above an overlay outside it. Without the
+   fill, the shell simply has no transform once the animation ends. */
+.editor-shell.is-ready { animation: editor-shell-in 0.4s ease; }
 @keyframes editor-shell-in {
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -2285,3 +2291,14 @@ select option {
 .editor-survey-face:hover svg { color: var(--fg); transform: scale(1.08); }
 .editor-survey-face input:checked + svg { color: var(--fg); transform: scale(1.18); }
 .editor-survey-face input:focus-visible + svg { outline: 1px solid var(--fg); outline-offset: 3px; border-radius: 50%; }
+
+/* HELP stays in its white "pressed" state for as long as the help
+   overlay is open (aria-expanded is flipped by openHelpMode/closeHelpMode),
+   lifted above the overlay's dimming so it reads as bright white rather
+   than a dimmed gray; clicking it again closes help. */
+#help-btn[aria-expanded="true"] {
+  position: relative;
+  z-index: 502;
+  background: var(--fg);
+  color: var(--bg);
+}

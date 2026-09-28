@@ -6111,7 +6111,10 @@ if (fabricCanvasEl && window.fabric) {
       openWelcomeModal();
     }
   }
-  if (helpBtn) helpBtn.addEventListener('click', openHelpMode);
+  // A toggle: with help open the button sits above the overlay (see
+  // #help-btn[aria-expanded="true"] in card-editor.css), so it gets the
+  // click instead of the overlay.
+  if (helpBtn) helpBtn.addEventListener('click', () => (isHelpModeOpen() ? closeHelpMode() : openHelpMode()));
   if (helpOverlay) helpOverlay.addEventListener('click', closeHelpMode);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isHelpModeOpen()) closeHelpMode();
