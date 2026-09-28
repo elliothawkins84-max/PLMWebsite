@@ -1620,7 +1620,10 @@ if (fabricCanvasEl && window.fabric) {
     const applicable = isRoundableShape(obj);
     if (cornerRadiusField) cornerRadiusField.classList.toggle('is-hidden', !applicable);
     if (!applicable) return;
-    const px = obj._cornerRadiusPx || 0;
+    // _cornerRadiusPx is only set once the Radius field has been used — a
+    // rect from a template, a saved design or an import can already be
+    // rounded (its own rx) without it, so fall back to what's drawn.
+    const px = obj._cornerRadiusPx != null ? obj._cornerRadiusPx : (obj.type === 'rect' ? obj.rx || 0 : 0);
     if (cornerRadiusInput) cornerRadiusInput.value = (px / pxPerUnit()).toFixed(unitDecimals());
   }
   function fillEligible(obj) {
