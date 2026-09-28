@@ -1650,6 +1650,45 @@ if (fabricCanvasEl && window.fabric) {
     const rep = firstFillableDescendant(obj) || obj;
     return rep.stroke && !rep.fill ? 'stroke' : 'fill';
   }
+  // How far past a shape's own edge its stroke actually shows. Fabric's
+  // box always pads the edge by strokeWidth/2 — but for Inside/Outside
+  // placement strokeWidth is secretly doubled (half of it clipped away,
+  // see applyStrokeRender), a triangle's is bigger still, and a Fill-mode
+  // shape often carries a leftover strokeWidth that isn't drawn at all.
+  // So the real reach comes from the user's own width + placement.
+  function visibleStrokeReach(obj) {
+    if (shapeFillModeFor(obj) !== 'stroke') return 0;
+    const desired = obj._strokeWidthPx || obj.strokeWidth || 0;
+    const align = obj.strokeAlign || 'center';
+    if (align === 'outside') return desired;
+    if (align === 'inside') return 0;
+    return desired / 2;
+  }
+  // Fabric's getBoundingRect, minus the invisible stroke padding above —
+  // what the user actually sees (and the laser engraves). Used for the
+  // safe-zone warning, snapping, spacing guides and Align, which were
+  // all treating an Inside-stroke shape as up to a full stroke width
+  // bigger than it is. Text, lines and groups keep Fabric's own box
+  // (their strokes, if any, are real).
+  function visibleBoundsOf(obj) {
+    if (!obj.strokeWidth || ['i-text', 'text', 'textbox', 'line', 'group', 'activeSelection'].includes(obj.type)) {
+      return obj.getBoundingRect(true, true);
+    }
+    const sw = obj.strokeWidth;
+    obj.strokeWidth = 0;
+    const box = obj.getBoundingRect(true, true);
+    obj.strokeWidth = sw;
+    const reach = visibleStrokeReach(obj);
+    return { left: box.left - reach, top: box.top - reach, width: box.width + reach * 2, height: box.height + reach * 2 };
+  }
+  // Pulls Fabric's selection box/handles (which also pad by strokeWidth/2)
+  // back to the visible edge — a negative padding shrinks them. Also
+  // shrinks the click target to match, so clicking empty space just
+  // outside an Inside-stroke shape no longer selects it.
+  function syncSelectionPadding(obj) {
+    if (!obj || ['i-text', 'text', 'textbox', 'line', 'group', 'activeSelection'].includes(obj.type)) return;
+    obj.padding = visibleStrokeReach(obj) - (obj.strokeWidth || 0) / 2;
+  }
   // Fabric always renders a stroke straddling the path, half in/half out
   // (that's "center" placement, and needs no special handling). To fake
   // "inside"/"outside" on top of that, the path's stroke is drawn at
@@ -1677,7 +1716,7 @@ if (fabricCanvasEl && window.fabric) {
     if (obj.type === 'triangle') return new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
     if (obj.type === 'polygon' || obj.type === 'polyline') return new fabric.Polygon(obj.points, { ...common });
     if (obj.type === 'path') return new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
-    return new fabric.Rect({ ...common, width: obj.width, height: obj.height });
+    return new fabric.Rect({ ...common, width: obj.width, height: obj.height, rx: obj.rx || 0, ry: obj.ry || 0 });
   }
   function lineIntersection(a1, b1, a2, b2) {
     const d1x = b1.x - a1.x;
@@ -1992,6 +2031,7 @@ if (fabricCanvasEl && window.fabric) {
     }
     if (shapeFillModeFor(obj) !== 'stroke') {
       obj.set({ clipPath: null });
+      syncSelectionPadding(obj);
       return;
     }
     const align = obj.strokeAlign || 'center';
@@ -2035,6 +2075,7 @@ if (fabricCanvasEl && window.fabric) {
       obj.set({ strokeWidth: desired * 2, strokeUniform: true, clipPath: clip });
     }
     obj.setPositionByOrigin(center, 'center', 'center');
+    syncSelectionPadding(obj);
     obj.setCoords();
   }
   // Stroke mode clears the fill entirely (not fill+stroke together) —
@@ -2062,6 +2103,7 @@ if (fabricCanvasEl && window.fabric) {
       const center = obj.getCenterPoint();
       obj.set({ fill: color, stroke: null, strokeWidth: 0, clipPath: null });
       obj.setPositionByOrigin(center, 'center', 'center');
+      syncSelectionPadding(obj);
     }
     obj.setCoords();
   }
@@ -2419,6 +2461,13 @@ if (fabricCanvasEl && window.fabric) {
     hideEdgeIndicator();
     clearSnapGuides();
     fabricCanvas.loadFromJSON(snapshot, () => {
+      fabricCanvas.getObjects().forEach((o) => {
+        if (o.excludeFromExport || o.type === 'group') return;
+        // A Stroke-mode rect saved before its Inside/Outside clip carried
+        // the corner radius renders square-cornered — rebuild that clip.
+        if (o.type === 'rect' && o._strokeWidthPx && shapeFillModeFor(o) === 'stroke') applyStrokeRender(o);
+        else syncSelectionPadding(o);
+      });
       fabricCanvas.requestRenderAll();
       isRestoringHistory = false;
       hideObjectToolbar();
@@ -4498,7 +4547,7 @@ if (fabricCanvasEl && window.fabric) {
   // (a common, deliberate "align to safe zone" outcome) doesn't flag as
   // overflowing due to sub-pixel float rounding.
   function objectExceedsSafeZone(obj, bounds) {
-    const box = obj.getBoundingRect(true, true);
+    const box = visibleBoundsOf(obj);
     const EPS = 0.5;
     return box.left < bounds.left - EPS
       || box.top < bounds.top - EPS
@@ -4521,7 +4570,7 @@ if (fabricCanvasEl && window.fabric) {
   // fully inside or straddling its edge — should ever be able to trip the
   // safe-zone warning.
   function objectOverlapsCard(obj, cardBounds) {
-    const box = obj.getBoundingRect(true, true);
+    const box = visibleBoundsOf(obj);
     const EPS = 0.5;
     return box.left < cardBounds.right + EPS
       && box.left + box.width > cardBounds.left - EPS
@@ -6547,7 +6596,7 @@ if (fabricCanvasEl && window.fabric) {
   // object itself regardless of rotation, so snapping math stays valid
   // even for a rotated shape.
   function snapBoundsOf(obj) {
-    const r = obj.getBoundingRect(true, true);
+    const r = visibleBoundsOf(obj);
     return {
       xs: [r.left, r.left + r.width / 2, r.left + r.width],
       ys: [r.top, r.top + r.height / 2, r.top + r.height],
@@ -6604,7 +6653,7 @@ if (fabricCanvasEl && window.fabric) {
   // same axis, so the two features never fight over one move.
   const SPACING_TICK_LEN = 5; // px, the little perpendicular caps at each end of a spacing line
   function rectOf(obj) {
-    const r = obj.getBoundingRect(true, true);
+    const r = visibleBoundsOf(obj);
     return { left: r.left, top: r.top, right: r.left + r.width, bottom: r.top + r.height, width: r.width, height: r.height };
   }
   // isRow: true draws a horizontal measuring segment (spacing along X, at
@@ -6978,6 +7027,9 @@ if (fabricCanvasEl && window.fabric) {
       const maxR = Math.min(obj.width, obj.height) / 2;
       obj.set({ rx: Math.min(clamped, maxR), ry: Math.min(clamped, maxR) });
       obj._cornerRadiusPx = clamped;
+      // A Stroke-mode rect's Inside/Outside ring is carved by a clip that
+      // copies the corner radius — rebuild it for the new one.
+      if (shapeFillModeFor(obj) === 'stroke') applyStrokeRender(obj);
       obj.setCoords();
       fabricCanvas.requestRenderAll();
       refreshCornerRadiusUI(obj);
@@ -7054,7 +7106,7 @@ if (fabricCanvasEl && window.fabric) {
   // single object aligning to the card and a multi-selection's other
   // members aligning to the first one selected.
   function alignRectTo(obj, op, target) {
-    const rect = obj.getBoundingRect(true, true);
+    const rect = visibleBoundsOf(obj);
     let dx = 0;
     let dy = 0;
     if (op === 'left' || op === 'center' || op === 'center-h') {
@@ -7080,7 +7132,7 @@ if (fabricCanvasEl && window.fabric) {
       // picking an anchor and lining the rest up against it — rather
       // than moving the whole selection as a block against the card.
       const members = active.getObjects();
-      const target = members[0].getBoundingRect(true, true);
+      const target = visibleBoundsOf(members[0]);
       members.slice(1).forEach((obj) => alignRectTo(obj, op, target));
       fabricCanvas.requestRenderAll();
       refreshTransformFields(active);
