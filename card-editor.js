@@ -2492,6 +2492,12 @@ if (fabricCanvasEl && window.fabric) {
         if (o.excludeFromExport || o.type === 'group') return;
         // A Stroke-mode rect saved before its Inside/Outside clip carried
         // the corner radius renders square-cornered — rebuild that clip.
+        // A Stroke-mode shape that had Texture applied before that stopped
+        // wiping its stroke (see applyFinishToOne) was left with no paint
+        // at all — give its ring back its texture proofing color.
+        if (o._strokeWidthPx && !o.fill && !o.stroke && getFinish(o) === 'texture' && ['rect', 'circle', 'ellipse', 'triangle', 'path'].includes(o.type)) {
+          o.set({ stroke: o.cardFinishOutline ? FINISH_COLORS['texture-outline'] : FINISH_COLORS.texture });
+        }
         if (o.type === 'rect' && o._strokeWidthPx && shapeFillModeFor(o) === 'stroke') applyStrokeRender(o);
         else syncSelectionPadding(o);
       });
@@ -3418,6 +3424,21 @@ if (fabricCanvasEl && window.fabric) {
     }
     obj.set({ fill: null, stroke: 'rgb(250,250,250)', strokeWidth: lineWidth, strokeUniform: true, opacity: 1, clipPath: null });
   }
+  // Texture + Outline on a Stroke-mode shape: the ring itself is painted
+  // with the hatch (applyOutlineOnlyPaint), which leaves no paint channel
+  // free for the outline — so the outline is drawn by a separate copy of
+  // the shape, styled exactly like the Stroke finish (a hairline along
+  // each edge of the ring — see styleForRender), layered right above it.
+  // Built from the object BEFORE styleForRender changes it.
+  function ringOutlineCompanionFor(obj) {
+    if (getFinish(obj) !== 'texture' || !obj.cardFinishOutline) return null;
+    if (shapeFillModeFor(obj) !== 'stroke' || !['rect', 'circle', 'ellipse', 'triangle'].includes(obj.type)) return null;
+    const Klass = fabric.util.getKlass(obj.type);
+    const copy = new Klass({ ...obj.toObject(['strokeAlign', '_strokeWidthPx']), clipPath: null });
+    copy.cardFinish = 'stroke';
+    styleForRender(copy);
+    return copy;
+  }
   function renderStrokeOutlinesToDataURL(snapshotJson, resolutionScale, callback) {
     const off = document.createElement('canvas');
     off.width = Math.round(CARD_W_PX * resolutionScale);
@@ -3425,6 +3446,7 @@ if (fabricCanvasEl && window.fabric) {
     const staticCanvas = new fabric.StaticCanvas(off);
     staticCanvas.setZoom(resolutionScale);
     staticCanvas.loadFromJSON(snapshotJson, () => {
+      const companions = [];
       staticCanvas.getObjects().forEach((obj) => {
         // Snapshots store pasteboard-absolute coordinates; this canvas
         // is sized to just the card, so shift back to card-relative.
@@ -3432,7 +3454,14 @@ if (fabricCanvasEl && window.fabric) {
         obj.setCoords();
         // One object that can't be styled shouldn't blank the whole
         // mockup (an exception here would skip the callback entirely).
-        try { styleForRender(obj); } catch (err) { console.error('Mockup: could not style object', obj.type, err); }
+        try {
+          const companion = ringOutlineCompanionFor(obj);
+          styleForRender(obj);
+          if (companion) companions.push([obj, companion]);
+        } catch (err) { console.error('Mockup: could not style object', obj.type, err); }
+      });
+      companions.forEach(([obj, companion]) => {
+        staticCanvas.insertAt(companion, staticCanvas.getObjects().indexOf(obj) + 1);
       });
       staticCanvas.renderAll();
       callback(staticCanvas.toDataURL({ format: 'png' }));
@@ -4329,11 +4358,21 @@ if (fabricCanvasEl && window.fabric) {
     }
     return false;
   }
-  function findOverlapPairs(objects) {
-    const layers = objects
-      .filter((o) => !o.excludeFromExport)
-      .map((obj) => ({ obj, units: overlapUnitsFor(obj) }))
-      .filter((l) => l.units.length);
+  // sameLayer: optional Set of objects that belong together as one layer.
+  function findOverlapPairs(objects, sameLayer) {
+    const layers = [];
+    let merged = null;
+    objects.filter((o) => !o.excludeFromExport).forEach((obj) => {
+      const units = overlapUnitsFor(obj);
+      if (!units.length) return;
+      if (sameLayer && sameLayer.has(obj)) {
+        if (merged) { merged.units.push(...units); return; }
+        merged = { obj, units };
+        layers.push(merged);
+        return;
+      }
+      layers.push({ obj, units });
+    });
     const pairs = [];
     for (let i = 0; i < layers.length; i++) {
       for (let j = i + 1; j < layers.length; j++) {
@@ -4346,7 +4385,13 @@ if (fabricCanvasEl && window.fabric) {
   function runOverlapCheck() {
     overlapCheckTimer = null;
     if (typeof PolyBool === 'undefined') return;
-    overlapsBySide[currentSide] = findOverlapPairs(fabricCanvas.getObjects());
+    // While a piece of a group is being edited on its own (see
+    // selectNestedObject), that group is temporarily broken apart into
+    // loose objects — its pieces are still one layer, and overlaps within
+    // one group never count (a textured logo overlapping itself isn't
+    // two layers engraving the same spot), so keep them together.
+    const looseGroupPieces = groupEditSession ? new Set(groupEditSession.levels.flat()) : null;
+    overlapsBySide[currentSide] = findOverlapPairs(fabricCanvas.getObjects(), looseGroupPieces);
     // The other side's content can't change while it isn't showing, so
     // it's measured once (from its latest snapshot) and cached until the
     // user switches back to it or loads a different project.
@@ -5694,7 +5739,12 @@ if (fabricCanvasEl && window.fabric) {
     // traced outline line is drawn separately for the Mockup/Renderings
     // preview (see styleForRender's own `obj.cardFinishOutline` check),
     // so nothing here needs the object's own stroke channel to convey it.
-    if (finish === 'texture' && obj.type !== 'line') {
+    // Only for a Fill-mode shape, though: a Stroke-mode shape's stroke IS
+    // the shape (it has no fill) — clearing it left the ring with neither
+    // fill nor stroke, invisible on the canvas and silently read back as
+    // Fill mode.
+    const hasFill = !!obj.fill && obj.fill !== 'none' && obj.fill !== 'transparent';
+    if (finish === 'texture' && obj.type !== 'line' && hasFill) {
       obj.set({ stroke: null });
     }
   }
