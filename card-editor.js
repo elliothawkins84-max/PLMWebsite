@@ -2154,6 +2154,7 @@ if (fabricCanvasEl && window.fabric) {
     suppressHistoryEvents = true;
     const group = active.toGroup();
     suppressHistoryEvents = false;
+    setObjectAnchor(group, 'c');
     applyScalingControlsVisibility(group);
     fabricCanvas.requestRenderAll();
     showObjectToolbarFor(group);
@@ -2164,8 +2165,12 @@ if (fabricCanvasEl && window.fabric) {
     if (!active || active.type !== 'group') return;
     hideEdgeIndicator();
     suppressHistoryEvents = true;
-    active.toActiveSelection();
+    const selection = active.toActiveSelection();
     suppressHistoryEvents = false;
+    // Imported SVG pieces come out of the parser anchored top-left —
+    // once they're loose objects of their own, give them the same center
+    // anchor every other newly-placed object gets.
+    if (selection && selection.getObjects) selection.getObjects().forEach((o) => setObjectAnchor(o, 'c'));
     fabricCanvas.requestRenderAll();
     hideObjectToolbar();
     pushHistory();
@@ -5280,10 +5285,19 @@ if (fabricCanvasEl && window.fabric) {
     c: { originX: 'center', originY: 'center' },
   };
   function anchorKeyFor(obj) {
-    const key = Object.keys(ANCHORS).find(
+    return Object.keys(ANCHORS).find(
       (k) => ANCHORS[k].originX === obj.originX && ANCHORS[k].originY === obj.originY
-    );
-    return key || 'tl';
+    ) || null;
+  }
+  // A multi-selection defaults to a center anchor (Fabric builds every
+  // new one top-left), and so does any object whose origin isn't one of
+  // the five picker points (e.g. left-edge/vertical-middle from an older
+  // saved design) — otherwise the picker would claim "top left" while
+  // X/Y was really being measured somewhere else. Visual position is
+  // unchanged either way (setObjectAnchor pins the center).
+  function normalizeAnchorOnSelect(obj) {
+    if (!obj || obj.isEditing) return;
+    if (obj.type === 'activeSelection' || !anchorKeyFor(obj)) setObjectAnchor(obj, 'c');
   }
   function setObjectAnchor(obj, key) {
     const anchor = ANCHORS[key];
@@ -5307,7 +5321,7 @@ if (fabricCanvasEl && window.fabric) {
   // doesn't make its W/H climb.
   function refreshTransformFields(obj) {
     if (rotationInput) rotationInput.value = Math.round(((obj.angle % 360) + 360) % 360);
-    updateAnchorIcon(anchorKeyFor(obj));
+    updateAnchorIcon(anchorKeyFor(obj) || 'c');
     if (posXInput) posXInput.value = ((obj.left - CARD_OFFSET_X) / pxPerUnit()).toFixed(unitDecimals());
     if (posYInput) posYInput.value = ((obj.top - CARD_OFFSET_Y) / pxPerUnit()).toFixed(unitDecimals());
     if (sizeWInput) sizeWInput.value = (displayWidthOf(obj) / pxPerUnit()).toFixed(unitDecimals());
@@ -6291,6 +6305,7 @@ if (fabricCanvasEl && window.fabric) {
     // piece(s) — re-form the group before handling whatever's newly
     // selected (which stays selected; see endGroupEditSession).
     if (groupEditSession && !isWithinGroupEditSession(obj)) endGroupEditSession();
+    normalizeAnchorOnSelect(fabricCanvas.getActiveObject());
     if (finishModeActive) {
       refreshFinishUI(obj);
       return;
@@ -7455,6 +7470,7 @@ if (fabricCanvasEl && window.fabric) {
     const insertIndex = containerObjectsOf(targetContainer).indexOf(target);
     detachLayerObject(target);
     const newGroup = new fabric.Group([target, dragged]);
+    setObjectAnchor(newGroup, 'c');
     insertLayerObjectAt(newGroup, targetContainer, insertIndex);
     fabricCanvas.setActiveObject(newGroup);
   }
@@ -7543,6 +7559,10 @@ if (fabricCanvasEl && window.fabric) {
       const insertIndex = Math.min(...members.map((o) => fabricCanvas.getObjects().indexOf(o)));
       members.forEach((o) => fabricCanvas.remove(o));
       rebuilt = new fabric.Group(members);
+      // A brand-new fabric.Group is always anchored top-left — carry the
+      // original group's own anchor over so editing a piece inside it
+      // doesn't silently reset that.
+      setObjectAnchor(rebuilt, anchorKeyFor(ancestors[i]) || 'c');
       fabricCanvas.add(rebuilt);
       fabricCanvas.moveTo(rebuilt, Math.min(insertIndex, fabricCanvas.getObjects().length - 1));
     }
