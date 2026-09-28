@@ -1942,6 +1942,13 @@ if (fabricCanvasEl && window.fabric) {
       return;
     }
     const align = obj.strokeAlign || 'center';
+    // Fabric sizes an object's box to include its stroke and grows it from
+    // the object's own origin (usually top-left), so switching placement —
+    // which swaps the real strokeWidth between 1x and 2x (or a triangle's
+    // much bigger one) below — would otherwise nudge the whole shape down
+    // and to the right. Pin the center so the path itself never moves and
+    // the stroke grows/shrinks evenly around it.
+    const center = obj.getCenterPoint();
     // _strokeWidthPx is a real physical width the user dialed in (mm, via
     // the Stroke settings field) — it must render at that width regardless
     // of the object's own scale, so strokeUniform is required here. Without
@@ -1974,6 +1981,7 @@ if (fabricCanvasEl && window.fabric) {
       clip.set({ inverted: align === 'outside' });
       obj.set({ strokeWidth: desired * 2, strokeUniform: true, clipPath: clip });
     }
+    obj.setPositionByOrigin(center, 'center', 'center');
     obj.setCoords();
   }
   // Stroke mode clears the fill entirely (not fill+stroke together) —
@@ -1998,7 +2006,9 @@ if (fabricCanvasEl && window.fabric) {
       obj.set({ fill: null, stroke: color });
       applyStrokeRender(obj);
     } else {
+      const center = obj.getCenterPoint();
       obj.set({ fill: color, stroke: null, strokeWidth: 0, clipPath: null });
+      obj.setPositionByOrigin(center, 'center', 'center');
     }
     obj.setCoords();
   }
