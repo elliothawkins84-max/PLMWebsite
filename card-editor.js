@@ -1980,6 +1980,39 @@ if (fabricCanvasEl && window.fabric) {
       obj.set({ fill: paint, stroke: null, opacity: 1, clipPath, width: obj.width * growth, height: obj.height * growth });
       return;
     }
+    if (['rect', 'circle', 'ellipse'].includes(obj.type) && paint && typeof paint === 'object') {
+      // A pattern/gradient painted as a *stroke* (the texture hatch, the
+      // white grain, the metallic sheen) doesn't reliably fill the full
+      // width of the wide underlying stroke applyStrokeRender sets up —
+      // the hatch stopped partway across a ring in the mockup, leaving a
+      // gap before its inner edge. Paint it as a fill instead, on the
+      // shape grown just past the ring's outer edge, clipped to exactly
+      // the ring band (the same way a triangle's ring is done above).
+      const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
+      const align = obj.strokeAlign || 'center';
+      let outerDelta;
+      let innerDelta;
+      if (align === 'outside') { outerDelta = desired; innerDelta = 0; }
+      else if (align === 'inside') { outerDelta = 0; innerDelta = -desired; }
+      else { outerDelta = desired / 2; innerDelta = -desired / 2; }
+      const clipPath = makeEdgeBandClip(obj, (innerDelta + outerDelta) / 2, (outerDelta - innerDelta) / 2);
+      const sx = obj.scaleX || 1;
+      const sy = obj.scaleY || 1;
+      const grow = {};
+      if (obj.type === 'rect') {
+        grow.width = obj.width + ((outerDelta + 1) / sx) * 2;
+        grow.height = obj.height + ((outerDelta + 1) / sy) * 2;
+      } else if (obj.type === 'circle') {
+        grow.radius = obj.radius + (outerDelta + 1) / ((sx + sy) / 2);
+      } else {
+        grow.rx = obj.rx + (outerDelta + 1) / sx;
+        grow.ry = obj.ry + (outerDelta + 1) / sy;
+      }
+      const center = obj.getCenterPoint();
+      obj.set({ fill: paint, stroke: null, strokeWidth: 0, opacity: 1, clipPath, ...grow });
+      obj.setPositionByOrigin(center, 'center', 'center');
+      return;
+    }
     obj.set({ fill: null, stroke: paint, opacity: 1 });
   }
   // A Stroke-mode triangle's two hairlines (outer edge, inner edge of its
