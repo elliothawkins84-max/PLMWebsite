@@ -3411,30 +3411,49 @@ if (fabricCanvasEl && window.fabric) {
   // still rounds off the pixel-grid staircase without tripping this.
   const TEXT_OUTLINE_SMOOTH_ITERATIONS = 1;
   const TEXT_OUTLINE_DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+  // Where Fabric itself draws each line of a text object, in the object's
+  // own top-left-origin space: pen x (alignment offset) and baseline y.
+  // Mirrors Fabric 5's _renderTextCommon/_renderChars exactly — line top
+  // plus heightOfLine/lineHeight, pulled back up by _fontSizeFraction —
+  // so a Union/Subtract cut-out lands exactly under the rendered glyphs
+  // instead of ~2% of the line height low.
+  function textLineLayout(obj) {
+    const lines = obj._textLines ? obj._textLines.map((chars) => chars.join('')) : String(obj.text || '').split('\n');
+    let top = 0;
+    return lines.map((line, i) => {
+      const heightOfLine = obj.getHeightOfLine(i);
+      const baseline = top + heightOfLine / obj.lineHeight - (heightOfLine * obj._fontSizeFraction) / obj.lineHeight;
+      top += heightOfLine;
+      return { line, x: obj._getLineLeftOffset(i), baseline };
+    });
+  }
+  // Glyphs routinely overhang their own text box (serifs, italics, a
+  // descender past the last line's box), so the raster gets a margin on
+  // every side — otherwise those bits would be sliced off the traced
+  // outline.
+  const TEXT_OUTLINE_PAD = 0.3; // in units of fontSize
   function rasterizeTextMask(obj) {
     const scale = TEXT_OUTLINE_SUPERSAMPLE;
-    const w = Math.max(2, Math.round(obj.width * scale));
-    const h = Math.max(2, Math.round(obj.height * scale));
+    const pad = Math.ceil(obj.fontSize * TEXT_OUTLINE_PAD * scale);
+    const w = Math.max(2, Math.round(obj.width * scale) + pad * 2);
+    const h = Math.max(2, Math.round(obj.height * scale) + pad * 2);
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#000';
     ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
     const weight = obj.fontWeight && obj.fontWeight !== 'normal' ? `${obj.fontWeight} ` : '';
     const style = obj.fontStyle === 'italic' ? 'italic ' : '';
     ctx.font = `${style}${weight}${obj.fontSize * scale}px ${obj.fontFamily || 'Arial'}`;
-    ctx.textAlign = obj.textAlign === 'right' ? 'right' : (obj.textAlign === 'center' ? 'center' : 'left');
-    const lines = String(obj.text || '').split('\n');
-    const lineHeightPx = h / Math.max(1, lines.length);
-    lines.forEach((line, i) => {
-      const x = ctx.textAlign === 'center' ? w / 2 : (ctx.textAlign === 'right' ? w : 0);
-      ctx.fillText(line, x, lineHeightPx * i + lineHeightPx * 0.8);
+    textLineLayout(obj).forEach(({ line, x, baseline }) => {
+      if (line) ctx.fillText(line, pad + x * scale, pad + baseline * scale);
     });
     const { data } = ctx.getImageData(0, 0, w, h);
     const mask = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) mask[i] = data[i * 4 + 3] > 128 ? 1 : 0;
-    return { mask, w, h };
+    return { mask, w, h, pad };
   }
   // Traces one closed boundary starting at (sx,sy) — a pixel where
   // `inside` first becomes true when scanning a row left-to-right — by
@@ -3538,7 +3557,7 @@ if (fabricCanvasEl && window.fabric) {
   // whenever real glyph curves aren't available (see
   // exactTextOutlineRingsFor/getOpentypeFontFor below for when they are).
   function tracedTextOutlineRingsFor(obj) {
-    const { mask, w, h } = rasterizeTextMask(obj);
+    const { mask, w, h, pad } = rasterizeTextMask(obj);
     const get = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : mask[y * w + x]);
     const fgVisited = new Uint8Array(w * h);
     const outerRings = [];
@@ -3572,7 +3591,7 @@ if (fabricCanvasEl && window.fabric) {
       }
     }
     const toLocal = (ring) => smoothRing(simplifyPoints(ring, TEXT_OUTLINE_SIMPLIFY_EPS), TEXT_OUTLINE_SMOOTH_ITERATIONS)
-      .map(([px, py]) => [px / TEXT_OUTLINE_SUPERSAMPLE - obj.width / 2, py / TEXT_OUTLINE_SUPERSAMPLE - obj.height / 2]);
+      .map(([px, py]) => [(px - pad) / TEXT_OUTLINE_SUPERSAMPLE - obj.width / 2, (py - pad) / TEXT_OUTLINE_SUPERSAMPLE - obj.height / 2]);
     return outerRings.map(toLocal).concat(holeRings.map(toLocal));
   }
   // ---- Text -> outline rings, exact path (real font file available) ----
@@ -3613,21 +3632,12 @@ if (fabricCanvasEl && window.fabric) {
     return rings;
   }
   function exactTextOutlineRingsFor(obj, otFont) {
-    const fontSize = obj.fontSize;
-    const lines = String(obj.text || '').split('\n');
-    const lineHeightPx = obj.height / Math.max(1, lines.length);
-    const align = obj.textAlign === 'right' ? 'right' : (obj.textAlign === 'center' ? 'center' : 'left');
     let rings = [];
-    lines.forEach((line, i) => {
+    textLineLayout(obj).forEach(({ line, x, baseline }) => {
       if (!line) return;
-      const advance = otFont.getAdvanceWidth(line, fontSize);
-      let x = 0;
-      if (align === 'center') x = (obj.width - advance) / 2;
-      else if (align === 'right') x = obj.width - advance;
-      const baselineY = lineHeightPx * i + lineHeightPx * 0.8;
-      rings = rings.concat(ringsFromOpentypePath(otFont.getPath(line, x, baselineY, fontSize)));
+      rings = rings.concat(ringsFromOpentypePath(otFont.getPath(line, x, baseline, obj.fontSize)));
     });
-    return rings.map((ring) => ring.map(([x, y]) => [x - obj.width / 2, y - obj.height / 2]));
+    return rings.map((ring) => ring.map(([px, py]) => [px - obj.width / 2, py - obj.height / 2]));
   }
   // Single entry point localPolygonsFor calls for any i-text object.
   // `otFont`, when present, is an already-resolved opentype.Font — see
@@ -4000,6 +4010,13 @@ if (fabricCanvasEl && window.fabric) {
   //  - Overlaps inside a single group (e.g. an imported SVG's own
   //    sub-paths) aren't checked — only layer against layer.
   const OVERLAP_MIN_AREA_PX = 4; // ~0.05mm²; shapes that merely touch don't count
+  // Text is measured by tracing its rendered pixels unless the real font
+  // file is loaded, which leaves hairline slivers (a fraction of a pixel
+  // wide) along an otherwise perfect knockout — e.g. a letter sitting in
+  // an exact letter-shaped hole. A real overlap has width; a sliver
+  // doesn't, so any overlap region thinner than this (average width,
+  // 2·area/perimeter) is ignored. 0.6px ≈ 0.07mm, about one laser spot.
+  const OVERLAP_MIN_WIDTH_PX = 0.6;
   const OVERLAP_OUTLINE_STEP_PX = 1.5;
   const OVERLAP_MIN_OUTLINE_HITS = 3;
   const OVERLAP_CARD_REGION = {
@@ -4103,7 +4120,22 @@ if (fabricCanvasEl && window.fabric) {
         const shared = PolyBool.intersect({ regions: a.rings, inverted: false }, { regions: b.rings, inverted: false });
         if (!shared.regions.length) return false;
         const onCard = PolyBool.intersect(shared, OVERLAP_CARD_REGION);
-        return overlapRingsArea(onCard.regions) > OVERLAP_MIN_AREA_PX;
+        // Group the result's rings into shapes-with-holes first — a thin
+        // ring hugging a letter's counter comes back as an outer and an
+        // inner ring, and measuring either one alone would read as a solid
+        // blob instead of the hairline it really is.
+        const geo = PolyBool.polygonToGeoJSON(onCard);
+        const shapes = geo.type === 'MultiPolygon' ? geo.coordinates : (geo.type === 'Polygon' ? [geo.coordinates] : []);
+        let solidArea = 0;
+        shapes.forEach(([outer, ...holes]) => {
+          const area = overlapRingsArea([outer]) - overlapRingsArea(holes);
+          const perimeter = [outer, ...holes].reduce((sum, ring) => {
+            for (let i = 1; i < ring.length; i++) sum += Math.hypot(ring[i][0] - ring[i - 1][0], ring[i][1] - ring[i - 1][1]);
+            return sum;
+          }, 0);
+          if (perimeter > 0 && (2 * area) / perimeter > OVERLAP_MIN_WIDTH_PX) solidArea += area;
+        });
+        return solidArea > OVERLAP_MIN_AREA_PX;
       } catch (e) {
         return false; // too complex for PolyBool to resolve — don't flag what we can't measure
       }
