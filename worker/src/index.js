@@ -17,6 +17,20 @@ const TO_EMAIL = 'info@precisionlasermark.com';
 const FROM_EMAIL = 'RFQ Form <rfq@mail.precisionlasermark.com>';
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB, matches the site's stated limit
 
+// Only the file types the site's forms actually send: the RFQ form's
+// artwork/CAD/spreadsheet uploads (index.html's accept list) plus the
+// .plmj order files the card editor and API RP tag page attach.
+const ALLOWED_EXTENSIONS = new Set([
+  'plmj', 'svg', 'ai', 'eps', 'pdf', 'dxf', 'dwg', 'cdr', 'plt', 'xlsx', 'xls',
+  'png', 'jpg', 'jpeg',
+]);
+
+// Generous caps -- an API RP tag order writes one line per tag into the
+// message, so a big order can legitimately run to several thousand chars.
+const MAX_NAME_CHARS = 200;
+const MAX_EMAIL_CHARS = 254;
+const MAX_MESSAGE_CHARS = 20000;
+
 function corsHeaders(origin) {
   const allowed = isOriginAllowed(origin) ? origin : '';
   return {
@@ -56,6 +70,17 @@ export default {
       return json({ success: false, message: 'Forbidden' }, 403, origin);
     }
 
+    // Per-IP rate limit (RFQ_LIMITER binding in wrangler.toml) so a script
+    // can't flood info@ or burn through the Resend sending quota. Skipped
+    // if the binding isn't configured, e.g. under an older wrangler.
+    if (env.RFQ_LIMITER) {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const { success } = await env.RFQ_LIMITER.limit({ key: ip });
+      if (!success) {
+        return json({ success: false, message: 'Too many requests — please wait a minute and try again.' }, 429, origin);
+      }
+    }
+
     let form;
     try {
       form = await request.formData();
@@ -76,11 +101,18 @@ export default {
     if (!name || !email || !message || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return json({ success: false, message: 'Please fill in all fields with a valid email.' }, 400, origin);
     }
+    if (name.length > MAX_NAME_CHARS || email.length > MAX_EMAIL_CHARS || message.length > MAX_MESSAGE_CHARS) {
+      return json({ success: false, message: 'One of the fields is too long — please shorten it and try again.' }, 400, origin);
+    }
 
     const attachments = [];
     let totalBytes = 0;
     for (const value of form.getAll('attachment')) {
       if (value instanceof File && value.size > 0) {
+        const ext = (value.name.split('.').pop() || '').toLowerCase();
+        if (!value.name.includes('.') || !ALLOWED_EXTENSIONS.has(ext)) {
+          return json({ success: false, message: `"${value.name}" isn't a supported file type — please send SVG, AI, EPS, PDF, DXF, DWG, CDR, PLT, Excel, PNG, or JPG.` }, 400, origin);
+        }
         totalBytes += value.size;
         if (totalBytes > MAX_ATTACHMENT_BYTES) {
           return json({ success: false, message: 'Attachments too large — 10MB total max.' }, 400, origin);

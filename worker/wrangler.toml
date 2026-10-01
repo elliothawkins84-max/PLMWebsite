@@ -4,3 +4,13 @@ compatibility_date = "2025-01-01"
 
 # After deploying, set the Resend API key as a secret (never commit it):
 #   wrangler secret put RESEND_API_KEY
+
+# Per-IP rate limit for RFQ submissions: 3 per minute. (Cloudflare's
+# rate limiter only supports 10s or 60s windows.)
+[[ratelimits]]
+name = "RFQ_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 3
+  period = 60
