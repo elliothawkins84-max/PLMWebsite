@@ -5243,6 +5243,11 @@ if (fabricCanvasEl && window.fabric) {
       // null under the $95 order-minimum floor (see getNextModalPricing) --
       // there's no real per-card rate at that price, only a flat total.
       pricePerCard: pricing && !pricing.isMinCharge ? pricing.each : null,
+      // The would-be per-card rate at this quantity even when the order
+      // minimum applies, so the shop can later raise the quantity or turn
+      // the minimum off in the Viewer and still have a real rate to price
+      // from instead of nothing.
+      unitPrice: nextModalDirectCost !== null && qty ? nextModalDirectCost * ratioForQty(qty) : null,
       subtotal: pricing ? pricing.total : null,
       isMinCharge: pricing ? pricing.isMinCharge : false,
       address: String(formData.get('address') || '').trim(),
