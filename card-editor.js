@@ -3545,7 +3545,10 @@ if (fabricCanvasEl && window.fabric) {
   // renders — drop anything rendered before it arrived.
   if (document.fonts) document.fonts.addEventListener('loadingdone', () => outlineRenderCache.clear());
   function renderStrokeOutlinesToDataURL(snapshotJson, resolutionScale, callback) {
-    const cacheKey = `${resolutionScale}|${snapshotJson}`;
+    // Callers pass either the JSON string or an already-parsed snapshot
+    // (the template gallery does) — key on the JSON text either way, or
+    // every object snapshot would collide on "[object Object]".
+    const cacheKey = `${resolutionScale}|${typeof snapshotJson === 'string' ? snapshotJson : JSON.stringify(snapshotJson)}`;
     const cached = outlineRenderCache.get(cacheKey);
     if (cached) {
       callback(cached);
@@ -4671,7 +4674,8 @@ if (fabricCanvasEl && window.fabric) {
   const coverageCache = makeSnapshotCache(60);
   function weightedCoveragePx2ForSnapshot(snapshotJson, callback) {
     if (!snapshotJson) { callback(0); return; }
-    const cached = coverageCache.get(snapshotJson);
+    const coverageKey = typeof snapshotJson === 'string' ? snapshotJson : JSON.stringify(snapshotJson);
+    const cached = coverageCache.get(coverageKey);
     if (cached !== undefined) { callback(cached); return; }
     const off = document.createElement('canvas');
     off.width = Math.round(CARD_W_PX * COVERAGE_RESOLUTION_SCALE);
@@ -4705,7 +4709,7 @@ if (fabricCanvasEl && window.fabric) {
       staticCanvas.dispose();
       // Back down from this render's resolution to native card px^2.
       const result = weightedPx2 / (COVERAGE_RESOLUTION_SCALE * COVERAGE_RESOLUTION_SCALE);
-      coverageCache.set(snapshotJson, result);
+      coverageCache.set(coverageKey, result);
       callback(result);
     });
   }
