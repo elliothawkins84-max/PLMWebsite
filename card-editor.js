@@ -2444,6 +2444,13 @@ if (fabricCanvasEl && window.fabric) {
   let undoStack = [];
   let redoStack = [];
   let isRestoringHistory = false;
+  // The current side's latest state while a group-edit session holds it
+  // back from the undo stack (see pushHistory); null otherwise.
+  let sessionLiveSnapshot = null;
+  let groupEditSession = null; // { ancestors, levels } — see selectNestedObject
+  function currentSideSnapshot() {
+    return sessionLiveSnapshot || undoStack[undoStack.length - 1];
+  }
   // Drives the reload/close warning below — true from the first real edit
   // until the next successful Save (or a fresh Import, which itself
   // becomes the new "saved" baseline). Deliberately simple (any edit at
@@ -2499,18 +2506,69 @@ if (fabricCanvasEl && window.fabric) {
   function pushHistory() {
     if (isRestoringHistory) return;
     const snapshot = JSON.stringify(fabricCanvas.toJSON(HISTORY_PROPS));
+    // While a group is open for editing (see selectNestedObject) its
+    // pieces are temporarily loose canvas objects — recording that as an
+    // undo step meant Ctrl-Z could land on a state where the group had
+    // fallen apart for good. Hold it as the live state instead (the
+    // mockup/price still follow along), and let the session's end record
+    // one real step with the group intact.
+    if (groupEditSession) {
+      if (snapshot !== currentSideSnapshot()) {
+        sessionLiveSnapshot = snapshot;
+        hasUnsavedChanges = true;
+        scheduleDerivedUpdates();
+      }
+      return;
+    }
+    sessionLiveSnapshot = null;
     if (undoStack.length && undoStack[undoStack.length - 1] === snapshot) return;
     hasUnsavedChanges = true;
     undoStack.push(snapshot);
     if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
     redoStack = [];
     updateUndoRedoButtons();
-    renderCardPreview(currentSide);
-    updatePriceEstimate();
+    scheduleDerivedUpdates();
+  }
+  // The mockup preview, price estimate and safe-zone check each re-render
+  // the whole design offscreen — together several hundred ms on a busy
+  // card. Running them inline made every edit, and especially every
+  // Ctrl-Z, wait on all of that before the canvas could repaint; deferring
+  // them lets the canvas update first, and a run of quick undos/edits
+  // (holding Ctrl-Z) only pays for the state it settles on.
+  let derivedUpdatesTimer = null;
+  function scheduleDerivedUpdates() {
+    clearTimeout(derivedUpdatesTimer);
+    derivedUpdatesTimer = setTimeout(() => {
+      derivedUpdatesTimer = null;
+      renderCardPreview(currentSide);
+      updatePriceEstimate();
+    }, 120);
     scheduleOverlapCheck();
+  }
+  // Small results cache keyed by the exact snapshot JSON (plus whatever
+  // else the result depends on). Undo/redo land on snapshots that were
+  // already rendered/priced when they were first made, so those become
+  // lookups instead of fresh offscreen renders.
+  function makeSnapshotCache(limit) {
+    const map = new Map();
+    return {
+      get(key) {
+        if (!map.has(key)) return undefined;
+        const value = map.get(key);
+        map.delete(key);
+        map.set(key, value);
+        return value;
+      },
+      set(key, value) {
+        map.set(key, value);
+        if (map.size > limit) map.delete(map.keys().next().value);
+      },
+      clear() { map.clear(); },
+    };
   }
   function restoreHistorySnapshot(snapshot) {
     isRestoringHistory = true;
+    sessionLiveSnapshot = null;
     // Whatever's loose from a group-edit session is about to be wiped
     // out by loadFromJSON below anyway — drop it now so the
     // discardActiveObject() cascade below doesn't do the (harmless but
@@ -2539,17 +2597,19 @@ if (fabricCanvasEl && window.fabric) {
       hideObjectToolbar();
       refreshLayersList();
       updateUndoRedoButtons();
-      renderCardPreview(currentSide);
-      updatePriceEstimate();
-      scheduleOverlapCheck();
+      scheduleDerivedUpdates();
     });
   }
   function undo() {
+    // Records any edits made inside an open group first, so this undoes
+    // them rather than skipping past them.
+    if (groupEditSession) endGroupEditSession();
     if (undoStack.length < 2) return;
     redoStack.push(undoStack.pop());
     restoreHistorySnapshot(undoStack[undoStack.length - 1]);
   }
   function redo() {
+    if (groupEditSession) endGroupEditSession();
     if (!redoStack.length) return;
     const snapshot = redoStack.pop();
     undoStack.push(snapshot);
@@ -2646,6 +2706,7 @@ if (fabricCanvasEl && window.fabric) {
   }
   function switchToSide(sideName) {
     if (sideName === currentSide) return;
+    if (groupEditSession) endGroupEditSession();
     sideHistories[currentSide] = { undo: undoStack, redo: redoStack };
     // Re-measured from its saved snapshot, in case an edit landed inside
     // the overlap check's debounce window right before switching away.
@@ -2809,6 +2870,8 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
   function getSideSnapshotJSON(side) {
+    // Saving mid-edit inside a group: close it so the file has the group.
+    if (side === currentSide && groupEditSession) endGroupEditSession();
     if (side === currentSide) return undoStack[undoStack.length - 1];
     const stored = sideHistories[side];
     return stored ? stored.undo[stored.undo.length - 1] : null;
@@ -2930,6 +2993,7 @@ if (fabricCanvasEl && window.fabric) {
       return;
     }
     groupEditSession = null;
+    sessionLiveSnapshot = null;
     fabricCanvas.discardActiveObject();
     hideEdgeIndicator();
     clearSnapGuides();
@@ -3472,7 +3536,17 @@ if (fabricCanvasEl && window.fabric) {
     styleForRender(copy);
     return copy;
   }
+  const outlineRenderCache = makeSnapshotCache(24);
+  // A web font finishing its load changes how the same snapshot's text
+  // renders — drop anything rendered before it arrived.
+  if (document.fonts) document.fonts.addEventListener('loadingdone', () => outlineRenderCache.clear());
   function renderStrokeOutlinesToDataURL(snapshotJson, resolutionScale, callback) {
+    const cacheKey = `${resolutionScale}|${snapshotJson}`;
+    const cached = outlineRenderCache.get(cacheKey);
+    if (cached) {
+      callback(cached);
+      return;
+    }
     const off = document.createElement('canvas');
     off.width = Math.round(CARD_W_PX * resolutionScale);
     off.height = Math.round(CARD_H_PX * resolutionScale);
@@ -3497,8 +3571,10 @@ if (fabricCanvasEl && window.fabric) {
         staticCanvas.insertAt(companion, staticCanvas.getObjects().indexOf(obj) + 1);
       });
       staticCanvas.renderAll();
-      callback(staticCanvas.toDataURL({ format: 'png' }));
+      const dataUrl = staticCanvas.toDataURL({ format: 'png' });
       staticCanvas.dispose();
+      outlineRenderCache.set(cacheKey, dataUrl);
+      callback(dataUrl);
     });
   }
   // Paints one full preview (wood backdrop, aluminum card, traced artwork)
@@ -3532,7 +3608,7 @@ if (fabricCanvasEl && window.fabric) {
   }
   function renderCardPreview(side) {
     const snapshot = side === currentSide
-      ? undoStack[undoStack.length - 1]
+      ? currentSideSnapshot()
       : (sideHistories[side] ? sideHistories[side].undo[sideHistories[side].undo.length - 1] : blankCanvasSnapshot);
     const canvasEl = renderingsBody && renderingsBody.querySelector(`.editor-renderings-canvas[data-side="${side}"]`);
     if (canvasEl) {
@@ -4588,8 +4664,11 @@ if (fabricCanvasEl && window.fabric) {
   // denominator) px^2 — one offscreen render pass per finish/density
   // group present, each measured by summing that pass's alpha channel
   // (self-canceling back down from the render's own resolution).
+  const coverageCache = makeSnapshotCache(60);
   function weightedCoveragePx2ForSnapshot(snapshotJson, callback) {
     if (!snapshotJson) { callback(0); return; }
+    const cached = coverageCache.get(snapshotJson);
+    if (cached !== undefined) { callback(cached); return; }
     const off = document.createElement('canvas');
     off.width = Math.round(CARD_W_PX * COVERAGE_RESOLUTION_SCALE);
     off.height = Math.round(CARD_H_PX * COVERAGE_RESOLUTION_SCALE);
@@ -4621,11 +4700,13 @@ if (fabricCanvasEl && window.fabric) {
       });
       staticCanvas.dispose();
       // Back down from this render's resolution to native card px^2.
-      callback(weightedPx2 / (COVERAGE_RESOLUTION_SCALE * COVERAGE_RESOLUTION_SCALE));
+      const result = weightedPx2 / (COVERAGE_RESOLUTION_SCALE * COVERAGE_RESOLUTION_SCALE);
+      coverageCache.set(snapshotJson, result);
+      callback(result);
     });
   }
   function snapshotForSide(side) {
-    if (side === currentSide) return undoStack[undoStack.length - 1];
+    if (side === currentSide) return currentSideSnapshot();
     return sideHistories[side] ? sideHistories[side].undo[sideHistories[side].undo.length - 1] : null;
   }
   // A snapshot with zero real objects — excludeFromExport helpers (edge
@@ -4688,6 +4769,7 @@ if (fabricCanvasEl && window.fabric) {
   // bounding boxes, same trick pasteClipboard uses elsewhere in this
   // file. Group bounding rects already account for all their members, so
   // there's no need to recurse into group contents separately.
+  const safeZoneCache = makeSnapshotCache(60);
   function checkSafeZoneOverflow(callback) {
     const bounds = safeZoneBoundsPx();
     const cardBounds = cardBoundsPx();
@@ -4697,10 +4779,13 @@ if (fabricCanvasEl && window.fabric) {
         cb(false);
         return;
       }
+      const cached = safeZoneCache.get(snap);
+      if (cached !== undefined) { cb(cached); return; }
       const parsed = JSON.parse(snap);
-      const data = JSON.parse(JSON.stringify(parsed.objects));
-      fabric.util.enlivenObjects(data, (enlivened) => {
-        cb(enlivened.some((o) => objectOverlapsCard(o, cardBounds) && objectExceedsSafeZone(o, bounds)));
+      fabric.util.enlivenObjects(parsed.objects, (enlivened) => {
+        const over = enlivened.some((o) => objectOverlapsCard(o, cardBounds) && objectExceedsSafeZone(o, bounds));
+        safeZoneCache.set(snap, over);
+        cb(over);
       });
     }
     checkSide('front', (frontOver) => {
@@ -5285,6 +5370,7 @@ if (fabricCanvasEl && window.fabric) {
     return out;
   }
   async function buildPlmjFile() {
+    if (groupEditSession) endGroupEditSession();
     const hasBack = projectHasBackSide();
     const frontSnap = snapshotForSide('front') || blankCanvasSnapshot;
     const backSnap = hasBack ? (snapshotForSide('back') || blankCanvasSnapshot) : null;
@@ -5657,13 +5743,16 @@ if (fabricCanvasEl && window.fabric) {
     const boxedSet = new Set(boxed);
     const merged = [...pre.filter((o) => !boxedSet.has(o)), ...boxed.filter((o) => !preSet.has(o))];
     suppressHistoryEvents = true;
+    suppressGroupSessionEnd = true;
     fabricCanvas.discardActiveObject();
     if (merged.length === 1) {
       fabricCanvas.setActiveObject(merged[0]);
     } else if (merged.length > 1) {
       fabricCanvas.setActiveObject(new fabric.ActiveSelection(merged, { canvas: fabricCanvas }));
     }
+    suppressGroupSessionEnd = false;
     suppressHistoryEvents = false;
+    if (groupEditSession && !selectionTouchesGroupEditSession(fabricCanvas.getActiveObject())) endGroupEditSession();
     fabricCanvas.requestRenderAll();
   });
   // ---- Finish mode ----
@@ -6548,10 +6637,14 @@ if (fabricCanvasEl && window.fabric) {
     // instead of recognizing the real active object is the whole
     // ActiveSelection.
     const obj = fabricCanvas.getActiveObject() || (e.selected && e.selected[0]);
-    // Selection moved to something outside the currently-loose group
-    // piece(s) — re-form the group before handling whatever's newly
-    // selected (which stays selected; see endGroupEditSession).
-    if (groupEditSession && !isWithinGroupEditSession(obj)) endGroupEditSession();
+    // Selection moved entirely off the currently-loose group piece(s) —
+    // re-form the group before handling whatever's newly selected (which
+    // stays selected; see endGroupEditSession). A selection that still
+    // includes a loose piece alongside something outside the group (a
+    // Shift-click onto another object) keeps the session open: closing it
+    // would pull that piece back into its group out from under the
+    // selection holding it.
+    if (groupEditSession && !suppressGroupSessionEnd && !selectionTouchesGroupEditSession(obj)) endGroupEditSession();
     normalizeAnchorOnSelect(fabricCanvas.getActiveObject());
     if (finishModeActive) {
       refreshFinishUI(obj);
@@ -7505,8 +7598,18 @@ if (fabricCanvasEl && window.fabric) {
     if (obj.type === 'group') {
       return `group@${obj.angle}:` + obj.getObjects().map(thumbSignatureFor).join('|');
     }
+    // Patterns/gradients would all stringify to "[object Object]" — the
+    // cache is shared across objects (see getLayerThumbDataUrl), so two
+    // different textures on the same shape must not collide.
+    const paintKey = (p) => {
+      if (!p || typeof p === 'string') return p;
+      if (p.colorStops) return JSON.stringify([p.type, p.coords, p.colorStops]);
+      if (p.source) return `pattern:${p.source.src || `${p.source.width}x${p.source.height}`}:${p.repeat}:${JSON.stringify(p.patternTransform)}`;
+      return JSON.stringify(p);
+    };
     return [
-      obj.type, obj.fill, obj.stroke, obj.strokeWidth, obj.strokeDashArray && obj.strokeDashArray.join(','),
+      obj.type, paintKey(obj.fill), paintKey(obj.stroke), obj.strokeWidth, obj.strokeAlign, obj._strokeWidthPx,
+      obj.cardFinish, obj.cardFinishTexture, obj.cardFinishOutline, obj.cardFinishAngle, obj.scaleX, obj.scaleY, obj.strokeDashArray && obj.strokeDashArray.join(','),
       obj.angle, obj.flipX, obj.flipY, obj.opacity,
       obj.width, obj.height, obj.radius, obj.rx, obj.ry,
       obj.points && JSON.stringify(obj.points), obj.path && obj.path.length,
@@ -7534,10 +7637,21 @@ if (fabricCanvasEl && window.fabric) {
       return null;
     }
   }
+  // Also shared by signature across objects, since undo/redo rebuilds
+  // every object from JSON — without this, each Ctrl-Z re-rendered a
+  // thumbnail for every single layer even though none of them changed.
+  const layerThumbsBySig = new Map();
+  const LAYER_THUMB_CACHE_LIMIT = 400;
   function getLayerThumbDataUrl(obj) {
     const sig = thumbSignatureFor(obj);
     if (!obj.__layerThumb || obj.__layerThumb.sig !== sig) {
-      obj.__layerThumb = { sig, dataUrl: renderLayerThumbnail(obj) };
+      let dataUrl = layerThumbsBySig.get(sig);
+      if (dataUrl === undefined) {
+        dataUrl = renderLayerThumbnail(obj);
+        layerThumbsBySig.set(sig, dataUrl);
+        if (layerThumbsBySig.size > LAYER_THUMB_CACHE_LIMIT) layerThumbsBySig.delete(layerThumbsBySig.keys().next().value);
+      }
+      obj.__layerThumb = { sig, dataUrl };
     }
     return obj.__layerThumb.dataUrl;
   }
@@ -7754,7 +7868,8 @@ if (fabricCanvasEl && window.fabric) {
   // members. From the outside this reads as "edit a piece in place,
   // still part of the group once you're done" — nothing here is a
   // permanent Ungroup.
-  let groupEditSession = null; // { ancestors, levels } — see selectNestedObject
+  // (groupEditSession itself is declared up with the undo history, which
+  // has to know about it from its very first, setup-time call.)
   // Dissolving/rebuilding a group during a group-edit session fires a
   // burst of Fabric selection/add/remove events, each of which would
   // otherwise trigger its own Layers panel rebuild — several redundant
@@ -7783,6 +7898,37 @@ if (fabricCanvasEl && window.fabric) {
     if (obj.type === 'activeSelection') return obj.getObjects().every((o) => loose.has(o));
     return loose.has(obj);
   }
+  function selectionTouchesGroupEditSession(obj) {
+    if (!groupEditSession || !obj) return false;
+    const members = obj.type === 'activeSelection' ? obj.getObjects() : [obj];
+    return members.some((o) => isWithinGroupEditSession(o));
+  }
+  // Opens leaf's group(s) for editing while holding on to whatever else
+  // was already selected, so leaf can be added to that selection (Shift+
+  // Cmd/Ctrl-click on the canvas, or a modifier-click on a nested Layers
+  // row). Returns the previously-selected objects that are still
+  // individually selectable afterwards — anything that was itself loose
+  // from a different group gets folded back into that group, since only
+  // one group can be open at a time.
+  function openNestedKeepingSelection(leaf) {
+    const current = fabricCanvas.getActiveObject();
+    const keep = current ? (current.type === 'activeSelection' ? current.getObjects().slice() : [current]) : [];
+    suppressGroupSessionEnd = true;
+    fabricCanvas.discardActiveObject();
+    suppressGroupSessionEnd = false;
+    if (!(groupEditSession && isWithinGroupEditSession(leaf))) selectNestedObject(leaf);
+    return keep.filter((o) => o !== leaf && !o.group && fabricCanvas.getObjects().includes(o));
+  }
+  // Sets the selection without the momentary discard ending an open
+  // group-edit session (see suppressGroupSessionEnd above) — the new
+  // selection itself then decides whether the session stays open.
+  function setSelectionKeepingSession(list) {
+    suppressGroupSessionEnd = true;
+    selectLayerObjects(list);
+    suppressGroupSessionEnd = false;
+    if (groupEditSession && !selectionTouchesGroupEditSession(fabricCanvas.getActiveObject())) endGroupEditSession();
+    refreshLayersList();
+  }
   // Rebuilds every dissolved ancestor level, innermost first, from
   // whichever of its original members are still around (one could've
   // been deleted while loose, or itself be the group rebuilt one level
@@ -7791,9 +7937,20 @@ if (fabricCanvasEl && window.fabric) {
   // completely different object while a piece was still loose.
   function endGroupEditSession(skipHistory) {
     if (!groupEditSession) return null;
+    // A selection still holding some loose pieces (mixed with objects
+    // outside the group — see handleSelection) can't survive those pieces
+    // being regrouped underneath it; drop it first and reselect whatever
+    // else it held afterwards.
+    let keepActive = fabricCanvas.getActiveObject();
+    if (keepActive && keepActive.type === 'activeSelection' && selectionTouchesGroupEditSession(keepActive)) {
+      const others = keepActive.getObjects().filter((o) => !isWithinGroupEditSession(o));
+      suppressGroupSessionEnd = true;
+      fabricCanvas.discardActiveObject();
+      suppressGroupSessionEnd = false;
+      keepActive = others.length > 1 ? new fabric.ActiveSelection(others, { canvas: fabricCanvas }) : (others[0] || null);
+    }
     const { ancestors, levels } = groupEditSession;
     groupEditSession = null;
-    const keepActive = fabricCanvas.getActiveObject();
     suppressHistoryEvents = true;
     suppressLayersRefresh = true;
     let rebuilt = null;
@@ -7817,7 +7974,7 @@ if (fabricCanvasEl && window.fabric) {
       fabricCanvas.moveTo(rebuilt, Math.min(insertIndex, fabricCanvas.getObjects().length - 1));
     }
     suppressHistoryEvents = false;
-    if (keepActive && keepActive !== rebuilt && fabricCanvas.getObjects().includes(keepActive)) {
+    if (keepActive && keepActive !== rebuilt && (keepActive.type === 'activeSelection' || fabricCanvas.getObjects().includes(keepActive))) {
       fabricCanvas.setActiveObject(keepActive);
     }
     suppressLayersRefresh = false;
@@ -7911,6 +8068,40 @@ if (fabricCanvasEl && window.fabric) {
     const leaf = opt.subTargets && opt.subTargets[0];
     if (!leaf) return;
     selectNestedObject(leaf);
+  });
+  // Cmd-click (Ctrl-click off a Mac) reaches straight into a group and
+  // selects the piece under the cursor — no double-click needed, and it
+  // can be dragged right away. Adding Shift adds that piece to whatever's
+  // already selected instead, so several pieces of a group (or a piece
+  // plus other objects) can be selected together. Runs before Fabric
+  // picks its target, so swapping the target here makes Fabric's own
+  // click/Shift-click/drag handling act on the piece instead of the
+  // whole group. Once the group is open its pieces are loose canvas
+  // objects, so plain Shift-click between them already works natively.
+  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  fabricCanvas.on('mouse:down:before', (opt) => {
+    const e = opt.e;
+    if (!e || !(IS_MAC ? e.metaKey : e.ctrlKey)) return;
+    if (!opt.target || opt.target.type !== 'group') return;
+    const leaf = opt.subTargets && opt.subTargets[0];
+    if (!leaf) return;
+    if (e.shiftKey) {
+      const keep = openNestedKeepingSelection(leaf);
+      if (keep.length) {
+        // Fabric's own Shift-click grouping then adds leaf to this.
+        suppressGroupSessionEnd = true;
+        suppressHistoryEvents = true;
+        fabricCanvas.discardActiveObject();
+        fabricCanvas.setActiveObject(keep.length > 1 ? new fabric.ActiveSelection(keep, { canvas: fabricCanvas }) : keep[0]);
+        suppressHistoryEvents = false;
+        suppressGroupSessionEnd = false;
+      } else {
+        fabricCanvas.setActiveObject(leaf);
+      }
+    } else {
+      selectNestedObject(leaf);
+    }
+    fabricCanvas._target = leaf;
   });
   function refreshLayersList() {
     if (!layersList) return;
@@ -8044,6 +8235,15 @@ if (fabricCanvasEl && window.fabric) {
             layersRangeAnchor = obj;
             return;
           }
+          // Modifier-click on a piece of a group that isn't open yet (or
+          // a different one): open it while keeping the current
+          // selection, and add this piece to it.
+          if (e.shiftKey || e.metaKey || e.ctrlKey) {
+            const keep = openNestedKeepingSelection(obj);
+            setSelectionKeepingSession([...keep, obj]);
+            layersRangeAnchor = obj;
+            return;
+          }
           selectNestedObject(obj);
           layersRangeAnchor = obj;
           return;
@@ -8059,7 +8259,7 @@ if (fabricCanvasEl && window.fabric) {
           const current = fabricCanvas.getActiveObject();
           const currentMembers = current ? (current.type === 'activeSelection' ? current.getObjects() : [current]) : [];
           const next = currentMembers.includes(obj) ? currentMembers.filter((o) => o !== obj) : [...currentMembers, obj];
-          selectLayerObjects(next);
+          setSelectionKeepingSession(next);
           layersRangeAnchor = obj;
         } else {
           selectLayerObjects([obj]);
@@ -8125,8 +8325,12 @@ if (fabricCanvasEl && window.fabric) {
   // evented:false and never shown in the list anyway, so skip the
   // rebuild for those — otherwise every drag frame's snap-line add/
   // remove would needlessly rebuild this list too.
+  // An undo/redo/side switch reloads the whole canvas, which removes and
+  // re-adds every object one at a time — rebuilding the panel on each of
+  // those was most of what made Ctrl-Z slow on a busy design. The restore
+  // refreshes the panel once itself when it finishes.
   function refreshLayersListIfNeeded() {
-    if (!suppressLayersRefresh) refreshLayersList();
+    if (!suppressLayersRefresh && !isRestoringHistory) refreshLayersList();
   }
   fabricCanvas.on('object:added', (opt) => {
     if (opt.target && opt.target.evented === false) return;
