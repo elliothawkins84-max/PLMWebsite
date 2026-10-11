@@ -6494,6 +6494,7 @@ if (fabricCanvasEl && window.fabric) {
     if (topbarActionsEl && helpCalloutTopRight) {
       const r = topbarActionsEl.getBoundingClientRect();
       helpCalloutTopRight.style.left = `${r.left + r.width / 2}px`;
+      helpCalloutTopRight.dataset.anchorX = String(r.left + r.width / 2);
       helpCalloutTopRight.style.top = `${r.bottom + 12}px`;
     }
     if (sidesEl && helpCalloutBottom) {
@@ -6514,12 +6515,176 @@ if (fabricCanvasEl && window.fabric) {
       helpCalloutCardType.style.left = `${r.left + r.width / 2}px`;
       helpCalloutCardType.style.bottom = `${window.innerHeight - r.top + 12}px`;
     }
+    resolveHelpCalloutOverlaps();
+    // Last resort for a very small window: tighter text and padding, then
+    // lay them out again.
+    if (helpOverlay && !helpOverlay.classList.contains('is-compact') && helpCalloutsOverlap()) {
+      helpOverlay.classList.add('is-compact');
+      positionHelpCallouts();
+    }
+  }
+  function helpCalloutsOverlap() {
+    const rects = [helpCalloutLeft, helpCalloutTopRight, helpCalloutBottom, helpCalloutCardType, helpCalloutPrice]
+      .filter(Boolean).map(helpCalloutFinalRect);
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const a = rects[i];
+        const b = rects[j];
+        if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) return true;
+      }
+    }
+    return false;
+  }
+  // Each callout is placed next to what it explains, but on a shorter
+  // window (or once a callout's text grows) neighbors can run into each
+  // other — the tall Tools callout into the Sides one below it, most of
+  // all. Works from each callout's *final* resting box (the open-state
+  // transform, not the slide-in offset it starts from): first slide Tools
+  // up out of the way (never above the top bar), then, if the window is
+  // just too short for both, move Sides sideways instead. Arrows are
+  // re-aimed so they still point at their controls.
+  const HELP_CALLOUT_GAP = 12;
+  function helpCalloutFinalRect(el) {
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const left = parseFloat(el.style.left) || 0;
+    const isLeft = el.classList.contains('editor-help-callout--left');
+    const isTop = el.classList.contains('editor-help-callout--top-right');
+    const isPrice = el.classList.contains('editor-help-callout--price');
+    const x = isLeft || isPrice ? left : left - w / 2;
+    let y;
+    if (isLeft) y = (parseFloat(el.style.top) || 0) - h / 2;
+    else if (isTop) y = parseFloat(el.style.top) || 0;
+    else y = window.innerHeight - (parseFloat(el.style.bottom) || 0) - h;
+    return { left: x, top: y, right: x + w, bottom: y + h, width: w, height: h };
+  }
+  function helpRectsOverlap(a, b) {
+    return a.left < b.right + HELP_CALLOUT_GAP && b.left < a.right + HELP_CALLOUT_GAP
+      && a.top < b.bottom + HELP_CALLOUT_GAP && b.top < a.bottom + HELP_CALLOUT_GAP;
+  }
+  function resolveHelpCalloutOverlaps() {
+    const topbar = document.querySelector('.editor-topbar');
+    const minTop = (topbar ? topbar.getBoundingClientRect().bottom : 0) + HELP_CALLOUT_GAP;
+    const edge = 8;
+    const bottomRow = [helpCalloutBottom, helpCalloutCardType, helpCalloutPrice].filter(Boolean);
+    bottomRow.forEach((el) => {
+      el.style.removeProperty('--help-arrow-x');
+      el.classList.remove('has-arrow-x');
+    });
+    // 1. Tools: fit it above whatever's below it — widening it (two
+    //    columns at the widest) before sliding it up, so on a short window
+    //    it gets shorter rather than running into the bottom row.
+    if (helpCalloutLeft) {
+      helpCalloutLeft.style.removeProperty('--help-arrow-y');
+      helpCalloutLeft.classList.remove('is-two-col');
+      helpCalloutLeft.style.width = '';
+      const anchorY = parseFloat(helpCalloutLeft.style.top) || 0;
+      const leftX = parseFloat(helpCalloutLeft.style.left) || 0;
+      const fitsAt = () => {
+        const left = helpCalloutFinalRect(helpCalloutLeft);
+        let top = left.top;
+        bottomRow.map(helpCalloutFinalRect)
+          .filter((r) => r.left < left.right + HELP_CALLOUT_GAP && left.left < r.right + HELP_CALLOUT_GAP)
+          .forEach((r) => { top = Math.min(top, r.top - HELP_CALLOUT_GAP - left.height); });
+        return { top, height: left.height };
+      };
+      const maxWidth = Math.max(240, window.innerWidth - leftX - edge);
+      let fit = fitsAt();
+      [320, 480, 560].forEach((w) => {
+        if (fit.top >= minTop || w > maxWidth) return;
+        helpCalloutLeft.style.width = `${w}px`;
+        helpCalloutLeft.classList.toggle('is-two-col', w >= 480);
+        fit = fitsAt();
+      });
+      const top = Math.max(minTop, fit.top);
+      helpCalloutLeft.style.top = `${top + fit.height / 2}px`;
+      const arrowY = Math.min(Math.max(anchorY - top, 16), fit.height - 16);
+      helpCalloutLeft.style.setProperty('--help-arrow-y', `${arrowY}px`);
+    }
+    // 2. Bottom row (Sides, Card Type, Price): keep each as close to its
+    //    control as it can, but in order left-to-right, clear of each
+    //    other and of Tools wherever they share height — then pulled back
+    //    in from the right edge if that pushed one off screen.
+    const tools = helpCalloutLeft ? helpCalloutFinalRect(helpCalloutLeft) : null;
+    const items = bottomRow.map((el) => {
+      const r = helpCalloutFinalRect(el);
+      const isPrice = el === helpCalloutPrice;
+      const anchorX = isPrice ? r.right - 28 : r.left + r.width / 2;
+      return { el, r, isPrice, anchorX, left: r.left };
+    }).sort((x, y) => x.left - y.left);
+    let prevRight = -Infinity;
+    items.forEach((it) => {
+      let min = prevRight + HELP_CALLOUT_GAP;
+      if (tools && it.r.top < tools.bottom + HELP_CALLOUT_GAP && tools.top < it.r.bottom + HELP_CALLOUT_GAP) {
+        min = Math.max(min, tools.right + HELP_CALLOUT_GAP);
+      }
+      it.left = Math.max(it.left, min, edge);
+      prevRight = it.left + it.r.width;
+    });
+    let nextLeft = window.innerWidth - edge + HELP_CALLOUT_GAP;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      it.left = Math.min(it.left, nextLeft - HELP_CALLOUT_GAP - it.r.width);
+      nextLeft = it.left;
+    }
+    items.forEach((it) => {
+      if (Math.abs(it.left - it.r.left) < 0.5) return;
+      it.el.style.left = `${it.isPrice ? it.left : it.left + it.r.width / 2}px`;
+      const arrowX = Math.min(Math.max(it.anchorX - it.left, 16), it.r.width - 16);
+      it.el.style.setProperty('--help-arrow-x', `${arrowX}px`);
+      it.el.classList.add('has-arrow-x');
+    });
+    // 3. File (top right): tall enough on a short window to reach the
+    //    bottom row — widen it (two columns at the widest) until it
+    //    clears, keeping it on screen and its arrow on the File buttons.
+    if (helpCalloutTopRight) {
+      const el = helpCalloutTopRight;
+      el.style.width = '';
+      el.classList.remove('is-two-col');
+      el.style.removeProperty('--help-arrow-x');
+      const anchorX = parseFloat(el.dataset.anchorX || el.style.left) || 0;
+      el.dataset.anchorX = String(anchorX);
+      const others = [...bottomRow, helpCalloutLeft].filter(Boolean).map(helpCalloutFinalRect);
+      const place = () => {
+        const w = el.offsetWidth;
+        const left = Math.max(edge, Math.min(anchorX - w / 2, window.innerWidth - edge - w));
+        el.style.left = `${left + w / 2}px`;
+        return helpCalloutFinalRect(el);
+      };
+      const overlapArea = (a) => others.reduce((sum, o) => {
+        const w = Math.min(a.right, o.right) + HELP_CALLOUT_GAP - Math.max(a.left, o.left);
+        const h = Math.min(a.bottom, o.bottom) + HELP_CALLOUT_GAP - Math.max(a.top, o.top);
+        return sum + (w > 0 && h > 0 ? w * h : 0);
+      }, 0);
+      const setWidth = (w) => {
+        el.style.width = w ? `${w}px` : '';
+        el.classList.toggle('is-two-col', !!w && w >= 340);
+        return place();
+      };
+      // Natural width first; then wider (two columns once there's room),
+      // including exactly the space left beside Tools — the first that
+      // clears everything wins, else whichever overlaps least.
+      const toolsRight = helpCalloutLeft ? helpCalloutFinalRect(helpCalloutLeft).right : 0;
+      const besideTools = Math.floor(window.innerWidth - edge - toolsRight - HELP_CALLOUT_GAP);
+      const widths = [0, 320, besideTools, 440].filter((w) => w === 0 || (w >= 240 && w <= window.innerWidth - edge * 2));
+      let best = null;
+      for (const w of widths) {
+        const r = setWidth(w);
+        const area = overlapArea(r);
+        if (!best || area < best.area) best = { w, area };
+        if (area === 0) break;
+      }
+      let r = setWidth(best.w);
+      const arrowX = Math.min(Math.max(anchorX - r.left, 16), r.width - 16);
+      if (Math.abs(arrowX - r.width / 2) > 0.5) el.style.setProperty('--help-arrow-x', `${arrowX}px`);
+    }
   }
   function isHelpModeOpen() {
     return !!(helpOverlay && helpOverlay.classList.contains('is-open'));
   }
   function openHelpMode() {
     if (!helpOverlay) return;
+    helpOverlay.classList.remove('is-compact');
     positionHelpCallouts();
     helpOverlay.classList.add('is-open');
     helpOverlay.setAttribute('aria-hidden', 'false');
@@ -6542,6 +6707,16 @@ if (fabricCanvasEl && window.fabric) {
   // click instead of the overlay.
   if (helpBtn) helpBtn.addEventListener('click', () => (isHelpModeOpen() ? closeHelpMode() : openHelpMode()));
   if (helpOverlay) helpOverlay.addEventListener('click', closeHelpMode);
+  window.addEventListener('resize', () => {
+    // Next frame, once the editor's own layout has caught up with the
+    // new window size.
+    if (isHelpModeOpen()) {
+      requestAnimationFrame(() => {
+        helpOverlay.classList.remove('is-compact');
+        positionHelpCallouts();
+      });
+    }
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isHelpModeOpen()) closeHelpMode();
   });

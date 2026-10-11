@@ -1666,7 +1666,7 @@ select option {
 }
 .editor-help-callout--left::after {
   right: 100%;
-  top: 50%;
+  top: var(--help-arrow-y, 50%);
   transform: translateY(-50%);
   border-right-color: var(--line);
 }
@@ -1680,7 +1680,7 @@ select option {
 }
 .editor-help-callout--top-right::after {
   bottom: 100%;
-  left: 50%;
+  left: var(--help-arrow-x, 50%);
   transform: translateX(-50%);
   border-bottom-color: var(--line);
 }
@@ -1694,7 +1694,7 @@ select option {
 }
 .editor-help-callout--bottom::after {
   top: 100%;
-  left: 50%;
+  left: var(--help-arrow-x, 50%);
   transform: translateX(-50%);
   border-top-color: var(--line);
 }
@@ -1711,7 +1711,7 @@ select option {
 }
 .editor-help-callout--cardtype::after {
   top: 100%;
-  left: 50%;
+  left: var(--help-arrow-x, 50%);
   transform: translateX(-50%);
   border-top-color: var(--line);
 }
@@ -1731,6 +1731,15 @@ select option {
   right: 20px;
   border-top-color: var(--line);
 }
+.editor-help-callout--price.has-arrow-x::after {
+  right: auto;
+  left: var(--help-arrow-x);
+  transform: translateX(-50%);
+}
+/* On a short window the Tools callout widens into two columns (see
+   resolveHelpCalloutOverlaps) so it's short enough to clear the bottom row. */
+.editor-help-callout.is-two-col ul { display: block; columns: 2; column-gap: 20px; }
+.editor-help-callout.is-two-col li { break-inside: avoid; margin-bottom: 8px; }
 .editor-help-overlay.is-open .editor-help-callout--price {
   transform: translateY(0);
   opacity: 1;
@@ -2359,3 +2368,10 @@ select option {
   from { opacity: 0; transform: translate(-50%, 6px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* Very small windows only — see positionHelpCallouts. */
+.editor-help-overlay.is-compact .editor-help-callout { padding: 10px 12px; }
+.editor-help-overlay.is-compact .editor-help-callout h3 { font-size: 0.7rem; margin-bottom: 6px; }
+.editor-help-overlay.is-compact .editor-help-callout ul { gap: 4px; }
+.editor-help-overlay.is-compact .editor-help-callout li { font-size: 0.62rem; line-height: 1.4; }
+.editor-help-overlay.is-compact .editor-help-callout.is-two-col li { margin-bottom: 4px; }
