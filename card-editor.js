@@ -974,6 +974,9 @@ if (fabricCanvasEl && window.fabric) {
   }
 
   function finalizeShape(shape) {
+    // A drawn circle is stretched to its drag box, an import is scaled to
+    // its real-world size — bake either into real geometry.
+    shape = bakeScale(shape);
     selectingNewlyPlacedObject = true;
     fabricCanvas.setActiveObject(shape);
     selectingNewlyPlacedObject = false;
@@ -2292,6 +2295,251 @@ if (fabricCanvasEl && window.fabric) {
     edgeIndicator.setCoords();
   }
 
+  // ---- Scale is always baked into real geometry ----
+  // This is a vector tool: resizing something rewrites its actual
+  // geometry (width/height, radius, points, path, font size), the way
+  // Illustrator does — it never leaves a stretch factor riding along in
+  // scaleX/scaleY. A leftover scale was behind a run of bugs: a ring's
+  // clip cached at its pre-scale size and stretched (hazy mockups), a
+  // corner radius quietly multiplied by the scale, offsets that had to be
+  // divided back out everywhere. Fabric still scales live while a handle
+  // is being dragged; the moment the drag (or a W/H edit, a drawn shape,
+  // an import, an opened file) settles, it's folded in here and scale
+  // goes back to 1. The one exception is text stretched non-uniformly —
+  // a font has no width/height of its own to absorb that, so it keeps
+  // its stretch (like Illustrator's horizontal/vertical character scale).
+  const SCALE_EPS = 1e-6;
+  const isUnitScale = (o) => Math.abs(Math.abs(o.scaleX || 1) - 1) < SCALE_EPS && Math.abs(Math.abs(o.scaleY || 1) - 1) < SCALE_EPS;
+  function scalePathCommands(path, sx, sy) {
+    const out = [];
+    for (const cmd of path) {
+      const op = cmd[0];
+      if (!['M', 'L', 'C', 'Q', 'Z', 'z'].includes(op)) return null;
+      const next = [op];
+      for (let i = 1; i < cmd.length; i += 2) next.push(cmd[i] * sx, cmd[i + 1] * sy);
+      out.push(next);
+    }
+    return out;
+  }
+  // Swaps oldObj for newObj in the same stack slot (canvas or parent
+  // group), and anywhere this file still holds on to it.
+  function replaceObjectInPlace(oldObj, newObj) {
+    const parent = oldObj.group && oldObj.group.type === 'group' ? oldObj.group : null;
+    if (parent) {
+      const i = parent._objects.indexOf(oldObj);
+      if (i !== -1) parent._objects[i] = newObj;
+      newObj.group = parent;
+      newObj.canvas = parent.canvas;
+    } else if (oldObj.canvas) {
+      const c = oldObj.canvas;
+      const i = c.getObjects().indexOf(oldObj);
+      const wasActive = c.getActiveObject() === oldObj;
+      const prevSuppress = suppressHistoryEvents;
+      suppressHistoryEvents = true;
+      c.remove(oldObj);
+      c.insertAt(newObj, i, false);
+      suppressHistoryEvents = prevSuppress;
+      if (wasActive) c.setActiveObject(newObj);
+    }
+    if (groupEditSession) {
+      groupEditSession.levels = groupEditSession.levels.map((lvl) => lvl.map((o) => (o === oldObj ? newObj : o)));
+    }
+    return newObj;
+  }
+  // Folds obj's scale (times any extra scale handed down from a parent
+  // group being baked) into its geometry. Returns the resulting object —
+  // usually obj itself, but a circle stretched unevenly comes back as an
+  // ellipse, since a circle has only one radius to hold both axes.
+  function bakeScale(obj, parentSx = 1, parentSy = 1) {
+    if (!obj) return obj;
+    let sx = (obj.scaleX || 1) * parentSx;
+    let sy = (obj.scaleY || 1) * parentSy;
+    if (sx < 0) { sx = -sx; obj.flipX = !obj.flipX; }
+    if (sy < 0) { sy = -sy; obj.flipY = !obj.flipY; }
+    if (Math.abs(sx - 1) < SCALE_EPS && Math.abs(sy - 1) < SCALE_EPS) {
+      obj.set({ scaleX: 1, scaleY: 1 });
+      return obj;
+    }
+    const isText = obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox';
+    if (isText) {
+      if (Math.abs(sx - sy) < 1e-3) {
+        // Uniform: the new size *is* a new font size.
+        const center = obj.getCenterPoint();
+        obj.set({ fontSize: Math.round(obj.fontSize * sx * 100) / 100, scaleX: 1, scaleY: 1 });
+        obj.setPositionByOrigin(center, 'center', 'center');
+      } else {
+        obj.set({ scaleX: sx, scaleY: sy });
+      }
+      obj.setCoords();
+      return obj;
+    }
+    if (obj.type === 'image') {
+      obj.set({ scaleX: sx, scaleY: sy });
+      return obj;
+    }
+    const center = obj.getCenterPoint();
+    const strokeK = Math.sqrt(sx * sy);
+    // A clip of its own (a template's knockout, say — not one rebuilt by
+    // applyStrokeRender below) lives in obj's local space, so it has to be
+    // rescaled along with it.
+    if (obj.clipPath && !obj.clipPath.absolutePositioned) {
+      const clip = obj.clipPath;
+      const cc = clip.getCenterPoint();
+      clip.setPositionByOrigin(new fabric.Point(cc.x * sx, cc.y * sy), 'center', 'center');
+      obj.clipPath = bakeScale(clip, sx, sy);
+    }
+    // A uniform stroke is a fixed physical width already; a plain one was
+    // being scaled along with the shape, so keep what it looked like.
+    if (!obj.strokeUniform && obj.strokeWidth) obj.strokeWidth *= strokeK;
+    if (obj.type === 'group') {
+      obj.getObjects().slice().forEach((child) => {
+        // Move each child's center (not its origin point — imported
+        // pieces are often anchored top-left) to where the scale puts it.
+        const c = child.getCenterPoint();
+        child.setPositionByOrigin(new fabric.Point(c.x * sx, c.y * sy), 'center', 'center');
+        // A child turned a quarter-turn sees the group's axes swapped.
+        const a = (((child.angle || 0) % 180) + 180) % 180;
+        const quarter = Math.abs(a - 90) < 1e-6;
+        bakeScale(child, quarter ? sy : sx, quarter ? sx : sy);
+      });
+      // Re-measure the group from its rebuilt children — a fixed-width
+      // (uniform) stroke inside doesn't grow with the rest, so simply
+      // scaling the old box would leave it the wrong size for what's in
+      // it. Measured in the group's own space (Fabric's addWithUpdate
+      // works in canvas space, which breaks for a nested group), then
+      // the children are re-centered and the group shifted to match.
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      obj.getObjects().forEach((child) => {
+        const dim = child._getTransformedDimensions();
+        const c = child.getCenterPoint();
+        const rad = fabric.util.degreesToRadians(child.angle || 0);
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([kx, ky]) => {
+          const x = (kx * dim.x) / 2;
+          const y = (ky * dim.y) / 2;
+          const px = c.x + x * cos - y * sin;
+          const py = c.y + x * sin + y * cos;
+          minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+          minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+        });
+      });
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      obj.getObjects().forEach((child) => child.set({ left: child.left - cx, top: child.top - cy }));
+      // Where the group's own center moves to, in its parent's space.
+      const rad = fabric.util.degreesToRadians(obj.angle || 0);
+      const fx = obj.flipX ? -cx : cx;
+      const fy = obj.flipY ? -cy : cy;
+      center.x += fx * Math.cos(rad) - fy * Math.sin(rad);
+      center.y += fx * Math.sin(rad) + fy * Math.cos(rad);
+      obj.set({ width: maxX - minX, height: maxY - minY, scaleX: 1, scaleY: 1 });
+    } else if (obj.type === 'rect') {
+      const w = obj.width * sx;
+      const h = obj.height * sy;
+      let rx = (obj.rx || 0) * sx;
+      let ry = (obj.ry || 0) * sy;
+      // The Radius field's value is the real radius — resizing a rounded
+      // rectangle keeps its corners, like Figma/Illustrator.
+      if (obj._cornerRadiusPx != null) rx = ry = obj._cornerRadiusPx;
+      const maxR = Math.min(w, h) / 2;
+      obj.set({ width: w, height: h, rx: Math.min(rx, maxR), ry: Math.min(ry, maxR), scaleX: 1, scaleY: 1 });
+    } else if (obj.type === 'triangle') {
+      obj.set({ width: obj.width * sx, height: obj.height * sy, scaleX: 1, scaleY: 1 });
+    } else if (obj.type === 'ellipse') {
+      obj.set({ rx: obj.rx * sx, ry: obj.ry * sy, scaleX: 1, scaleY: 1 });
+    } else if (obj.type === 'circle') {
+      if (Math.abs(sx - sy) < 1e-4) {
+        obj.set({ radius: obj.radius * sx, scaleX: 1, scaleY: 1 });
+      } else {
+        const ellipse = new fabric.Ellipse({
+          ...obj.toObject(HISTORY_PROPS),
+          type: 'ellipse', fill: obj.fill, stroke: obj.stroke, clipPath: null,
+          rx: obj.radius * sx, ry: obj.radius * sy, scaleX: 1, scaleY: 1,
+        });
+        HISTORY_PROPS.forEach((k) => { if (obj[k] !== undefined) ellipse[k] = obj[k]; });
+        replaceObjectInPlace(obj, ellipse);
+        obj = ellipse;
+      }
+    } else if (obj.type === 'line') {
+      obj.set({ x1: obj.x1 * sx, y1: obj.y1 * sy, x2: obj.x2 * sx, y2: obj.y2 * sy, scaleX: 1, scaleY: 1 });
+    } else if (obj.type === 'polygon' || obj.type === 'polyline') {
+      obj.set({
+        points: obj.points.map((pt) => ({ x: pt.x * sx, y: pt.y * sy })),
+        width: obj.width * sx, height: obj.height * sy, scaleX: 1, scaleY: 1,
+      });
+      obj.pathOffset = { x: obj.pathOffset.x * sx, y: obj.pathOffset.y * sy };
+    } else if (obj.type === 'path') {
+      const scaled = scalePathCommands(obj.path, sx, sy);
+      if (!scaled) {
+        obj.set({ scaleX: sx, scaleY: sy });
+        return obj;
+      }
+      obj.set({ path: scaled, width: obj.width * sx, height: obj.height * sy, scaleX: 1, scaleY: 1 });
+      obj.pathOffset = { x: obj.pathOffset.x * sx, y: obj.pathOffset.y * sy };
+      if (obj._triWidth) obj._triWidth *= sx;
+      if (obj._triHeight) obj._triHeight *= sy;
+    } else {
+      obj.set({ scaleX: sx, scaleY: sy });
+      return obj;
+    }
+    obj.dirty = true;
+    obj.setPositionByOrigin(center, 'center', 'center');
+    // Stroke-mode clips (Inside/Outside, rounded rings, triangles) were
+    // built for the old size — rebuild against the new geometry.
+    if (obj.type !== 'group' && obj._strokeWidthPx && SHAPE_FILL_TYPES.includes(obj.type) && shapeFillModeFor(obj) === 'stroke') {
+      applyStrokeRender(obj);
+    } else if (obj.type !== 'group') {
+      syncSelectionPadding(obj);
+    }
+    obj.setCoords();
+    return obj;
+  }
+  // The object:modified / W-H entry point: obj is whatever was transformed
+  // — a single object, a group, or a multi-selection (whose scale
+  // belongs to its members). Returns what should be the active object.
+  function bakeScaleOfTarget(target) {
+    if (!target) return target;
+    if (target.type === 'activeSelection') {
+      if (isUnitScale(target)) return target;
+      // Dropping the selection hands its transform down to each member;
+      // bake them, then reselect the same set.
+      const members = target.getObjects().slice();
+      const prevHistory = suppressHistoryEvents;
+      suppressHistoryEvents = true;
+      suppressGroupSessionEnd = true;
+      fabricCanvas.discardActiveObject();
+      const baked = members.map((m) => bakeScale(m));
+      const sel = new fabric.ActiveSelection(baked, { canvas: fabricCanvas });
+      fabricCanvas.setActiveObject(sel);
+      suppressGroupSessionEnd = false;
+      suppressHistoryEvents = prevHistory;
+      return sel;
+    }
+    if (isUnitScale(target) && target.type !== 'group') return target;
+    if (target.type === 'group' && isUnitScale(target)) return target;
+    return bakeScale(target);
+  }
+  // Every top-level object on the canvas — for opening files/templates
+  // and undo snapshots saved before this existed. True if anything moved.
+  function bakeScaleOfCanvas() {
+    let changed = false;
+    fabricCanvas.getObjects().slice().forEach((o) => {
+      if (o.excludeFromExport) return;
+      if (!hasScaleAnywhere(o)) return;
+      bakeScale(o);
+      changed = true;
+    });
+    return changed;
+  }
+  function hasScaleAnywhere(o) {
+    if (o.type === 'i-text' || o.type === 'text' || o.type === 'textbox') {
+      return !isUnitScale(o) && Math.abs(Math.abs(o.scaleX) - Math.abs(o.scaleY)) < 1e-3;
+    }
+    if (!isUnitScale(o) && o.type !== 'image') return true;
+    return o.type === 'group' && o.getObjects().some(hasScaleAnywhere);
+  }
+
   // ---- Grouping ----
   function groupActiveSelection() {
     const active = fabricCanvas.getActiveObject();
@@ -2584,6 +2832,12 @@ if (fabricCanvasEl && window.fabric) {
         if (o.type === 'rect' && o._strokeWidthPx && shapeFillModeFor(o) === 'stroke') applyStrokeRender(o);
         else syncSelectionPadding(o);
       });
+      // Designs/templates/undo steps saved before resizes were baked into
+      // geometry still carry scale — fold it in now, and record the
+      // baked version in place of the old one (it looks identical).
+      if (bakeScaleOfCanvas()) {
+        undoStack[undoStack.length - 1] = JSON.stringify(fabricCanvas.toJSON(HISTORY_PROPS));
+      }
       fabricCanvas.requestRenderAll();
       isRestoringHistory = false;
       hideObjectToolbar();
@@ -2633,6 +2887,13 @@ if (fabricCanvasEl && window.fabric) {
     return !target || target.evented !== false;
   }
   fabricCanvas.on('object:modified', (opt) => {
+    // Bake any resize into real geometry before it's recorded (and before
+    // the handlers after this one see it) — see bakeScale.
+    if (opt.target && opt.target.evented !== false) {
+      const result = bakeScaleOfTarget(opt.target);
+      if (result !== opt.target) opt.target = result;
+      fabricCanvas.requestRenderAll();
+    }
     if (isHistoryWorthy(opt.target)) pushHistory();
   });
   fabricCanvas.on('object:added', (opt) => {
@@ -6808,6 +7069,15 @@ if (fabricCanvasEl && window.fabric) {
       const s = Math.max(Math.abs(obj.scaleX), Math.abs(obj.scaleY));
       obj.set({ scaleX: s, scaleY: s });
     }
+    // A rounded rectangle keeps its real corner radius while it's being
+    // resized (bakeScale makes that permanent on release) instead of the
+    // corners stretching along with the drag.
+    if (obj.type === 'rect' && obj._cornerRadiusPx != null) {
+      const sx = Math.abs(obj.scaleX) || 1;
+      const sy = Math.abs(obj.scaleY) || 1;
+      const r = Math.min(obj._cornerRadiusPx, Math.min(obj.width * sx, obj.height * sy) / 2);
+      obj.set({ rx: r / sx, ry: r / sy });
+    }
     if (scaleAnchorPos) {
       obj.set(scaleAnchorPos);
       obj.setCoords();
@@ -7322,9 +7592,12 @@ if (fabricCanvasEl && window.fabric) {
       const ratio = targetPx / current;
       obj.set({ scaleX: obj.scaleX * ratio, scaleY: obj.scaleY * ratio });
     }
-    obj.setCoords();
+    // Fold the new size straight into the geometry (see bakeScale).
+    const result = bakeScaleOfTarget(obj);
+    result.setCoords();
+    syncEdgeIndicator(result);
     fabricCanvas.requestRenderAll();
-    refreshTransformFields(obj);
+    refreshTransformFields(result);
     pushHistory();
   }
   commitOnEnterOrBlur(sizeWInput, (val) => applySizeMm('w', val));
