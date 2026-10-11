@@ -1787,6 +1787,22 @@ select option {
 }
 .editor-settings-unit-btn:hover:not(.is-active) { color: var(--fg); background: rgba(255, 255, 255, 0.08); }
 .editor-settings-unit-btn.is-active { color: var(--bg); background: var(--fg); border-color: var(--fg); }
+.editor-settings-popup-label--spaced { margin-top: 14px; }
+.editor-settings-nudge-row { display: flex; align-items: center; gap: 8px; }
+.editor-settings-nudge-row input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.75rem;
+}
+.editor-settings-nudge-row input:focus { outline: none; border-color: var(--fg); }
+.editor-settings-nudge-unit { font-size: 0.75rem; color: var(--muted); width: 18px; }
+.editor-settings-hint { margin-top: 6px; font-size: 0.64rem; line-height: 1.4; color: var(--muted); }
 
 /* ---- Shape-size modal (plain click with the Shapes tool) ---- */
 /* display stays flex at all times (this is position:fixed, so it never

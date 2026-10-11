@@ -891,6 +891,12 @@
       <button type="button" class="editor-settings-unit-btn is-active" data-unit="mm">mm</button>
       <button type="button" class="editor-settings-unit-btn" data-unit="in">in</button>
     </div>
+    <p class="editor-settings-popup-label editor-settings-popup-label--spaced"><label for="nudge-distance">Arrow-key nudge</label></p>
+    <div class="editor-settings-nudge-row">
+      <input type="number" id="nudge-distance" min="0.01" step="0.1" value="1" inputmode="decimal" />
+      <span class="editor-settings-nudge-unit" id="nudge-distance-unit">mm</span>
+    </div>
+    <p class="editor-settings-hint">Arrow keys move the selection by this much. Hold Shift for 10×.</p>
   </div>
 
   <!-- Shown on a plain click (no drag) with the Shapes tool, in place of
@@ -913,7 +919,7 @@
         <li><strong>Upload</strong> — import an SVG file.</li>
         <li><strong>Layers</strong> — see and reorder everything on the card.</li>
         <li><strong>Finish</strong> — assign an engraving finish to each object.</li>
-        <li><strong>Settings</strong> — switch between mm and inches.</li>
+        <li><strong>Settings</strong> — switch between mm and inches, and set how far the arrow keys move things.</li>
       </ul>
     </div>
     <div class="editor-help-callout editor-help-callout--top-right" id="help-callout-top-right">

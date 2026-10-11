@@ -2602,6 +2602,7 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
   function undo() {
+    flushNudgeHistory();
     // Records any edits made inside an open group first, so this undoes
     // them rather than skipping past them.
     if (groupEditSession) endGroupEditSession();
@@ -2610,6 +2611,7 @@ if (fabricCanvasEl && window.fabric) {
     restoreHistorySnapshot(undoStack[undoStack.length - 1]);
   }
   function redo() {
+    flushNudgeHistory();
     if (groupEditSession) endGroupEditSession();
     if (!redoStack.length) return;
     const snapshot = redoStack.pop();
@@ -6097,7 +6099,7 @@ if (fabricCanvasEl && window.fabric) {
 
     // ---- Units (mm / in) ----
     const unitButtons = settingsPopup.querySelectorAll('.editor-settings-unit-btn');
-    const UNIT_LABEL_IDS = ['corner-radius-unit', 'stroke-width-unit', 'pos-x-unit', 'pos-y-unit', 'size-w-unit', 'size-h-unit', 'shape-modal-w-unit', 'shape-modal-h-unit'];
+    const UNIT_LABEL_IDS = ['nudge-distance-unit', 'corner-radius-unit', 'stroke-width-unit', 'pos-x-unit', 'pos-y-unit', 'size-w-unit', 'size-h-unit', 'shape-modal-w-unit', 'shape-modal-h-unit'];
     function refreshUnitLabels() {
       UNIT_LABEL_IDS.forEach((id) => {
         const el = document.getElementById(id);
@@ -6109,6 +6111,7 @@ if (fabricCanvasEl && window.fabric) {
       unitSystem = next;
       unitButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.unit === unitSystem));
       refreshUnitLabels();
+      refreshNudgeField();
       rebuildRulers();
       setActiveSideUI(currentSideName);
       // Re-populate every currently-visible numeric field in the new unit
@@ -7173,6 +7176,72 @@ if (fabricCanvasEl && window.fabric) {
   }
   commitOnEnterOrBlur(posXInput, (val) => moveActiveObjectAnchorTo('x', val));
   commitOnEnterOrBlur(posYInput, (val) => moveActiveObjectAnchorTo('y', val));
+
+  // ---- Arrow-key nudge ----
+  // Arrow keys move the selection by a set distance (1mm by default,
+  // editable in Settings; Shift for 10x). Stored in mm whatever the
+  // display unit, and remembered in this browser only — a per-viewer
+  // preference, so a blocked/empty localStorage just means the default.
+  const NUDGE_STORAGE_KEY = 'plm-editor-nudge-mm';
+  const NUDGE_DEFAULT_MM = 1;
+  const nudgeInput = document.getElementById('nudge-distance');
+  let nudgeMm = NUDGE_DEFAULT_MM;
+  try {
+    const stored = parseFloat(localStorage.getItem(NUDGE_STORAGE_KEY));
+    if (stored > 0) nudgeMm = stored;
+  } catch (e) { /* storage unavailable — keep the default */ }
+  function refreshNudgeField() {
+    if (!nudgeInput) return;
+    const value = unitSystem === 'in' ? nudgeMm / MM_PER_IN : nudgeMm;
+    nudgeInput.value = String(parseFloat(value.toFixed(unitDecimals() + 1)));
+    nudgeInput.step = unitSystem === 'in' ? '0.01' : '0.1';
+  }
+  if (nudgeInput) {
+    refreshNudgeField();
+    nudgeInput.addEventListener('change', () => {
+      const value = parseFloat(nudgeInput.value);
+      if (value > 0) {
+        nudgeMm = unitSystem === 'in' ? value * MM_PER_IN : value;
+        try { localStorage.setItem(NUDGE_STORAGE_KEY, String(nudgeMm)); } catch (e) { /* not remembered, still applies */ }
+      }
+      refreshNudgeField();
+    });
+    // Enter commits and hands the arrow keys back to the canvas.
+    nudgeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') nudgeInput.blur();
+    });
+  }
+  // A held-down arrow fires many keydowns — recorded as one undo step once
+  // the nudging pauses, not one per repeat. Undo/redo flush it first.
+  let nudgeHistoryTimer = null;
+  function flushNudgeHistory() {
+    if (!nudgeHistoryTimer) return;
+    clearTimeout(nudgeHistoryTimer);
+    nudgeHistoryTimer = null;
+    pushHistory();
+  }
+  const NUDGE_KEYS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+  document.addEventListener('keydown', (e) => {
+    const dir = NUDGE_KEYS[e.key];
+    if (!dir || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName))) return;
+    if (document.querySelector('.editor-modal-overlay.is-open, .is-open[aria-hidden="false"], #context-menu.is-open, .editor-custom-select.is-open') || isHelpModeOpen()) return;
+    const obj = fabricCanvas.getActiveObject();
+    if (!obj || obj.isEditing) return;
+    e.preventDefault();
+    const step = nudgeMm * PX_PER_MM * (e.shiftKey ? 10 : 1);
+    if (!obj.lockMovementX) obj.set({ left: obj.left + dir[0] * step });
+    if (!obj.lockMovementY) obj.set({ top: obj.top + dir[1] * step });
+    obj.setCoords();
+    fabricCanvas.requestRenderAll();
+    refreshTransformFields(obj);
+    clearTimeout(nudgeHistoryTimer);
+    nudgeHistoryTimer = setTimeout(() => {
+      nudgeHistoryTimer = null;
+      pushHistory();
+    }, 400);
+  });
 
   // ---- Size fields (width/height, in the current display unit) ----
   // Text, uniform (default): folds into fontSize so both dimensions move
