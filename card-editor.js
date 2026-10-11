@@ -766,6 +766,9 @@ if (fabricCanvasEl && window.fabric) {
   const shapesBtn = document.getElementById('tool-shapes');
   const isTextToolActive = () => !!(textBtn && textBtn.classList.contains('is-active'));
   const isShapesToolActive = () => !!(shapesBtn && shapesBtn.classList.contains('is-active'));
+  // True while the Text/Shapes tool itself is selecting the object it just
+  // placed — see handleSelection, which otherwise drops back to Select.
+  let selectingNewlyPlacedObject = false;
 
   // ---- Shape type (which shape the Shapes tool draws next) ----
   let currentShapeType = 'line';
@@ -833,7 +836,9 @@ if (fabricCanvasEl && window.fabric) {
       centeredRotation: false,
     });
     fabricCanvas.add(text);
+    selectingNewlyPlacedObject = true;
     fabricCanvas.setActiveObject(text);
+    selectingNewlyPlacedObject = false;
     applyScalingControlsVisibility(text);
     text.enterEditing();
     fabricCanvas.requestRenderAll();
@@ -969,7 +974,9 @@ if (fabricCanvasEl && window.fabric) {
   }
 
   function finalizeShape(shape) {
+    selectingNewlyPlacedObject = true;
     fabricCanvas.setActiveObject(shape);
+    selectingNewlyPlacedObject = false;
     setObjectAnchor(shape, 'c');
     applyScalingControlsVisibility(shape);
     fabricCanvas.requestRenderAll();
@@ -6650,6 +6657,15 @@ if (fabricCanvasEl && window.fabric) {
     // instead of recognizing the real active object is the whole
     // ActiveSelection.
     const obj = fabricCanvas.getActiveObject() || (e.selected && e.selected[0]);
+    // Picking an existing object (canvas or Layers panel) while the Text
+    // or Shapes tool is active drops back to the Select tool, so the next
+    // click moves/edits it instead of placing something new. The object
+    // a tool has just placed itself doesn't count — the tool stays put so
+    // several can be added in a row.
+    if (obj && !selectingNewlyPlacedObject && (isTextToolActive() || isShapesToolActive())) {
+      const selectBtn = document.getElementById('tool-select');
+      if (selectBtn) selectBtn.click();
+    }
     // Selection moved entirely off the currently-loose group piece(s) —
     // re-form the group before handling whatever's newly selected (which
     // stays selected; see endGroupEditSession). A selection that still
