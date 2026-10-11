@@ -5700,7 +5700,11 @@ if (fabricCanvasEl && window.fabric) {
     const isRealObject = typeof obj.getCenterPoint === 'function';
     if (isRealObject) refreshTransformFields(obj);
     else clearTransformFields();
-    if (isRealObject && (SHAPE_FILL_TYPES.includes(obj.type) || obj.type === 'group')) showEdgeIndicatorFor(obj);
+    // Shapes only. A group has no single true edge to trace — the outline
+    // came out as a plain rectangle of the group's own box, doubling up
+    // with (and often cutting through the artwork inside) the selection
+    // border that already surrounds it.
+    if (isRealObject && SHAPE_FILL_TYPES.includes(obj.type)) showEdgeIndicatorFor(obj);
     else hideEdgeIndicator();
   }
   // The toolbar should stay up for as long as Text or Shapes is
