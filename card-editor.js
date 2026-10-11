@@ -2569,6 +2569,7 @@ if (fabricCanvasEl && window.fabric) {
   function restoreHistorySnapshot(snapshot) {
     isRestoringHistory = true;
     sessionLiveSnapshot = null;
+    if (groupEditSession) clearGroupIsolation();
     // Whatever's loose from a group-edit session is about to be wiped
     // out by loadFromJSON below anyway — drop it now so the
     // discardActiveObject() cascade below doesn't do the (harmless but
@@ -2992,6 +2993,7 @@ if (fabricCanvasEl && window.fabric) {
       plmAlert("That file doesn't look like a valid business card design.");
       return;
     }
+    if (groupEditSession) clearGroupIsolation();
     groupEditSession = null;
     sessionLiveSnapshot = null;
     fabricCanvas.discardActiveObject();
@@ -6669,7 +6671,11 @@ if (fabricCanvasEl && window.fabric) {
   fabricCanvas.on('selection:updated', handleSelection);
   fabricCanvas.on('selection:cleared', () => {
     if (suppressGroupSessionEnd) return;
-    endGroupEditSession();
+    // Inside a group (isolation mode), clicking empty space just
+    // deselects — leaving the group takes Esc, a double-click outside it,
+    // or the "Exit group" bar. Only once nothing of the group is left
+    // (every piece deleted) does it close on its own.
+    if (groupEditSession && !groupEditSessionHasLoosePieces()) endGroupEditSession();
     if (finishModeActive) {
       refreshFinishUI(null);
       return;
@@ -7370,6 +7376,14 @@ if (fabricCanvasEl && window.fabric) {
   // selected, close the Layers/Finish panel if one's open; with neither
   // an object nor a panel, fall back to the Select tool (leaving
   // whichever other tool was active).
+  // Dialogs/menus close themselves on Esc in their own listeners, which
+  // run before this one — noted here first (capture phase, before any of
+  // them) so that Esc only closes the dialog, not the open group too.
+  let escClosedOverlay = false;
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    escClosedOverlay = !!document.querySelector('.editor-modal-overlay.is-open, .is-open[aria-hidden="false"], #settings-popup.is-open, #context-menu.is-open, .editor-custom-select.is-open') || isHelpModeOpen();
+  }, true);
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (isShapeSizeModalOpen()) {
@@ -7389,11 +7403,18 @@ if (fabricCanvasEl && window.fabric) {
       return;
     }
     const obj = fabricCanvas.getActiveObject();
+    if (obj && obj.isEditing) {
+      obj.exitEditing();
+      return;
+    }
+    // Inside a group (isolation mode): leave it, with the group selected
+    // — unless this Esc is closing some dialog/menu/overlay on its own.
+    if (groupEditSession) {
+      if (escClosedOverlay) return;
+      exitGroupIsolation();
+      return;
+    }
     if (obj) {
-      if (obj.isEditing) {
-        obj.exitEditing();
-        return;
-      }
       fabricCanvas.discardActiveObject();
       fabricCanvas.requestRenderAll();
       return;
@@ -7898,26 +7919,70 @@ if (fabricCanvasEl && window.fabric) {
     if (obj.type === 'activeSelection') return obj.getObjects().every((o) => loose.has(o));
     return loose.has(obj);
   }
+  // ---- Isolation mode (Illustrator-style) ----
+  // While a group is open, everything outside it is dimmed and locked so
+  // clicks, Shift-clicks and drag-selects only ever reach the group's own
+  // pieces; a bar under the canvas says so and offers the way out. The
+  // dimming is a render-time flag (never serialized), so it can't leak
+  // into history snapshots, the mockup or pricing.
+  const ISOLATION_DIM_ALPHA = 0.3;
+  const groupIsolationBar = document.getElementById('group-isolation-bar');
+  const groupIsolationExit = document.getElementById('group-isolation-exit');
+  const baseObjectRender = fabric.Object.prototype.render;
+  fabric.Object.prototype.render = function (ctx) {
+    if (!this.__isolationDimmed || ctx.canvas !== fabricCanvas.lowerCanvasEl) {
+      baseObjectRender.call(this, ctx);
+      return;
+    }
+    ctx.save();
+    ctx.globalAlpha *= ISOLATION_DIM_ALPHA;
+    baseObjectRender.call(this, ctx);
+    ctx.restore();
+  };
+  function groupEditSessionHasLoosePieces() {
+    if (!groupEditSession) return false;
+    return fabricCanvas.getObjects().some((o) => isWithinGroupEditSession(o));
+  }
+  function applyGroupIsolation() {
+    fabricCanvas.getObjects().forEach((o) => {
+      if (o.excludeFromExport || o.evented === false || isWithinGroupEditSession(o)) return;
+      o.__isolationDimmed = true;
+      o.__isolationPrev = { selectable: o.selectable, hoverCursor: o.hoverCursor };
+      o.selectable = false;
+      o.hoverCursor = 'default';
+    });
+    if (groupIsolationBar) groupIsolationBar.hidden = false;
+    fabricCanvas.requestRenderAll();
+  }
+  function clearGroupIsolation() {
+    fabricCanvas.getObjects().forEach((o) => {
+      if (!o.__isolationDimmed) return;
+      o.selectable = o.__isolationPrev.selectable;
+      o.hoverCursor = o.__isolationPrev.hoverCursor;
+      delete o.__isolationDimmed;
+      delete o.__isolationPrev;
+    });
+    if (groupIsolationBar) groupIsolationBar.hidden = true;
+    fabricCanvas.requestRenderAll();
+  }
+  // Leaves the open group and selects it as a whole again, the way
+  // Illustrator hands back the group on leaving isolation mode.
+  function exitGroupIsolation() {
+    if (!groupEditSession) return;
+    const rebuilt = endGroupEditSession();
+    if (rebuilt && fabricCanvas.getObjects().includes(rebuilt)) {
+      fabricCanvas.setActiveObject(rebuilt);
+      handleSelection({ selected: [rebuilt] });
+    } else {
+      fabricCanvas.discardActiveObject();
+    }
+    fabricCanvas.requestRenderAll();
+  }
+  if (groupIsolationExit) groupIsolationExit.addEventListener('click', exitGroupIsolation);
   function selectionTouchesGroupEditSession(obj) {
     if (!groupEditSession || !obj) return false;
     const members = obj.type === 'activeSelection' ? obj.getObjects() : [obj];
     return members.some((o) => isWithinGroupEditSession(o));
-  }
-  // Opens leaf's group(s) for editing while holding on to whatever else
-  // was already selected, so leaf can be added to that selection (Shift+
-  // Cmd/Ctrl-click on the canvas, or a modifier-click on a nested Layers
-  // row). Returns the previously-selected objects that are still
-  // individually selectable afterwards — anything that was itself loose
-  // from a different group gets folded back into that group, since only
-  // one group can be open at a time.
-  function openNestedKeepingSelection(leaf) {
-    const current = fabricCanvas.getActiveObject();
-    const keep = current ? (current.type === 'activeSelection' ? current.getObjects().slice() : [current]) : [];
-    suppressGroupSessionEnd = true;
-    fabricCanvas.discardActiveObject();
-    suppressGroupSessionEnd = false;
-    if (!(groupEditSession && isWithinGroupEditSession(leaf))) selectNestedObject(leaf);
-    return keep.filter((o) => o !== leaf && !o.group && fabricCanvas.getObjects().includes(o));
   }
   // Sets the selection without the momentary discard ending an open
   // group-edit session (see suppressGroupSessionEnd above) — the new
@@ -7951,6 +8016,7 @@ if (fabricCanvasEl && window.fabric) {
     }
     const { ancestors, levels } = groupEditSession;
     groupEditSession = null;
+    clearGroupIsolation();
     suppressHistoryEvents = true;
     suppressLayersRefresh = true;
     let rebuilt = null;
@@ -8041,6 +8107,7 @@ if (fabricCanvasEl && window.fabric) {
     });
     suppressHistoryEvents = false;
     groupEditSession = { ancestors, levels };
+    applyGroupIsolation();
     fabricCanvas.setActiveObject(obj);
     suppressLayersRefresh = false;
     fabricCanvas.requestRenderAll();
@@ -8064,44 +8131,16 @@ if (fabricCanvasEl && window.fabric) {
   // above — is ordered innermost-first, so [0] is the actual member
   // under the cursor, however deep it's nested.
   fabricCanvas.on('mouse:dblclick', (opt) => {
+    // Double-clicking empty space or anything outside the open group
+    // leaves it, like Illustrator's isolation mode.
+    if (groupEditSession && (!opt.target || !isWithinGroupEditSession(opt.target))) {
+      exitGroupIsolation();
+      return;
+    }
     if (!opt.target || opt.target.type !== 'group') return;
     const leaf = opt.subTargets && opt.subTargets[0];
     if (!leaf) return;
     selectNestedObject(leaf);
-  });
-  // Cmd-click (Ctrl-click off a Mac) reaches straight into a group and
-  // selects the piece under the cursor — no double-click needed, and it
-  // can be dragged right away. Adding Shift adds that piece to whatever's
-  // already selected instead, so several pieces of a group (or a piece
-  // plus other objects) can be selected together. Runs before Fabric
-  // picks its target, so swapping the target here makes Fabric's own
-  // click/Shift-click/drag handling act on the piece instead of the
-  // whole group. Once the group is open its pieces are loose canvas
-  // objects, so plain Shift-click between them already works natively.
-  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-  fabricCanvas.on('mouse:down:before', (opt) => {
-    const e = opt.e;
-    if (!e || !(IS_MAC ? e.metaKey : e.ctrlKey)) return;
-    if (!opt.target || opt.target.type !== 'group') return;
-    const leaf = opt.subTargets && opt.subTargets[0];
-    if (!leaf) return;
-    if (e.shiftKey) {
-      const keep = openNestedKeepingSelection(leaf);
-      if (keep.length) {
-        // Fabric's own Shift-click grouping then adds leaf to this.
-        suppressGroupSessionEnd = true;
-        suppressHistoryEvents = true;
-        fabricCanvas.discardActiveObject();
-        fabricCanvas.setActiveObject(keep.length > 1 ? new fabric.ActiveSelection(keep, { canvas: fabricCanvas }) : keep[0]);
-        suppressHistoryEvents = false;
-        suppressGroupSessionEnd = false;
-      } else {
-        fabricCanvas.setActiveObject(leaf);
-      }
-    } else {
-      selectNestedObject(leaf);
-    }
-    fabricCanvas._target = leaf;
   });
   function refreshLayersList() {
     if (!layersList) return;
@@ -8235,15 +8274,6 @@ if (fabricCanvasEl && window.fabric) {
             layersRangeAnchor = obj;
             return;
           }
-          // Modifier-click on a piece of a group that isn't open yet (or
-          // a different one): open it while keeping the current
-          // selection, and add this piece to it.
-          if (e.shiftKey || e.metaKey || e.ctrlKey) {
-            const keep = openNestedKeepingSelection(obj);
-            setSelectionKeepingSession([...keep, obj]);
-            layersRangeAnchor = obj;
-            return;
-          }
           selectNestedObject(obj);
           layersRangeAnchor = obj;
           return;
@@ -8256,6 +8286,9 @@ if (fabricCanvasEl && window.fabric) {
           const [lo, hi] = iA < iB ? [iA, iB] : [iB, iA];
           selectLayerObjects(displayOrder.slice(lo, hi + 1));
         } else if (e.metaKey || e.ctrlKey) {
+          // Reaching outside an open group leaves it (its pieces fold back
+          // in) — same as picking any other top-level row.
+          if (groupEditSession) endGroupEditSession();
           const current = fabricCanvas.getActiveObject();
           const currentMembers = current ? (current.type === 'activeSelection' ? current.getObjects() : [current]) : [];
           const next = currentMembers.includes(obj) ? currentMembers.filter((o) => o !== obj) : [...currentMembers, obj];

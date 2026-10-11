@@ -463,6 +463,13 @@
 
       <!-- Canvas -->
       <section class="editor-canvas-area">
+        <!-- Shown while a group is open for editing (isolation mode) — see
+             applyGroupIsolation in card-editor.js. -->
+        <div class="editor-isolation-bar" id="group-isolation-bar" hidden>
+          <span class="editor-isolation-bar-label">Editing group</span>
+          <span class="editor-isolation-bar-hint">Esc or double-click outside to leave</span>
+          <button type="button" class="editor-isolation-bar-exit" id="group-isolation-exit">Exit group</button>
+        </div>
         <!-- Contextual text-formatting toolbar — hidden until a text
              object is selected/being edited. -->
         <div class="editor-text-toolbar mode-text" id="text-toolbar">
@@ -900,7 +907,7 @@
     <div class="editor-help-callout editor-help-callout--left" id="help-callout-left">
       <h3>Tools</h3>
       <ul>
-        <li><strong>Select</strong> — pick, move, and resize things on the card. Double-click or ⌘/Ctrl-click to reach inside a group; add Shift to select several.</li>
+        <li><strong>Select</strong> — pick, move, and resize things on the card. Double-click a group to work inside it (Shift-click or drag to select several pieces); press Esc or double-click outside it to leave.</li>
         <li><strong>Text</strong> — add a text box.</li>
         <li><strong>Shapes</strong> — draw lines, rectangles, circles, and triangles.</li>
         <li><strong>Upload</strong> — import an SVG file.</li>

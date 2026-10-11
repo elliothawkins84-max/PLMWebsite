@@ -2302,3 +2302,44 @@ select option {
   background: var(--fg);
   color: var(--bg);
 }
+
+/* ---- Group isolation bar (shown while editing inside a group) ---- */
+.editor-isolation-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 6px 14px;
+  background: var(--bg);
+  border: 1px solid var(--fg);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  animation: isolation-bar-in 0.18s ease-out;
+}
+.editor-isolation-bar[hidden] { display: none; }
+.editor-isolation-bar-label { color: var(--fg); text-transform: uppercase; letter-spacing: 0.08em; }
+.editor-isolation-bar-hint { color: var(--muted); }
+.editor-isolation-bar-exit {
+  height: 26px;
+  padding: 0 10px;
+  background: var(--fg);
+  color: var(--bg);
+  border: none;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.editor-isolation-bar-exit:hover { opacity: 0.85; }
+@media (max-width: 700px) { .editor-isolation-bar-hint { display: none; } }
+@keyframes isolation-bar-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
