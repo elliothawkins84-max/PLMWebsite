@@ -2246,10 +2246,12 @@ if (fabricCanvasEl && window.fabric) {
     const common = {
       left: center.x, top: center.y, originX: 'center', originY: 'center',
       angle: obj.angle, scaleX: obj.scaleX, scaleY: obj.scaleY,
-      fill: null, stroke: EDGE_INDICATOR_COLOR, strokeWidth: 2, strokeUniform: true,
-      // A dark halo behind the line so it stays readable even when it
-      // crosses a white shape, not just the dark card background.
-      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.65)', blur: 3, offsetX: 0, offsetY: 0 }),
+      // A thin, crisp line sitting exactly on the path — the edge a
+      // Center stroke straddles and Inside/Outside strokes grow from (the
+      // same idea as Illustrator's path highlight). It used to be thicker,
+      // with a blurred dark halo, which read as a doubled/offset line.
+      fill: null, stroke: EDGE_INDICATOR_COLOR, strokeWidth: 1.25, strokeUniform: true,
+      objectCaching: false,
       selectable: false, evented: false, excludeFromExport: true, hoverCursor: 'default',
     };
     let indicator;
@@ -2258,25 +2260,8 @@ if (fabricCanvasEl && window.fabric) {
     else if (obj.type === 'triangle') indicator = new fabric.Triangle({ ...common, width: obj.width, height: obj.height });
     else if (obj.type === 'polygon' || obj.type === 'polyline') indicator = new fabric.Polygon(obj.points, { ...common });
     else if (obj.type === 'path') indicator = new fabric.Path(pathCommandsToString(obj.path), { ...common, fillRule: obj.fillRule });
-    else indicator = new fabric.Rect({ ...common, width: obj.width, height: obj.height });
-    const shrink = edgeIndicatorShrinkFor(obj);
-    indicator.set({ scaleX: indicator.scaleX * shrink, scaleY: indicator.scaleY * shrink });
+    else indicator = new fabric.Rect({ ...common, width: obj.width, height: obj.height, rx: obj.rx || 0, ry: obj.ry || 0 });
     return indicator;
-  }
-  // When a shape spans the entire card, its true edge sits exactly on
-  // the canvas's own pixel boundary — half the indicator's stroke (and
-  // its shadow) would fall outside the canvas and get clipped there,
-  // leaving a sliver too thin to see (a single canvas pixel, often
-  // subpixel on screen at anything under 100% zoom). Shrinking the whole
-  // indicator slightly toward its own center — the same trick regardless
-  // of shape type, since it's just a uniform scale around a 'center'
-  // origin — keeps the full stroke safely inside the card's own bounds
-  // no matter where the shape sits, at an inset far too small to notice
-  // on any shape that wasn't already touching the edge.
-  const INDICATOR_INSET_PX = 1.5;
-  function edgeIndicatorShrinkFor(obj) {
-    const minDim = Math.max(1, Math.min(obj.getScaledWidth(), obj.getScaledHeight()));
-    return Math.max(0, (minDim - INDICATOR_INSET_PX * 2) / minDim);
   }
   function showEdgeIndicatorFor(obj) {
     hideEdgeIndicator();
@@ -2293,16 +2278,15 @@ if (fabricCanvasEl && window.fabric) {
   function syncEdgeIndicator(obj) {
     if (!edgeIndicator) return;
     const center = obj.getCenterPoint();
-    const shrink = edgeIndicatorShrinkFor(obj);
     const props = {
       left: center.x, top: center.y, originX: 'center', originY: 'center',
-      angle: obj.angle, scaleX: obj.scaleX * shrink, scaleY: obj.scaleY * shrink,
+      angle: obj.angle, scaleX: obj.scaleX, scaleY: obj.scaleY,
       width: obj.width, height: obj.height,
     };
     if (obj.type === 'circle') props.radius = obj.radius;
-    if (obj.type === 'ellipse') {
-      props.rx = obj.rx;
-      props.ry = obj.ry;
+    if (obj.type === 'ellipse' || obj.type === 'rect') {
+      props.rx = obj.rx || 0;
+      props.ry = obj.ry || 0;
     }
     edgeIndicator.set(props);
     edgeIndicator.setCoords();
