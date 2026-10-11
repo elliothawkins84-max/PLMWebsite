@@ -3535,6 +3535,43 @@ if (fabricCanvasEl && window.fabric) {
   // A web font finishing its load changes how the same snapshot's text
   // renders — drop anything rendered before it arrived.
   if (document.fonts) document.fonts.addEventListener('loadingdone', () => outlineRenderCache.clear());
+  // Fabric always renders a clipPath through its own offscreen cache,
+  // sized from the clipPath's *own* scale only — it never counts the
+  // scale of the object it clips. Shapes keep their on-card size as
+  // scaleX/scaleY (resizing by the handles), so a ring drawn small and
+  // dragged 10x bigger had its Inside/Outside/band clip cached at the
+  // small size and then stretched 10x: a soft, hazy edge in the mockup.
+  // Scaling each clip's cache up by its owner's own scale makes it render
+  // at the size it actually appears (drawClipPathOnCache already divides
+  // the cache's zoom back out, so placement is unchanged).
+  function sharpenClipPathCaches(obj, ownerScale) {
+    if (!obj) return;
+    const own = obj.getObjectScaling();
+    const scale = ownerScale
+      ? { scaleX: ownerScale.scaleX * own.scaleX, scaleY: ownerScale.scaleY * own.scaleY }
+      : own;
+    const clip = obj.clipPath;
+    if (clip && !clip.absolutePositioned) {
+      const baseDims = Object.getPrototypeOf(clip)._getCacheCanvasDimensions;
+      const sx = Math.abs(scale.scaleX) || 1;
+      const sy = Math.abs(scale.scaleY) || 1;
+      clip._getCacheCanvasDimensions = function () {
+        const d = baseDims.call(this);
+        return {
+          ...d,
+          width: d.x * sx + (d.width - d.x),
+          height: d.y * sy + (d.height - d.y),
+          x: d.x * sx,
+          y: d.y * sy,
+          zoomX: d.zoomX * sx,
+          zoomY: d.zoomY * sy,
+        };
+      };
+      clip.dirty = true;
+      sharpenClipPathCaches(clip, scale);
+    }
+    if (obj.type === 'group') obj.getObjects().forEach((child) => sharpenClipPathCaches(child));
+  }
   function renderStrokeOutlinesToDataURL(snapshotJson, resolutionScale, callback) {
     // Callers pass either the JSON string or an already-parsed snapshot
     // (the template gallery does) — key on the JSON text either way, or
@@ -3568,6 +3605,7 @@ if (fabricCanvasEl && window.fabric) {
       companions.forEach(([obj, companion]) => {
         staticCanvas.insertAt(companion, staticCanvas.getObjects().indexOf(obj) + 1);
       });
+      staticCanvas.getObjects().forEach((obj) => sharpenClipPathCaches(obj));
       staticCanvas.renderAll();
       const dataUrl = staticCanvas.toDataURL({ format: 'png' });
       staticCanvas.dispose();
