@@ -4659,6 +4659,25 @@ if (fabricCanvasEl && window.fabric) {
     overlapTextRingCache.set(o, { key, rings });
     return rings;
   }
+  // A Stroke-mode shape engraves a band with real width — the region
+  // between its stroke's outer and inner edges (per Inside/Center/Outside),
+  // not just the thin path line down its middle. Built from the same
+  // offset boundaries the ring itself is drawn with; the two rings read
+  // as a band under the even-odd fill used throughout this check.
+  function strokeBandLocalRings(obj) {
+    const desired = obj._strokeWidthPx || obj.strokeWidth || 0;
+    if (!desired) return null;
+    const align = obj.strokeAlign || 'center';
+    const outer = align === 'outside' ? desired : (align === 'inside' ? 0 : desired / 2);
+    const toObjLocal = (shape) => {
+      const m = shape.calcOwnMatrix();
+      return localPolygonsFor(shape, null).map((ring) => ring.map(([x, y]) => {
+        const p = fabric.util.transformPoint({ x, y }, m);
+        return [p.x, p.y];
+      }));
+    };
+    return [...toObjLocal(makeStrokeOffsetShapeFor(obj, outer)), ...toObjLocal(makeStrokeOffsetShapeFor(obj, outer - desired))];
+  }
   // Flattens a layer (recursing into groups) into leaf "units", each an
   // absolute-coordinate ring set tagged as area or outline.
   function overlapUnitsFor(obj, out = []) {
@@ -4667,11 +4686,21 @@ if (fabricCanvasEl && window.fabric) {
       obj.getObjects().forEach((child) => overlapUnitsFor(child, out));
       return out;
     }
-    const kind = overlapEngraveKind(obj);
+    let kind = overlapEngraveKind(obj);
     if (!kind) return out;
     let local;
     try {
-      local = overlapLocalRings(obj);
+      // The Stroke *finish* really is a hairline outline; any other finish
+      // on a Stroke-mode shape fills its whole band (see above).
+      const band = kind === 'outline' && getFinish(obj) !== 'stroke' && SHAPE_FILL_TYPES.includes(obj.type) && shapeFillModeFor(obj) === 'stroke'
+        ? strokeBandLocalRings(obj)
+        : null;
+      if (band) {
+        kind = 'area';
+        local = band;
+      } else {
+        local = overlapLocalRings(obj);
+      }
     } catch (e) {
       return out;
     }
