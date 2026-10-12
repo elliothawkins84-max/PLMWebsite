@@ -2678,6 +2678,19 @@ if (fabricCanvasEl && window.fabric) {
     '_cornerRadiusPx', '_shapeBaseType', '_triWidth', '_triHeight',
   ];
   const HISTORY_LIMIT = 50;
+  // Every undo step is a full JSON copy of the canvas -- tiny for a
+  // normal card, but a traced SVG import can make each one a few MB, and
+  // 50 of those (plus redo) is enough memory to take a tab down. Past
+  // this many characters (~2 bytes each), the oldest steps are dropped
+  // first, always keeping at least the baseline + current state.
+  const HISTORY_CHAR_BUDGET = 20 * 1024 * 1024;
+  function trimHistoryToBudget() {
+    let total = 0;
+    undoStack.forEach((s) => { total += s.length; });
+    redoStack.forEach((s) => { total += s.length; });
+    while (total > HISTORY_CHAR_BUDGET && redoStack.length) total -= redoStack.shift().length;
+    while (total > HISTORY_CHAR_BUDGET && undoStack.length > 2) total -= undoStack.shift().length;
+  }
   const undoBtn = document.getElementById('undo-btn');
   const redoBtn = document.getElementById('redo-btn');
   let undoStack = [];
@@ -2765,6 +2778,7 @@ if (fabricCanvasEl && window.fabric) {
     undoStack.push(snapshot);
     if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
     redoStack = [];
+    trimHistoryToBudget();
     updateUndoRedoButtons();
     scheduleDerivedUpdates();
   }
@@ -2774,14 +2788,29 @@ if (fabricCanvasEl && window.fabric) {
   // Ctrl-Z, wait on all of that before the canvas could repaint; deferring
   // them lets the canvas update first, and a run of quick undos/edits
   // (holding Ctrl-Z) only pays for the state it settles on.
+  // Preview and price each get their own timer (and run in separate
+  // tasks, so the browser gets to paint/handle input between them) --
+  // the price estimate is the heaviest of the two and nothing is waiting
+  // on it, so it waits longer and shows "…" in the meantime instead of
+  // flashing a stale number.
+  const PREVIEW_UPDATE_DELAY_MS = 300;
+  const PRICE_UPDATE_DELAY_MS = 900;
   let derivedUpdatesTimer = null;
+  let priceUpdateTimer = null;
+  const whenIdle = (fn) => (window.requestIdleCallback ? window.requestIdleCallback(fn, { timeout: 1000 }) : setTimeout(fn, 0));
   function scheduleDerivedUpdates() {
     clearTimeout(derivedUpdatesTimer);
     derivedUpdatesTimer = setTimeout(() => {
       derivedUpdatesTimer = null;
-      renderCardPreview(currentSide);
-      updatePriceEstimate();
-    }, 120);
+      whenIdle(() => renderCardPreview(currentSide));
+    }, PREVIEW_UPDATE_DELAY_MS);
+    clearTimeout(priceUpdateTimer);
+    const priceEl = document.getElementById('editor-price');
+    if (priceEl && !/n\/a/.test(priceEl.textContent)) priceEl.textContent = 'Estimated Price: …';
+    priceUpdateTimer = setTimeout(() => {
+      priceUpdateTimer = null;
+      whenIdle(() => updatePriceEstimate());
+    }, PRICE_UPDATE_DELAY_MS);
     scheduleOverlapCheck();
   }
   // Small results cache keyed by the exact snapshot JSON (plus whatever
@@ -7342,17 +7371,35 @@ if (fabricCanvasEl && window.fabric) {
       ys: [r.top, r.top + r.height / 2, r.top + r.height],
     };
   }
-  function applySnapping(obj) {
-    // A multi-object drag snaps as one block, against everything else.
-    const moving = obj.type === 'activeSelection' ? obj.getObjects() : [obj];
-    const others = fabricCanvas.getObjects().filter((o) => o.evented !== false && !moving.includes(o));
-    const targetXs = [CARD_OFFSET_X, CARD_OFFSET_X + CARD_W_PX / 2, CARD_OFFSET_X + CARD_W_PX];
-    const targetYs = [CARD_OFFSET_Y, CARD_OFFSET_Y + CARD_H_PX / 2, CARD_OFFSET_Y + CARD_H_PX];
+  // Nothing but the dragged object moves during a drag, so the other
+  // objects (and their snap edges/rects) are gathered once on the first
+  // move event and reused until mouse-up, instead of re-scanning and
+  // re-measuring every object on the canvas on every mouse move -- that
+  // rescan (with an O(n^2) "is it one of the moving ones?" check) is what
+  // made dragging crawl once a big import was opened up into hundreds of
+  // loose shapes.
+  let dragSnapCache = null;
+  function snapCacheFor(obj) {
+    if (dragSnapCache && dragSnapCache.obj === obj) return dragSnapCache;
+    const moving = new Set(obj.type === 'activeSelection' ? obj.getObjects() : [obj]);
+    const others = fabricCanvas.getObjects().filter((o) => o.evented !== false && !moving.has(o));
+    const xs = [];
+    const ys = [];
     others.forEach((o) => {
       const b = snapBoundsOf(o);
-      targetXs.push(...b.xs);
-      targetYs.push(...b.ys);
+      xs.push(...b.xs);
+      ys.push(...b.ys);
     });
+    dragSnapCache = { obj, others, xs, ys, rects: null };
+    return dragSnapCache;
+  }
+  fabricCanvas.on('mouse:down', () => { dragSnapCache = null; });
+  fabricCanvas.on('mouse:up', () => { dragSnapCache = null; });
+  function applySnapping(obj) {
+    // A multi-object drag snaps as one block, against everything else.
+    const cache = snapCacheFor(obj);
+    const targetXs = [CARD_OFFSET_X, CARD_OFFSET_X + CARD_W_PX / 2, CARD_OFFSET_X + CARD_W_PX, ...cache.xs];
+    const targetYs = [CARD_OFFSET_Y, CARD_OFFSET_Y + CARD_H_PX / 2, CARD_OFFSET_Y + CARD_H_PX, ...cache.ys];
     const own = snapBoundsOf(obj);
     let bestX = null;
     own.xs.forEach((x) => {
@@ -7421,9 +7468,9 @@ if (fabricCanvasEl && window.fabric) {
     });
   }
   function applySpacingSnap(obj, skipX, skipY) {
-    const moving = obj.type === 'activeSelection' ? obj.getObjects() : [obj];
-    const others = fabricCanvas.getObjects().filter((o) => o.evented !== false && !moving.includes(o));
-    const rects = others.map(rectOf);
+    const cache = snapCacheFor(obj);
+    if (!cache.rects) cache.rects = cache.others.map(rectOf);
+    const rects = cache.rects;
     const cardLeft = { left: CARD_OFFSET_X, right: CARD_OFFSET_X, top: CARD_OFFSET_Y, bottom: CARD_OFFSET_Y + CARD_H_PX };
     const cardRight = { left: CARD_OFFSET_X + CARD_W_PX, right: CARD_OFFSET_X + CARD_W_PX, top: CARD_OFFSET_Y, bottom: CARD_OFFSET_Y + CARD_H_PX };
     const cardTop = { top: CARD_OFFSET_Y, bottom: CARD_OFFSET_Y, left: CARD_OFFSET_X, right: CARD_OFFSET_X + CARD_W_PX };
