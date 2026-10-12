@@ -1289,7 +1289,23 @@ if (fabricCanvasEl && window.fabric) {
     if (e.key === 'Escape' && plmDialogOverlay && plmDialogOverlay.classList.contains('is-open')) closePlmDialog(false);
   });
 
+  // Measured with the editor itself: freezes after an import or undo
+  // scale roughly linearly with SVG size (~2ms per KB) -- about 0.3s at
+  // 140 KB, 0.5s at 240 KB, over 1s past 500 KB. Real traced artwork
+  // (curves rather than simple polygons) costs more per KB than those
+  // test files, so this warns a bit before the half-second mark.
+  const LARGE_SVG_WARN_BYTES = 200 * 1024;
+  const largeSvgWarningEl = document.getElementById('editor-large-svg-warning');
+  const largeSvgWarningText = document.getElementById('editor-large-svg-warning-text');
+  const largeSvgWarningDismiss = document.getElementById('editor-large-svg-warning-dismiss');
+  if (largeSvgWarningDismiss) largeSvgWarningDismiss.addEventListener('click', () => { largeSvgWarningEl.hidden = true; });
+  function maybeWarnLargeSvg(file) {
+    if (!largeSvgWarningEl || !file || file.size < LARGE_SVG_WARN_BYTES) return;
+    largeSvgWarningText.textContent = `Heads up: "${file.name}" is a large SVG (${Math.round(file.size / 1024)} KB), so the editor may feel slower. Simplifying it (fewer shapes or points) before uploading will help.`;
+    largeSvgWarningEl.hidden = false;
+  }
   function importSvgFile(file) {
+    maybeWarnLargeSvg(file);
     const reader = new FileReader();
     reader.onload = () => {
       const svgText = String(reader.result);

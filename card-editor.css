@@ -156,6 +156,12 @@
   opacity: 0.8;
 }
 .editor-browser-warning-dismiss:hover { opacity: 1; }
+/* Softer amber variant -- a heads-up (large SVG import), not an error. */
+.editor-browser-warning.is-caution {
+  background: rgba(250, 204, 21, 0.08);
+  border-bottom-color: rgba(250, 204, 21, 0.3);
+  color: #facc15;
+}
 .editor-toast {
   position: fixed;
   left: 50%;
