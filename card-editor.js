@@ -8273,6 +8273,17 @@ if (fabricCanvasEl && window.fabric) {
   // members nested underneath; collapsed state is remembered here across
   // rebuilds since the list itself is rebuilt from scratch every time.
   const collapsedGroups = new Set();
+  // A group with more members than this (a traced/vectorized SVG import
+  // can easily have hundreds) shows collapsed until expanded on purpose,
+  // and even then skips per-member thumbnails and caps how many rows it
+  // lists. The Layers panel is rebuilt on every selection/object change,
+  // and every row costs a canvas render + a base64 <img> -- 700 members
+  // blew past the thumbnail cache (so every rebuild re-rendered all of
+  // them, several seconds each time) and, on bigger imports, was enough
+  // to take the whole tab down.
+  const LAYER_BIG_GROUP_THRESHOLD = 24;
+  const LAYER_BIG_GROUP_ROW_CAP = 150;
+  const expandedBigGroups = new Set();
   // ---- Multi-selecting rows from the Layers panel ----
   // Shift-click selects the visual range between this row and the last
   // one clicked (like a file browser); Cmd/Ctrl-click toggles just this
@@ -8802,13 +8813,14 @@ if (fabricCanvasEl && window.fabric) {
     // a long list. Restore whatever it was right after.
     const scrollTop = layersList.scrollTop;
     layersList.innerHTML = '';
-    function renderRow(obj, depth) {
+    function renderRow(obj, depth, skipThumb) {
       const li = document.createElement('li');
       li.className = 'editor-layer-item';
       li.style.paddingLeft = `${8 + depth * 16}px`;
       const isGroup = obj.type === 'group';
       const children = isGroup ? childrenOf(obj) : [];
-      const collapsed = collapsedGroups.has(obj);
+      const isBigGroup = isGroup && children.length > LAYER_BIG_GROUP_THRESHOLD;
+      const collapsed = collapsedGroups.has(obj) || (isBigGroup && !expandedBigGroups.has(obj));
       if (activeMembers.includes(obj)) li.classList.add('is-active');
       if (depth > 0) li.classList.add('is-child');
       const toggle = isGroup && children.length
@@ -8818,7 +8830,9 @@ if (fabricCanvasEl && window.fabric) {
       // render a thumbnail from — its plain type icon instead of a
       // stale/empty render.
       const isDissolvedAncestor = !!(session && session.ancestors.includes(obj));
-      const thumbUrl = isDissolvedAncestor ? null : getLayerThumbDataUrl(obj);
+      // Members of a big group get the plain type icon instead of a
+      // rendered thumbnail (see LAYER_BIG_GROUP_THRESHOLD).
+      const thumbUrl = (isDissolvedAncestor || skipThumb) ? null : getLayerThumbDataUrl(obj);
       const thumbHtml = thumbUrl
         ? `<img class="editor-layer-item-thumb" src="${thumbUrl}" alt="" draggable="false" />`
         : (LAYER_ICONS[obj.type] || '');
@@ -8933,13 +8947,28 @@ if (fabricCanvasEl && window.fabric) {
       if (toggleBtn) {
         toggleBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (collapsed) collapsedGroups.delete(obj);
-          else collapsedGroups.add(obj);
+          if (collapsed) {
+            collapsedGroups.delete(obj);
+            if (isBigGroup) expandedBigGroups.add(obj);
+          } else {
+            collapsedGroups.add(obj);
+            expandedBigGroups.delete(obj);
+          }
           refreshLayersList();
         });
       }
       if (isGroup && children.length && !collapsed) {
-        children.slice().reverse().forEach((child) => renderRow(child, depth + 1));
+        const shown = children.slice().reverse();
+        const capped = isBigGroup ? shown.slice(0, LAYER_BIG_GROUP_ROW_CAP) : shown;
+        capped.forEach((child) => renderRow(child, depth + 1, isBigGroup));
+        if (capped.length < shown.length) {
+          const more = document.createElement('li');
+          more.className = 'editor-layer-item is-child';
+          more.style.paddingLeft = `${8 + (depth + 1) * 16}px`;
+          more.style.opacity = '0.6';
+          more.textContent = `… and ${shown.length - capped.length} more shapes (not listed, to keep the editor fast)`;
+          layersList.appendChild(more);
+        }
       }
     }
     // Front-most (top of the visual stack) listed first.
