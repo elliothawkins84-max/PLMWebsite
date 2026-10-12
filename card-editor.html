@@ -373,6 +373,11 @@
       <span>This editor is optimized for Chrome — some features may not be available in this browser.</span>
       <button type="button" class="editor-browser-warning-dismiss" id="editor-browser-warning-dismiss" aria-label="Dismiss">&times;</button>
     </div>
+    <!-- Shown by importSvgFile (card-editor.js) after a large SVG import. -->
+    <div class="editor-browser-warning is-caution" id="editor-large-svg-warning" hidden>
+      <span id="editor-large-svg-warning-text"></span>
+      <button type="button" class="editor-browser-warning-dismiss" id="editor-large-svg-warning-dismiss" aria-label="Dismiss">&times;</button>
+    </div>
 
     <!-- Populated/shown via showChromeOnlyToast() in card-editor.js
          whenever a Chrome-only feature is actually attempted somewhere
