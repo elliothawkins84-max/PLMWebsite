@@ -1384,16 +1384,25 @@ if (fabricCanvasEl && window.fabric) {
         // that vanishes in the renderer. Give each a real, uniform stroke
         // width (never thinner than the render hairline) so it shows up.
         const importScale = group.scaleX || 1;
-        const fixStrokes = (o) => {
-          if (o.type === 'group') { o.getObjects().forEach(fixStrokes); return; }
+        // strokeUniform makes the stroke width an absolute on-canvas size,
+        // so it has to include every scale between the source file's units
+        // and the canvas -- not just the whole import's scale, but each
+        // shape's own (and any parent group's) too. Fabric parks an SVG's
+        // viewBox-to-size scale on each shape (0.096 for a CorelDRAW file
+        // drawn in 4000 units across 4in), so leaving that out made every
+        // outline ~10x too thick: thin icon lines merged into solid blobs
+        // and a hairline border became a thick ring.
+        const avgScale = (o) => (Math.abs(o.scaleX || 1) + Math.abs(o.scaleY || 1)) / 2;
+        const fixStrokes = (o, parentScale) => {
+          if (o.type === 'group') { o.getObjects().forEach((c) => fixStrokes(c, parentScale * avgScale(o))); return; }
           const strokeOnly = !!o.stroke && !o.fill;
           if (o.type === 'line' || strokeOnly) {
-            const widthPx = Math.max((o.strokeWidth || 0) * importScale, RENDER_LINE_WIDTH_PX);
+            const widthPx = Math.max((o.strokeWidth || 0) * avgScale(o) * parentScale, RENDER_LINE_WIDTH_PX);
             o.set({ strokeUniform: true, strokeWidth: widthPx });
             if (o.type !== 'line') o._strokeWidthPx = widthPx;
           }
         };
-        group.getObjects().forEach(fixStrokes);
+        group.getObjects().forEach((o) => fixStrokes(o, importScale));
         group.setCoords();
 
         // Only shrink further if the (now true-to-life) import doesn't
