@@ -8942,12 +8942,14 @@ if (fabricCanvasEl && window.fabric) {
       const isGroup = obj.type === 'group';
       const children = isGroup ? childrenOf(obj) : [];
       const isBigGroup = isGroup && children.length > LAYER_BIG_GROUP_THRESHOLD;
-      // A big group that's only collapsed by default opens up while it
-      // holds the current selection, so picking a shape inside it never
-      // hides that shape's own row. One the user collapsed on purpose
-      // stays collapsed.
+      // A big group that's only collapsed by default opens up once it
+      // holds the selection, and stays open from then on -- even after
+      // the selection moves to another shape or a sibling group -- so
+      // only the user's own click on its toggle ever closes it again.
+      // One the user collapsed on purpose stays collapsed.
       const holdsSelection = isGroup && activeMembers.length > 0 && containsAny(obj, activeMembers);
-      const collapsed = collapsedGroups.has(obj) || (isBigGroup && !expandedBigGroups.has(obj) && !holdsSelection);
+      if (isBigGroup && holdsSelection && !collapsedGroups.has(obj)) expandedBigGroups.add(obj);
+      const collapsed = collapsedGroups.has(obj) || (isBigGroup && !expandedBigGroups.has(obj));
       if (activeMembers.includes(obj)) li.classList.add('is-active');
       if (depth > 0) li.classList.add('is-child');
       const toggle = isGroup && children.length
