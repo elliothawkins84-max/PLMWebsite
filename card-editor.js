@@ -8753,6 +8753,11 @@ if (fabricCanvasEl && window.fabric) {
       // original group's own anchor over so editing a piece inside it
       // doesn't silently reset that.
       setObjectAnchor(rebuilt, anchorKeyFor(ancestors[i]) || 'c');
+      // Same for the Layers panel's expanded/collapsed state, which is
+      // keyed by object -- otherwise every rebuild (i.e. every time a
+      // different member is picked) snapped an expanded big group shut.
+      if (collapsedGroups.delete(ancestors[i])) collapsedGroups.add(rebuilt);
+      if (expandedBigGroups.delete(ancestors[i])) expandedBigGroups.add(rebuilt);
       fabricCanvas.add(rebuilt);
       fabricCanvas.moveTo(rebuilt, Math.min(insertIndex, fabricCanvas.getObjects().length - 1));
     }
@@ -8927,6 +8932,9 @@ if (fabricCanvasEl && window.fabric) {
     // a long list. Restore whatever it was right after.
     const scrollTop = layersList.scrollTop;
     layersList.innerHTML = '';
+    function containsAny(group, targets) {
+      return childrenOf(group).some((c) => targets.includes(c) || (c.type === 'group' && containsAny(c, targets)));
+    }
     function renderRow(obj, depth, skipThumb) {
       const li = document.createElement('li');
       li.className = 'editor-layer-item';
@@ -8934,7 +8942,12 @@ if (fabricCanvasEl && window.fabric) {
       const isGroup = obj.type === 'group';
       const children = isGroup ? childrenOf(obj) : [];
       const isBigGroup = isGroup && children.length > LAYER_BIG_GROUP_THRESHOLD;
-      const collapsed = collapsedGroups.has(obj) || (isBigGroup && !expandedBigGroups.has(obj));
+      // A big group that's only collapsed by default opens up while it
+      // holds the current selection, so picking a shape inside it never
+      // hides that shape's own row. One the user collapsed on purpose
+      // stays collapsed.
+      const holdsSelection = isGroup && activeMembers.length > 0 && containsAny(obj, activeMembers);
+      const collapsed = collapsedGroups.has(obj) || (isBigGroup && !expandedBigGroups.has(obj) && !holdsSelection);
       if (activeMembers.includes(obj)) li.classList.add('is-active');
       if (depth > 0) li.classList.add('is-child');
       const toggle = isGroup && children.length
