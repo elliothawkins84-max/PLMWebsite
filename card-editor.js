@@ -1299,13 +1299,50 @@ if (fabricCanvasEl && window.fabric) {
   const largeSvgWarningText = document.getElementById('editor-large-svg-warning-text');
   const largeSvgWarningDismiss = document.getElementById('editor-large-svg-warning-dismiss');
   if (largeSvgWarningDismiss) largeSvgWarningDismiss.addEventListener('click', () => { largeSvgWarningEl.hidden = true; });
-  function maybeWarnLargeSvg(file) {
-    if (!largeSvgWarningEl || !file || file.size < LARGE_SVG_WARN_BYTES) return;
-    largeSvgWarningText.textContent = `Heads up: "${file.name}" is a large SVG (${Math.round(file.size / 1024)} KB), so the editor may feel slower. Simplifying it (fewer shapes or points) before uploading will help.`;
+  // One banner for every import heads-up (large file, likely background
+  // shape, ...), each message on its own line, re-filled per import.
+  function showImportWarnings(messages) {
+    if (!largeSvgWarningEl) return;
+    if (!messages.length) { largeSvgWarningEl.hidden = true; return; }
+    largeSvgWarningText.textContent = messages.join('\n');
+    largeSvgWarningText.style.whiteSpace = 'pre-line';
     largeSvgWarningEl.hidden = false;
   }
+  function largeSvgMessage(file) {
+    if (!file || file.size < LARGE_SVG_WARN_BYTES) return null;
+    return `Heads up: "${file.name}" is a large SVG (${Math.round(file.size / 1024)} KB), so the editor may feel slower. Simplifying it (fewer shapes or points) before uploading will help.`;
+  }
+  // A background is a filled shape drawn first (bottom of the stack) that
+  // covers nearly the whole design -- typically a white (or colored) rect
+  // from the design tool's artboard. Every filled shape gets engraved, so
+  // left in, it would burn one solid block under the whole design. Only
+  // filled shapes count: an outline-only border (fill: none) is fine.
+  const BACKGROUND_COVERAGE = 0.85;
+  const BACKGROUND_MAX_STACK_INDEX = 3;
+  function looksLikeBackground(objects) {
+    if (objects.length < 2) return false;
+    const paints = (c) => !!c && c !== 'none' && c !== 'transparent';
+    const rects = objects.map((o) => {
+      try { return o.getBoundingRect(true, true); } catch (e) { return null; }
+    });
+    const valid = rects.filter(Boolean);
+    if (!valid.length) return false;
+    const minX = Math.min(...valid.map((r) => r.left));
+    const minY = Math.min(...valid.map((r) => r.top));
+    const maxX = Math.max(...valid.map((r) => r.left + r.width));
+    const maxY = Math.max(...valid.map((r) => r.top + r.height));
+    const total = (maxX - minX) * (maxY - minY);
+    if (!(total > 0)) return false;
+    return objects.slice(0, BACKGROUND_MAX_STACK_INDEX).some((o, i) => {
+      const r = rects[i];
+      return r && paints(o.fill) && (r.width * r.height) / total >= BACKGROUND_COVERAGE;
+    });
+  }
+  const BACKGROUND_WARNING = "This SVG looks like it has a background (a filled shape behind the whole design). Every filled shape gets engraved, so a background would burn as one solid block. To fix it: delete the background in your design program and re-export, or here, open the imported group in the Layers panel, select the bottom shape, and delete it (or set its finish to Don't Engrave).";
   function importSvgFile(file) {
-    maybeWarnLargeSvg(file);
+    const warnings = [];
+    const sizeMsg = largeSvgMessage(file);
+    if (sizeMsg) warnings.push(sizeMsg);
     const reader = new FileReader();
     reader.onload = () => {
       const svgText = String(reader.result);
@@ -1325,9 +1362,14 @@ if (fabricCanvasEl && window.fabric) {
           });
         });
         if (!valid.length) {
+          showImportWarnings(warnings);
           plmAlert('Could not import that file — no supported shapes were found in it.');
           return;
         }
+        // Checked on the shapes' own original fills, before they're
+        // repainted with finish colors below.
+        if (looksLikeBackground(valid)) warnings.push(BACKGROUND_WARNING);
+        showImportWarnings(warnings);
         // Fabric objects default to strokeWidth:1 even with no stroke paint,
         // which pads their bounding box and throws off the physical scale
         // computed below — zero it out wherever there's no visible stroke.
