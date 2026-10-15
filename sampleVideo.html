@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Precision Laser Mark</title>
+  <!-- Landing page for the QR code on our samples -- not meant to show up in search results. -->
+  <meta name="robots" content="noindex" />
+  <link rel="icon" type="image/png" href="https://precisionlasermark.com/favicon-tab.png"/>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    /* The whole page is one link to the main site. */
+    .sample-video-link {
+      position: fixed;
+      inset: 0;
+      display: block;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sample-video-link video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      pointer-events: none;
+    }
+    .sample-video-hint {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(24px + env(safe-area-inset-bottom));
+      text-align: center;
+      font: 500 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: rgba(255, 255, 255, 0.75);
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+      animation: sample-video-hint-fade 6s ease-in-out 2s infinite;
+      opacity: 0;
+    }
+    @keyframes sample-video-hint-fade {
+      0%, 100% { opacity: 0; }
+      20%, 80% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <a class="sample-video-link" href="/" aria-label="Visit Precision Laser Mark">
+    <!-- Muted + playsinline are what let phones autoplay it. Placeholder:
+         swap the src for the real sample video once it's made. -->
+    <video src="hero-video.mp4" autoplay muted loop playsinline preload="auto"></video>
+    <span class="sample-video-hint">Tap anywhere to visit our website</span>
+  </a>
+</body>
+</html>
