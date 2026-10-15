@@ -1794,29 +1794,73 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .service-why-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
 .service-why-grid h3 { margin: 12px 0 10px; }
 .service-why-grid p { font-size: 0.88rem; color: #b3b3b3; line-height: 1.6; margin: 0; }
-/* Homepage "Built to outlast printing": short problem snippets above a
-   printed-vs-engraved before/after photo. */
+/* Homepage "Built to outlast printing": short problem snippets beside a
+   draggable printed-vs-engraved before/after photo. */
+.why-laser-layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  gap: 48px; align-items: center;
+}
 .why-laser-problems {
-  list-style: none; margin: 0 0 32px; padding: 0;
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 10px;
 }
 .why-laser-problems li {
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 18px 20px; border: 1px solid var(--line);
-  font-size: 0.95rem; color: var(--fg); transition: border-color 0.15s;
+  display: flex; align-items: baseline; gap: 16px;
+  padding: 16px 20px; border: 1px solid var(--line);
+  font-size: 0.95rem; color: var(--fg);
+  transition: border-color 0.15s, opacity 0.5s ease, transform 0.5s ease;
+  transition-delay: 0s, calc(var(--i) * 90ms), calc(var(--i) * 90ms);
 }
 .why-laser-problems li:hover { border-color: #555; }
+/* Scroll-in: only once script.js has marked the section (so the list is
+   never hidden without JS), each row slides in a beat after the last. */
+#why-laser.js-anim:not(.is-in) .why-laser-problems li { opacity: 0; transform: translateX(-12px); }
+
 .why-laser-compare { margin: 0; }
-.why-laser-compare img { display: block; width: 100%; height: auto; border: 1px solid var(--line); }
-/* One caption under each half of the side-by-side photo. */
-.why-laser-compare figcaption { display: grid; grid-template-columns: 1fr 1fr; margin-top: 12px; }
-.why-laser-compare figcaption span:last-child { padding-left: 2px; }
+.why-laser-compare figcaption { margin-top: 10px; text-align: center; }
+.ba-slider {
+  position: relative; overflow: hidden; aspect-ratio: 715 / 669;
+  border: 1px solid var(--line); cursor: ew-resize; user-select: none;
+  touch-action: pan-y; outline: none;
+}
+.ba-slider:focus-visible { border-color: var(--fg); }
+.ba-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.ba-before { clip-path: inset(0 calc(100% - var(--pos)) 0 0); }
+.ba-label {
+  position: absolute; top: 12px; padding: 5px 9px;
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--fg); background: rgba(0, 0, 0, 0.6); pointer-events: none;
+}
+.ba-label-before { left: 12px; }
+.ba-label-after { right: 12px; }
+/* The divider is drawn like a laser line: white core, warm glow that
+   flares while the intro sweep is "burning" across. */
+.ba-handle {
+  position: absolute; top: 0; bottom: 0; left: var(--pos); width: 2px; margin-left: -1px;
+  background: var(--fg); box-shadow: 0 0 8px rgba(255, 190, 96, 0.5); pointer-events: none;
+  transition: box-shadow 0.3s;
+}
+.ba-slider.is-burning .ba-handle { box-shadow: 0 0 10px rgba(255, 190, 96, 0.9), 0 0 28px rgba(255, 122, 43, 0.55); }
+.ba-knob {
+  position: absolute; top: 50%; left: 50%; width: 34px; height: 34px; transform: translate(-50%, -50%);
+  border-radius: 50%; background: var(--bg); border: 2px solid var(--fg);
+}
+.ba-knob::before, .ba-knob::after {
+  content: ""; position: absolute; top: 50%; width: 0; height: 0; margin-top: -5px;
+  border: 5px solid transparent;
+}
+.ba-knob::before { left: 4px; border-right-color: var(--fg); }
+.ba-knob::after { right: 4px; border-left-color: var(--fg); }
+.ba-slider.is-burning .ba-knob { opacity: 0; }
+.ba-knob { transition: opacity 0.3s; }
 .why-laser-cta { margin-top: 48px; }
-@media (max-width: 760px) {
+@media (max-width: 860px) {
+  .why-laser-layout { grid-template-columns: 1fr; gap: 28px; }
   .why-laser-problems { grid-template-columns: 1fr 1fr; }
+  .why-laser-compare { max-width: 520px; width: 100%; justify-self: center; }
 }
 @media (max-width: 420px) {
-  .why-laser-problems li { padding: 14px 14px; font-size: 0.88rem; }
+  .why-laser-problems li { flex-direction: column; gap: 6px; padding: 14px; font-size: 0.88rem; }
 }
 
 /* ---- Tag configurator (api-rp-tags.html) ---- */

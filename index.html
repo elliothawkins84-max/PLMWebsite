@@ -111,22 +111,31 @@
       <header class="section-head">
         <h2>Built to outlast printing</h2>
       </header>
-      <ol class="why-laser-problems">
-        <li><span class="tag-label">01</span>Labels peel at the edges</li>
-        <li><span class="tag-label">02</span>Ink fades in the sun</li>
-        <li><span class="tag-label">03</span>Solvents wipe printing away</li>
-        <li><span class="tag-label">04</span>Handling rubs the print off</li>
-        <li><span class="tag-label">05</span>Barcodes stop scanning</li>
-        <li><span class="tag-label">06</span>Endless relabeling and reordering</li>
-      </ol>
-      <figure class="why-laser-compare">
-        <img src="img/electrical-box-label-makeover.jpg" width="1495" height="669" loading="lazy"
-             alt="A peeling, faded printed label on an electrical box next to the same box with a crisp laser-engraved metal plate" />
-        <figcaption>
-          <span class="tag-label">Printed label</span>
-          <span class="tag-label">Laser engraved</span>
-        </figcaption>
-      </figure>
+      <div class="why-laser-layout">
+        <ol class="why-laser-problems">
+          <li style="--i:0"><span class="tag-label">01</span>Labels peel at the edges</li>
+          <li style="--i:1"><span class="tag-label">02</span>Ink fades in the sun</li>
+          <li style="--i:2"><span class="tag-label">03</span>Solvents wipe printing away</li>
+          <li style="--i:3"><span class="tag-label">04</span>Handling rubs the print off</li>
+          <li style="--i:4"><span class="tag-label">05</span>Barcodes stop scanning</li>
+          <li style="--i:5"><span class="tag-label">06</span>Endless relabeling and reordering</li>
+        </ol>
+        <!-- Before/after: drag (or arrow-key) the line to compare. The
+             printed photo sits on top, clipped to the left of --pos. -->
+        <figure class="why-laser-compare">
+          <div class="ba-slider" id="ba-slider" style="--pos: 50%" role="slider" tabindex="0"
+               aria-label="Compare a printed label with a laser-engraved plate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+            <img class="ba-img" src="img/label-after-engraved.jpg" width="715" height="669" loading="lazy" draggable="false"
+                 alt="Crisp laser-engraved metal plate on an electrical box" />
+            <img class="ba-img ba-before" src="img/label-before-printed.jpg" width="715" height="669" loading="lazy" draggable="false"
+                 alt="Peeling, faded printed label on the same electrical box" />
+            <span class="ba-label ba-label-before">Printed</span>
+            <span class="ba-label ba-label-after">Laser engraved</span>
+            <span class="ba-handle" aria-hidden="true"><span class="ba-knob"></span></span>
+          </div>
+          <figcaption class="fine">Drag to compare</figcaption>
+        </figure>
+      </div>
       <div class="why-laser-cta">
         <a href="#contact" class="btn">Replace your labels — get a quote &rarr;</a>
       </div>

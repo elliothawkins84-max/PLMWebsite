@@ -339,6 +339,87 @@ if (stage) {
   }
 }
 
+// "Built to outlast printing": the problem list slides in when the
+// section scrolls into view, then a laser-line sweep across the
+// before/after photo burns the printed label away to the engraved plate
+// and settles in the middle. After that (or any time it's grabbed), the
+// line follows a drag, and arrow keys nudge it.
+{
+  const section = document.getElementById('why-laser');
+  const slider = document.getElementById('ba-slider');
+  if (section && slider) {
+    const setPos = (v) => {
+      const pos = Math.max(0, Math.min(100, v));
+      slider.style.setProperty('--pos', `${pos}%`);
+      slider.setAttribute('aria-valuenow', String(Math.round(pos)));
+      return pos;
+    };
+    let pos = 50;
+    let tweenRaf = null;
+    const stopTween = () => {
+      if (tweenRaf) cancelAnimationFrame(tweenRaf);
+      tweenRaf = null;
+      slider.classList.remove('is-burning');
+    };
+    const tween = (to, ms) => new Promise((resolve) => {
+      const from = pos;
+      const start = performance.now();
+      const step = (now) => {
+        const t = Math.min(1, (now - start) / ms);
+        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        pos = setPos(from + (to - from) * eased);
+        if (t < 1) tweenRaf = requestAnimationFrame(step);
+        else { tweenRaf = null; resolve(); }
+      };
+      tweenRaf = requestAnimationFrame(step);
+    });
+
+    let dragging = false;
+    const fromPointer = (e) => {
+      const r = slider.getBoundingClientRect();
+      pos = setPos(((e.clientX - r.left) / r.width) * 100);
+    };
+    slider.addEventListener('pointerdown', (e) => {
+      stopTween();
+      dragging = true;
+      slider.setPointerCapture(e.pointerId);
+      fromPointer(e);
+    });
+    slider.addEventListener('pointermove', (e) => { if (dragging) fromPointer(e); });
+    const endDrag = () => { dragging = false; };
+    slider.addEventListener('pointerup', endDrag);
+    slider.addEventListener('pointercancel', endDrag);
+    slider.addEventListener('keydown', (e) => {
+      const moves = { ArrowLeft: -5, ArrowRight: 5, Home: -100, End: 100 };
+      if (!(e.key in moves)) return;
+      e.preventDefault();
+      stopTween();
+      pos = setPos(pos + moves[e.key]);
+    });
+
+    if (!reduceMotion) {
+      section.classList.add('js-anim');
+      pos = setPos(100);
+      const io = new IntersectionObserver((entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        io.disconnect();
+        section.classList.add('is-in');
+        setTimeout(async () => {
+          if (dragging) return;
+          slider.classList.add('is-burning');
+          await tween(0, 1500);
+          if (!slider.classList.contains('is-burning')) return; // grabbed mid-sweep
+          await new Promise((r) => setTimeout(r, 350));
+          if (dragging || !slider.classList.contains('is-burning')) return;
+          slider.classList.remove('is-burning');
+          await tween(50, 700);
+        }, 650);
+      }, { threshold: 0.35 });
+      io.observe(section);
+    }
+  }
+}
+
 // Quote form — artwork upload (click or drag & drop)
 const fileField = document.querySelector('.file-field');
 if (fileField) {
