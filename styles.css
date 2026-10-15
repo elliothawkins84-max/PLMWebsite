@@ -1794,13 +1794,30 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .service-why-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
 .service-why-grid h3 { margin: 12px 0 10px; }
 .service-why-grid p { font-size: 0.88rem; color: #b3b3b3; line-height: 1.6; margin: 0; }
-/* Homepage "Built to outlast printing" section: the lead wraps (unlike
-   other section heads), and the grid gets row spacing for its 2 rows. */
-.section-head .why-laser-lead { white-space: normal; max-width: 60ch; margin-top: 18px; }
-#why-laser .service-why-grid { gap: 16px; }
-#why-laser .service-why-grid > div { padding: 26px 24px; border: 1px solid var(--line); transition: border-color 0.15s; }
-#why-laser .service-why-grid > div:hover { border-color: #555; }
-.why-laser-cta { margin-top: 56px; }
+/* Homepage "Built to outlast printing": short problem snippets above a
+   printed-vs-engraved before/after photo. */
+.why-laser-problems {
+  list-style: none; margin: 0 0 32px; padding: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+}
+.why-laser-problems li {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 18px 20px; border: 1px solid var(--line);
+  font-size: 0.95rem; color: var(--fg); transition: border-color 0.15s;
+}
+.why-laser-problems li:hover { border-color: #555; }
+.why-laser-compare { margin: 0; }
+.why-laser-compare img { display: block; width: 100%; height: auto; border: 1px solid var(--line); }
+/* One caption under each half of the side-by-side photo. */
+.why-laser-compare figcaption { display: grid; grid-template-columns: 1fr 1fr; margin-top: 12px; }
+.why-laser-compare figcaption span:last-child { padding-left: 2px; }
+.why-laser-cta { margin-top: 48px; }
+@media (max-width: 760px) {
+  .why-laser-problems { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 420px) {
+  .why-laser-problems li { padding: 14px 14px; font-size: 0.88rem; }
+}
 
 /* ---- Tag configurator (api-rp-tags.html) ---- */
 .tag-configurator { display: grid; grid-template-columns: minmax(0, 420px) 1fr; gap: 48px; align-items: start; }
