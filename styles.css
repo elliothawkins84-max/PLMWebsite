@@ -1794,6 +1794,11 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .service-why-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
 .service-why-grid h3 { margin: 12px 0 10px; }
 .service-why-grid p { font-size: 0.88rem; color: #b3b3b3; line-height: 1.6; margin: 0; }
+/* Homepage "Built to outlast printing" section: the lead wraps (unlike
+   other section heads), and the grid gets row spacing for its 2 rows. */
+.section-head .why-laser-lead { white-space: normal; max-width: 60ch; margin-top: 18px; }
+#why-laser .service-why-grid { row-gap: 48px; }
+.why-laser-cta { margin-top: 56px; }
 
 /* ---- Tag configurator (api-rp-tags.html) ---- */
 .tag-configurator { display: grid; grid-template-columns: minmax(0, 420px) 1fr; gap: 48px; align-items: start; }
