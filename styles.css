@@ -1821,10 +1821,15 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .why-laser-list-head .wl-head-fix { color: var(--fg); }
 /* "Drag the slider to fix them" until the rows are fixed, then
    "✓ Fixed by laser" (script.js sets .is-all-fixed on the section).
-   Without JS the rows show fixed, so the head matches. */
-.wl-head-todo { display: none; }
-#why-laser.has-slider:not(.is-all-fixed) .wl-head-todo { display: inline; }
-#why-laser.has-slider:not(.is-all-fixed) .wl-head-done { display: none; }
+   Without JS the rows show fixed, so the head matches.
+   Both sit in the same grid cell and cross-fade with a small slide, the
+   "fixed" one landing just after the rows' own ripple has started. */
+.wl-head-fix { display: inline-grid; justify-items: end; text-align: right; }
+.wl-head-fix > span { grid-area: 1 / 1; transition: opacity 0.4s ease, transform 0.4s ease; }
+.wl-head-todo { opacity: 0; transform: translateY(6px); }
+.wl-head-done { transition-delay: 0.15s; }
+#why-laser.has-slider:not(.is-all-fixed) .wl-head-todo { opacity: 1; transform: none; transition-delay: 0.1s; }
+#why-laser.has-slider:not(.is-all-fixed) .wl-head-done { opacity: 0; transform: translateY(-6px); transition-delay: 0s; }
 /* Each row is a printing problem with a status on the right: an ✕, or
    "✓ Fixed" while enough of the engraved photo is showing (script.js
    toggles .is-fixed from the slider position). Rows are fixed in the
