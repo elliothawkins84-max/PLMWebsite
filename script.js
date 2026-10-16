@@ -352,10 +352,12 @@ if (stage) {
     // together (cascading top to bottom, see styles.css) once the engraved
     // photo covers 3/4 of the box (line at 25% or less), and flip back to
     // ✕ as soon as it's pulled back past that.
+    section.classList.add('has-slider');
     const problems = Array.from(section.querySelectorAll('.why-laser-problems li'));
     const FIXED_AT = 25;
     const showFixes = (pos) => {
       problems.forEach((li) => li.classList.toggle('is-fixed', pos <= FIXED_AT));
+      section.classList.toggle('is-all-fixed', pos <= FIXED_AT);
     };
     const setPos = (v) => {
       const pos = Math.max(0, Math.min(100, v));
