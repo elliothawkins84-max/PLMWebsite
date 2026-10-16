@@ -1819,12 +1819,12 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
    right, lined up over each row's status. */
 .why-laser-list-head { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
 .why-laser-list-head .wl-head-fix { color: var(--fg); }
-/* Each row is a printing problem with a status on the right: an ✕ until
-   the laser line sweeps past it (see script.js), then it's crossed off
-   with a "✓ Fixed". Rows are fixed by default so nothing looks unsolved
-   without JS / with reduced motion. */
-.wl-text { flex: 1; text-decoration: line-through; text-decoration-color: transparent; text-decoration-thickness: 2px; transition: color 0.4s, text-decoration-color 0.4s; }
-.why-laser-problems li.is-fixed .wl-text { color: #9a9a9a; text-decoration-color: rgba(255, 170, 80, 0.85); }
+/* Each row is a printing problem with a status on the right: an ✕, or
+   "✓ Fixed" while enough of the engraved photo is showing (script.js
+   toggles .is-fixed from the slider position). Rows are fixed in the
+   markup so nothing looks unsolved if the script doesn't run. */
+.wl-text { flex: 1; transition: color 0.3s; }
+.why-laser-problems li.is-fixed .wl-text { color: #9a9a9a; }
 .wl-status { position: relative; flex: none; display: inline-grid; justify-items: end; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
 .wl-status > span { grid-area: 1 / 1; transition: opacity 0.35s, transform 0.35s; }
 .wl-x { color: #e5484d; font-size: 0.85rem; }
