@@ -348,17 +348,14 @@ if (stage) {
   const section = document.getElementById('why-laser');
   const slider = document.getElementById('ba-slider');
   if (section && slider) {
-    // Problem rows follow the line: each flips from ✕ to "✓ Fixed" once
-    // enough of the engraved photo is showing, top row first, and flips
-    // back if the line is pulled back toward the printed side. All six are
-    // fixed once the engraved side covers 3/4 of the box (line at 25%).
+    // Problem rows follow the line: all six flip from ✕ to "✓ Fixed"
+    // together (cascading top to bottom, see styles.css) once the engraved
+    // photo covers 3/4 of the box (line at 25% or less), and flip back to
+    // ✕ as soon as it's pulled back past that.
     const problems = Array.from(section.querySelectorAll('.why-laser-problems li'));
-    const ALL_FIXED_AT = 25;
+    const FIXED_AT = 25;
     const showFixes = (pos) => {
-      problems.forEach((li, i) => {
-        const fixedAt = 100 - ((i + 1) / problems.length) * (100 - ALL_FIXED_AT);
-        li.classList.toggle('is-fixed', pos <= fixedAt);
-      });
+      problems.forEach((li) => li.classList.toggle('is-fixed', pos <= FIXED_AT));
     };
     const setPos = (v) => {
       const pos = Math.max(0, Math.min(100, v));
