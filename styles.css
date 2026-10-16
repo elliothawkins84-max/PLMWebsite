@@ -1805,7 +1805,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   display: grid; gap: 10px;
 }
 .why-laser-problems li {
-  display: flex; align-items: baseline; gap: 16px;
+  display: flex; align-items: center; gap: 16px;
   padding: 16px 20px; border: 1px solid var(--line);
   font-size: 0.95rem; color: var(--fg);
   transition: border-color 0.15s, opacity 0.5s ease, transform 0.5s ease;
@@ -1815,6 +1815,23 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 /* Scroll-in: only once script.js has marked the section (so the list is
    never hidden without JS), each row slides in a beat after the last. */
 #why-laser.js-anim:not(.is-in) .why-laser-problems li { opacity: 0; transform: translateX(-12px); }
+/* Head over the list: "problems" on the left, "fixed by laser" on the
+   right, lined up over each row's status. */
+.why-laser-list-head { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+.why-laser-list-head .wl-head-fix { color: var(--fg); }
+/* Each row is a printing problem with a status on the right: an ✕ until
+   the laser line sweeps past it (see script.js), then it's crossed off
+   with a "✓ Fixed". Rows are fixed by default so nothing looks unsolved
+   without JS / with reduced motion. */
+.wl-text { flex: 1; text-decoration: line-through; text-decoration-color: transparent; text-decoration-thickness: 2px; transition: color 0.4s, text-decoration-color 0.4s; }
+.why-laser-problems li.is-fixed .wl-text { color: #9a9a9a; text-decoration-color: rgba(255, 170, 80, 0.85); }
+.wl-status { position: relative; flex: none; display: inline-grid; justify-items: end; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
+.wl-status > span { grid-area: 1 / 1; transition: opacity 0.35s, transform 0.35s; }
+.wl-x { color: #e5484d; font-size: 0.85rem; }
+.wl-fixed { color: var(--fg); padding: 4px 8px; border: 1px solid var(--fg); opacity: 0; transform: scale(0.8); }
+.why-laser-problems li.is-fixed .wl-x { opacity: 0; transform: scale(0.6); }
+.why-laser-problems li.is-fixed .wl-fixed { opacity: 1; transform: none; }
+.why-laser-problems li.is-fixed { border-color: #3a3a3a; }
 
 .why-laser-compare { margin: 0; }
 .why-laser-compare figcaption { margin-top: 10px; text-align: center; }
@@ -1856,11 +1873,10 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .why-laser-cta { margin-top: 48px; }
 @media (max-width: 860px) {
   .why-laser-layout { grid-template-columns: 1fr; gap: 28px; }
-  .why-laser-problems { grid-template-columns: 1fr 1fr; }
   .why-laser-compare { max-width: 520px; width: 100%; justify-self: center; }
 }
 @media (max-width: 420px) {
-  .why-laser-problems li { flex-direction: column; gap: 6px; padding: 14px; font-size: 0.88rem; }
+  .why-laser-problems li { gap: 12px; padding: 14px; font-size: 0.88rem; }
 }
 
 /* ---- Tag configurator (api-rp-tags.html) ---- */

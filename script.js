@@ -348,15 +348,29 @@ if (stage) {
   const section = document.getElementById('why-laser');
   const slider = document.getElementById('ba-slider');
   if (section && slider) {
+    // Problem rows get crossed off ("✓ Fixed") one by one as the line
+    // sweeps from the printed side to the engraved side, and stay fixed.
+    const problems = Array.from(section.querySelectorAll('.why-laser-problems li'));
+    let tracking = false;
+    const fixUpTo = (pos) => {
+      if (!tracking) return;
+      problems.forEach((li, i) => {
+        if (pos <= 100 - ((i + 1) / problems.length) * 92) li.classList.add('is-fixed');
+      });
+      if (problems.every((li) => li.classList.contains('is-fixed'))) tracking = false;
+    };
+    const fixAll = () => { tracking = false; problems.forEach((li) => li.classList.add('is-fixed')); };
     const setPos = (v) => {
       const pos = Math.max(0, Math.min(100, v));
       slider.style.setProperty('--pos', `${pos}%`);
       slider.setAttribute('aria-valuenow', String(Math.round(pos)));
+      fixUpTo(pos);
       return pos;
     };
     let pos = 50;
     let tweenRaf = null;
     const stopTween = () => {
+      fixAll();
       if (tweenRaf) cancelAnimationFrame(tweenRaf);
       tweenRaf = null;
       slider.classList.remove('is-burning');
@@ -399,6 +413,8 @@ if (stage) {
 
     if (!reduceMotion) {
       section.classList.add('js-anim');
+      problems.forEach((li) => li.classList.remove('is-fixed'));
+      tracking = true;
       pos = setPos(100);
       const io = new IntersectionObserver((entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
