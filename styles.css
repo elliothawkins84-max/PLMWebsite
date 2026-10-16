@@ -1818,6 +1818,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 /* Head over the list: "problems" on the left, "fixed by laser" on the
    right, lined up over each row's status. */
 .why-laser-list-head { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+.why-laser-list-head .tag-label { font-size: 0.78rem; letter-spacing: 0.14em; }
 .why-laser-list-head .wl-head-fix { color: var(--fg); }
 /* "Drag the slider to fix them" until the rows are fixed, then
    "✓ Fixed by laser" (script.js sets .is-all-fixed on the section).
@@ -1830,6 +1831,23 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .wl-head-done { transition-delay: 0.15s; }
 #why-laser.has-slider:not(.is-all-fixed) .wl-head-todo { opacity: 1; transform: none; transition-delay: 0.1s; }
 #why-laser.has-slider:not(.is-all-fixed) .wl-head-done { opacity: 0; transform: translateY(-6px); transition-delay: 0s; }
+/* Idle nudge so the drag prompt can't be missed: the text breathes with a
+   warm laser glow and the arrow rocks side to side. Animates only color /
+   text-shadow and the arrow's own transform, so it never fights the
+   cross-fade above. */
+.wl-drag-icon { display: inline-block; margin-right: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  #why-laser.has-slider:not(.is-all-fixed) .wl-head-todo { animation: wl-drag-glow 2.2s ease-in-out infinite; }
+  #why-laser.has-slider:not(.is-all-fixed) .wl-drag-icon { animation: wl-drag-rock 1.1s ease-in-out infinite; }
+}
+@keyframes wl-drag-glow {
+  0%, 100% { color: var(--fg); text-shadow: none; }
+  50% { color: #ffd9a8; text-shadow: 0 0 8px rgba(255, 170, 80, 0.75), 0 0 18px rgba(255, 122, 43, 0.35); }
+}
+@keyframes wl-drag-rock {
+  0%, 100% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+}
 /* Each row is a printing problem with a status on the right: an ✕, or
    "✓ Fixed" while enough of the engraved photo is showing (script.js
    toggles .is-fixed from the slider position). Rows are fixed in the
@@ -1885,6 +1903,10 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 @media (max-width: 860px) {
   .why-laser-layout { grid-template-columns: 1fr; gap: 28px; }
   .why-laser-compare { max-width: 520px; width: 100%; justify-self: center; }
+}
+@media (max-width: 600px) {
+  .why-laser-list-head { flex-direction: column; gap: 8px; }
+  .wl-head-fix { justify-items: start; text-align: left; }
 }
 @media (max-width: 420px) {
   .why-laser-problems li { gap: 12px; padding: 14px; font-size: 0.88rem; }
