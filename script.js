@@ -410,10 +410,22 @@ if (stage) {
     if (!reduceMotion) {
       section.classList.add('js-anim');
       pos = setPos(100);
-      const io = new IntersectionObserver((entries) => {
+      // The list slides in as soon as the section is coming into view; the
+      // sweep waits until the photo itself is (nearly) fully on screen and
+      // clear of the bottom edge, so it isn't over before anyone sees it.
+      const listIo = new IntersectionObserver((entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
-        io.disconnect();
+        listIo.disconnect();
         section.classList.add('is-in');
+      }, { threshold: 0.2 });
+      listIo.observe(section);
+      // (On a screen too short to fit 90% of the photo, filling most of the
+      // visible area counts instead.)
+      const sweepIo = new IntersectionObserver((entries) => {
+        const seen = entries.some((e) => e.isIntersecting && (e.intersectionRatio >= 0.9
+          || (e.rootBounds && e.intersectionRect.height >= e.rootBounds.height * 0.8)));
+        if (!seen) return;
+        sweepIo.disconnect();
         setTimeout(async () => {
           if (dragging) return;
           slider.classList.add('is-burning');
@@ -423,9 +435,9 @@ if (stage) {
           if (dragging || !slider.classList.contains('is-burning')) return;
           slider.classList.remove('is-burning');
           await tween(50, 700);
-        }, 650);
-      }, { threshold: 0.35 });
-      io.observe(section);
+        }, 500);
+      }, { threshold: [0.5, 0.6, 0.7, 0.8, 0.9, 1], rootMargin: '0px 0px -12% 0px' });
+      sweepIo.observe(slider);
     }
   }
 }
