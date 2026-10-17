@@ -126,13 +126,36 @@
         <!-- Before/after: drag (or arrow-key) the line to compare. The
              printed photo sits on top, clipped to the left of --pos. -->
         <figure class="why-laser-compare">
+          <!-- Example picker: each button carries its own before/after pair.
+               Switching swaps the photos in place; the slider line stays put. -->
+          <div class="ba-sets">
+            <span class="sel-label">Some examples</span>
+            <div class="sel-btns">
+              <button type="button" class="chip is-on" aria-pressed="true"
+                      data-before="img/label-before-printed.jpg" data-after="img/label-after-engraved.jpg"
+                      data-before-label="Printed"
+                      data-before-alt="Peeling, faded printed label on an electrical box"
+                      data-after-alt="Crisp laser-engraved metal contact plate on the same electrical box">Contact Card</button>
+              <button type="button" class="chip" aria-pressed="false"
+                      data-before="img/outlet-before.jpg" data-after="img/outlet-after.jpg"
+                      data-before-label="Printed"
+                      data-before-alt="Worn, peeling printed PL-26 label on an outlet cover"
+                      data-after-alt="Clean laser-marked PL-26 on the same outlet cover">Electrical Outlet</button>
+              <button type="button" class="chip" aria-pressed="false"
+                      data-before="img/breaker-before.jpg" data-after="img/breaker-after.jpg"
+                      data-before-label="Tape &amp; marker"
+                      data-before-alt="Breaker panel with dirty, torn tape labels written in marker"
+                      data-after-alt="The same breaker panel with laser-engraved metal circuit labels"
+                      >Breaker Panel</button>
+            </div>
+          </div>
           <div class="ba-slider" id="ba-slider" style="--pos: 50%" role="slider" tabindex="0"
                aria-label="Compare a printed label with a laser-engraved plate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
             <img class="ba-img" src="img/label-after-engraved.jpg" width="715" height="669" loading="lazy" draggable="false"
                  alt="Crisp laser-engraved metal plate on an electrical box" />
             <img class="ba-img ba-before" src="img/label-before-printed.jpg" width="715" height="669" loading="lazy" draggable="false"
                  alt="Peeling, faded printed label on the same electrical box" />
-            <span class="ba-label ba-label-before">Printed</span>
+            <span class="ba-label ba-label-before" id="ba-label-before">Printed</span>
             <span class="ba-label ba-label-after">Laser engraved</span>
             <span class="ba-handle" aria-hidden="true"><span class="ba-knob"></span></span>
           </div>

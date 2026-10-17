@@ -409,6 +409,54 @@ if (stage) {
       pos = setPos(pos + moves[e.key]);
     });
 
+    // Example picker: swap in another before/after pair. Only the photos
+    // (and the "before" tag) change -- the line, and with it the ✕/Fixed
+    // state, stays exactly where it is. Both new photos are decoded before
+    // the swap so they appear together, with a quick fade over the switch.
+    const setButtons = Array.from(section.querySelectorAll('.ba-sets .chip'));
+    const afterImg = slider.querySelector('.ba-img:not(.ba-before)');
+    const beforeImg = slider.querySelector('.ba-before');
+    const beforeTag = slider.querySelector('.ba-label-before');
+    let swapToken = 0;
+    const loadImage = (src) => new Promise((resolve) => {
+      const img = new Image();
+      img.onload = img.onerror = () => resolve();
+      img.src = src;
+      if (img.decode) img.decode().then(resolve, resolve);
+    });
+    setButtons.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (btn.classList.contains('is-on')) return;
+        setButtons.forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle('is-on', on);
+          b.setAttribute('aria-pressed', String(on));
+        });
+        const token = ++swapToken;
+        const { before, after, beforeLabel, beforeAlt, afterAlt } = btn.dataset;
+        const fade = reduceMotion ? Promise.resolve() : new Promise((r) => {
+          slider.classList.add('is-swapping');
+          setTimeout(r, 180);
+        });
+        await Promise.all([loadImage(before), loadImage(after), fade]);
+        if (token !== swapToken) return; // another example was picked meanwhile
+        beforeImg.src = before;
+        beforeImg.alt = beforeAlt;
+        afterImg.src = after;
+        afterImg.alt = afterAlt;
+        beforeTag.textContent = beforeLabel;
+        requestAnimationFrame(() => slider.classList.remove('is-swapping'));
+      });
+    });
+    // Fetch the other examples' photos once the section is getting close,
+    // so the first switch is instant without weighing down the page load.
+    const warmIo = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      warmIo.disconnect();
+      setButtons.forEach((b) => { new Image().src = b.dataset.before; new Image().src = b.dataset.after; });
+    }, { rootMargin: '400px 0px' });
+    warmIo.observe(section);
+
     if (!reduceMotion) {
       section.classList.add('js-anim');
       pos = setPos(100);
