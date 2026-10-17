@@ -1797,7 +1797,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 /* Homepage "Built to outlast printing": short problem snippets beside a
    draggable printed-vs-engraved before/after photo. */
 .why-laser-layout {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
   gap: 48px; align-items: center;
 }
 .why-laser-problems {
@@ -1864,13 +1864,21 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 
 .why-laser-compare { margin: 0; }
 .why-laser-compare figcaption { margin-top: 10px; text-align: center; }
+/* Example picker above the slider (same chip style as the explorer). */
+.ba-sets { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.ba-sets .sel-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.ba-sets .chip { padding: 9px 12px; font-size: 0.72rem; }
+/* One fixed 4:5 frame for every example (photos are cropped to fit), so
+   switching examples never changes the box size or moves the line. */
 .ba-slider {
-  position: relative; overflow: hidden; aspect-ratio: 715 / 669;
+  position: relative; overflow: hidden; aspect-ratio: 4 / 5;
   border: 1px solid var(--line); cursor: ew-resize; user-select: none;
   touch-action: pan-y; outline: none;
 }
 .ba-slider:focus-visible { border-color: var(--fg); }
 .ba-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.ba-img { transition: opacity 0.18s ease; }
+.ba-slider.is-swapping .ba-img { opacity: 0; }
 .ba-before { clip-path: inset(0 calc(100% - var(--pos)) 0 0); }
 .ba-label {
   position: absolute; top: 12px; padding: 5px 9px;
@@ -1902,7 +1910,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .why-laser-cta { margin-top: 48px; }
 @media (max-width: 860px) {
   .why-laser-layout { grid-template-columns: 1fr; gap: 28px; }
-  .why-laser-compare { max-width: 520px; width: 100%; justify-self: center; }
+  .why-laser-compare { max-width: 440px; width: 100%; justify-self: center; }
 }
 @media (max-width: 600px) {
   .why-laser-list-head { flex-direction: column; gap: 8px; }
