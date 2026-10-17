@@ -1710,7 +1710,9 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .footer-left { display: flex; flex-direction: column; gap: 20px; }
 .footer-brand { display: flex; flex-direction: column; gap: 8px; }
 .footer-brand p { font-size: 0.9rem; color: #b3b3b3; }
-.footer-links { display: flex; gap: 22px; flex-wrap: wrap; }
+.footer-links { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; }
+/* Email with the phone number right under it. */
+.footer-contact { display: flex; flex-direction: column; gap: 6px; }
 .footer-links a { font-size: 0.7rem; color: var(--muted); text-decoration: none; }
 .footer-links a:hover { color: var(--fg); }
 /* Full-width copyright line under the brand/links + industries columns
