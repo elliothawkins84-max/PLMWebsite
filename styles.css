@@ -1914,9 +1914,15 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   .why-laser-layout { grid-template-columns: 1fr; gap: 28px; }
   .why-laser-compare { max-width: 440px; width: 100%; justify-self: center; }
 }
+/* On phones the drag prompt moves below the problem list -- right above
+   the slider it's talking about. display: contents lets the two header
+   labels be ordered independently around the list. */
 @media (max-width: 600px) {
-  .why-laser-list-head { flex-direction: column; gap: 8px; }
-  .wl-head-fix { justify-items: start; text-align: left; }
+  .why-laser-list { display: flex; flex-direction: column; }
+  .why-laser-list-head { display: contents; }
+  .why-laser-list-head > .tag-label:first-child { order: 0; margin-bottom: 12px; }
+  .why-laser-problems { order: 1; }
+  .wl-head-fix { order: 2; margin-top: 16px; justify-items: start; text-align: left; }
 }
 @media (max-width: 420px) {
   .why-laser-problems li { gap: 12px; padding: 14px; font-size: 0.88rem; }
