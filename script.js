@@ -630,7 +630,7 @@ document.querySelectorAll('.faq-item').forEach((item) => {
   });
 });
 
-// API RP Tags configurator: line-count chips drive how many text fields show,
+// Round ID Tags configurator: line-count chips drive how many text fields show,
 // and typing live-updates a text overlay positioned on the tag photo.
 const tagLineChips = document.getElementById('tagLineChips');
 if (tagLineChips) {
@@ -889,8 +889,8 @@ if (tagLineChips) {
       .join('\n');
     const colorName = activeColorChip() ? activeColorChip().dataset.color : 'blue';
     const sizeName = activeFontChip().textContent.trim();
-    const body = `API RP Tag quote request\n\nTag size: 2in diameter\nColor: ${colorName.charAt(0).toUpperCase()}${colorName.slice(1)}\nLayout: ${layoutNames[count]}\nText size: ${sizeName} (~${Math.round(appliedPt)}pt)\n${lines}\n\nQuantity needed:`;
-    quoteBtn.href = `mailto:info@precisionlasermark.com?subject=${encodeURIComponent('API RP Tag Quote Request')}&body=${encodeURIComponent(body)}`;
+    const body = `Round ID Tag quote request\n\nTag size: 2in diameter\nColor: ${colorName.charAt(0).toUpperCase()}${colorName.slice(1)}\nLayout: ${layoutNames[count]}\nText size: ${sizeName} (~${Math.round(appliedPt)}pt)\n${lines}\n\nQuantity needed:`;
+    quoteBtn.href = `mailto:info@precisionlasermark.com?subject=${encodeURIComponent('Round ID Tag Quote Request')}&body=${encodeURIComponent(body)}`;
   };
 
   chips.forEach((c) => c.addEventListener('click', () => setLineCount(Number(c.dataset.lines))));
@@ -914,7 +914,7 @@ if (tagLineChips) {
   setLineCount(1);
 }
 
-// API RP Tags order table: a list of tag line-items the customer builds up
+// Round ID Tags order table: a list of tag line-items the customer builds up
 // before submitting the whole order at once. Defaults to 2 rows.
 const tagOrderBody = document.getElementById('tagOrderBody');
 if (tagOrderBody) {
@@ -1203,7 +1203,7 @@ async function encodePlmjFile(payloadObj) {
   return out;
 }
 
-// API RP Tags RFQ modal: shows a per-color tally of the order table on the
+// Round ID Tags RFQ modal: shows a per-color tally of the order table on the
 // left, and the same request-a-quote fields/framework as the business card
 // editor's own Next modal on the right (same field names, same
 // .contact-form styling, same open/close/Escape/backdrop pattern).
@@ -1384,7 +1384,7 @@ if (tagRfqModal) {
         formData.set('message', `${contextLines.join('\n')}${userMessage ? `\n\n${userMessage}` : ''}`);
 
         const bytes = await encodePlmjFile(payload);
-        const base = (payload.order.name || 'api-rp-tag').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'api-rp-tag';
+        const base = (payload.order.name || 'round-id-tag').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'round-id-tag';
         formData.append('attachment', new Blob([bytes], { type: 'application/octet-stream' }), `${base}-order.plmj`);
 
         const res = await fetch(RFQ_ENDPOINT, { method: 'POST', body: formData });
