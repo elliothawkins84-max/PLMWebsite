@@ -1928,7 +1928,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   .why-laser-problems li { gap: 12px; padding: 14px; font-size: 0.88rem; }
 }
 
-/* ---- Tag configurator (api-rp-tags.html) ---- */
+/* ---- Tag configurator (round-id-tags.html) ---- */
 .tag-configurator { display: grid; grid-template-columns: minmax(0, 420px) 1fr; gap: 48px; align-items: start; }
 .tag-photo-column { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 420px; }
 .tag-photo-column .btn { align-self: center; }
@@ -2030,7 +2030,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .tag-input-row input:focus { outline: none; border-color: var(--fg); }
 .tag-input-row input::placeholder { color: var(--muted); opacity: 0.6; }
 
-/* ---- Order table (api-rp-tags.html) ---- */
+/* ---- Order table (round-id-tags.html) ---- */
 .tag-order-table-wrap { overflow-x: auto; margin-bottom: 22px; }
 .tag-order-table { width: 100%; border-collapse: separate; border-spacing: 0; font-family: var(--mono); }
 .tag-order-table th {
@@ -2125,7 +2125,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   color: var(--fg);
 }
 
-/* ---- RFQ modal (api-rp-tags.html) ----
+/* ---- RFQ modal (round-id-tags.html) ----
    Ported from card-editor.css's Next/RFQ-success modal so this page's
    "Request a Quote" flow shares the exact same look/behavior, since this
    page doesn't load card-editor.css itself. */
