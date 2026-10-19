@@ -66,11 +66,17 @@ export default {
       return new Response(null, { headers: corsHeaders(origin) });
     }
 
-    // Shared Job Log (see joblog.js). Not origin-locked like the RFQ form
-    // below: the desktop app calls it from Node with no Origin header at
-    // all -- every route but login is gated by a signed token instead.
+    // Shared Job Log (see joblog.js). The desktop app calls it from Node
+    // with no Origin header at all; every route but sign-in needs an
+    // approved device session.
     const url = new URL(request.url);
     if (url.pathname === '/joblog' || url.pathname.startsWith('/joblog/')) {
+      // A browser always says which site a request comes from: only
+      // precisionlasermark.com (or a local test copy) may call the log,
+      // so another site can't use a visitor's browser against it.
+      if (origin && !isOriginAllowed(origin)) {
+        return json({ ok: false, message: 'Forbidden' }, 403, origin);
+      }
       return handleJoblog(request, env, url, (data, status) => json(data, status, origin));
     }
     if (request.method !== 'POST') {
