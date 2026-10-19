@@ -31,14 +31,14 @@ namespace_id = "1002"
 [[d1_databases]]
 binding = "JOBLOG_DB"
 database_name = "plm-joblog"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "0c6d78d4-ceb8-4b35-a8c8-b0a7fafad70d"
 migrations_dir = "migrations"
 
 # Full job files. Create once with `wrangler kv namespace create JOBLOG_KV`
 # and paste the id it prints below.
 [[kv_namespaces]]
 binding = "JOBLOG_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "68686ed9cbe64fa5bf7bd1d5df030299"
 
 # Secret (set with `wrangler secret put JOBLOG_PASSWORD`, never committed):
 #   JOBLOG_PASSWORD -- the shared log password. Every new device also needs
