@@ -40,6 +40,6 @@ migrations_dir = "migrations"
 binding = "JOBLOG_KV"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
-# Secrets (set with `wrangler secret put <NAME>`, never committed):
-#   JOBLOG_PASSWORD -- the shared log password
-#   JOBLOG_SECRET   -- any long random string; signs sign-in tokens
+# Secret (set with `wrangler secret put JOBLOG_PASSWORD`, never committed):
+#   JOBLOG_PASSWORD -- the shared log password. Every new device also needs
+#   approval from the email sent to info@ (uses RESEND_API_KEY above).

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- Internal: opened from the "Job Log sign-in request" email sent to
+       info@. Shows that request and lets it be approved or denied. The
+       link's secret lives after the #, so it never goes out in a request
+       URL or a Referer. Opening the link alone does nothing (email
+       scanners pre-open links) -- it takes a button press. -->
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://plm-rfq.precisionlasermark.workers.dev http://localhost:8787; base-uri 'none'; form-action 'none'" />
+  <title>Approve sign-in</title>
+  <link rel="icon" type="image/png" href="favicon-tab.png" />
+  <style>
+    :root { --bg: #000; --card: #111; --line: #2a2a2a; --fg: #f2f2f2; --muted: #8a8a8a; --ok: #22c55e; --danger: #ef4444; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--mono); }
+    main { max-width: 440px; margin: 10vh auto 40px; padding: 0 16px; }
+    h1 { font-size: 1.1rem; margin: 0 0 6px; }
+    .sub { color: var(--muted); font-size: 0.8rem; line-height: 1.5; margin: 0 0 20px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+    .code { font-size: 2rem; letter-spacing: 0.3em; font-weight: 700; text-align: center; padding: 6px 0 14px; }
+    .row { display: flex; justify-content: space-between; gap: 16px; font-size: 0.82rem; padding: 7px 0; border-top: 1px solid var(--line); }
+    .row span:first-child { color: var(--muted); }
+    .row span:last-child { text-align: right; }
+    .actions { display: flex; gap: 10px; margin-top: 18px; }
+    button { flex: 1; font: inherit; padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: none; color: var(--fg); }
+    button.approve { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+    button.deny:hover { border-color: var(--danger); color: var(--danger); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .note { font-size: 0.78rem; color: var(--muted); line-height: 1.5; margin-top: 16px; }
+    .result { font-size: 0.95rem; margin-top: 16px; line-height: 1.5; }
+    .result.ok { color: var(--ok); }
+    .result.bad { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Job Log sign-in request</h1>
+    <p class="sub">Only approve if this code matches the one showing on the device you're signing in on right now.</p>
+    <div class="card" id="card" hidden>
+      <div class="code" id="code"></div>
+      <div class="row"><span>Device</span><span id="device"></span></div>
+      <div class="row"><span>Access</span><span id="access"></span></div>
+      <div class="row"><span>Location</span><span id="location"></span></div>
+      <div class="row"><span>Requested</span><span id="time"></span></div>
+      <div class="actions" id="actions">
+        <button type="button" class="deny" id="deny">Deny</button>
+        <button type="button" class="approve" id="approve">Approve</button>
+      </div>
+    </div>
+    <div class="result" id="result"></div>
+    <p class="note" id="note" hidden>Didn't try to sign in? Deny it — someone has the Job Log password. Change it as soon as possible.</p>
+  </main>
+  <script src="joblog-approve.js"></script>
+</body>
+</html>
