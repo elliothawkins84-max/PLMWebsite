@@ -32,6 +32,9 @@ const REQUEST_MINUTES = 15;
 const MAX_PAYLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_THUMB_CHARS = 400 * 1024;
 const LAST_SEEN_EVERY_MS = 10 * 60 * 1000;
+// How long a removed job's final dates stay available for the Macs that
+// hold its .plmj to pick up (see the removed_jobs table).
+const REMOVED_KEEP_DAYS = 90;
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const APPROVE_PAGE = 'https://precisionlasermark.com/joblog-approve';
 const ALERT_TO = 'info@precisionlasermark.com';
@@ -307,10 +310,21 @@ export async function handleJoblog(request, env, url, json) {
     return json({ ok: true }, 200);
   }
 
-  // GET /joblog/jobs -- the whole board (no payloads).
+  // GET /joblog/jobs -- the whole board (no payloads). The desktop app
+  // also gets the recently removed jobs' final dates, to write into their
+  // .plmj files.
   if (path === '/joblog/jobs' && method === 'GET') {
     const { results } = await env.JOBLOG_DB.prepare('SELECT * FROM jobs ORDER BY added_at ASC').all();
-    return json({ ok: true, jobs: results.map((r) => forScope(rowToJob(r), session.scope)) }, 200);
+    const out = { ok: true, jobs: results.map((r) => forScope(rowToJob(r), session.scope)) };
+    if (full) {
+      const removed = await env.JOBLOG_DB.prepare('SELECT * FROM removed_jobs WHERE removed_at > ? ORDER BY seq ASC')
+        .bind(isoIn(-REMOVED_KEEP_DAYS * 24 * 60 * 60 * 1000)).all();
+      out.removed = removed.results.map((r) => ({
+        id: r.job_id, filename: r.filename, filePath: r.file_path, removedAt: r.removed_at,
+        addedAt: r.added_at, paidAt: r.paid_at, startedAt: r.started_at, completedAt: r.completed_at,
+      }));
+    }
+    return json(out, 200);
   }
 
   // POST /joblog/jobs -- add a job (desktop app only). Adding one that's
@@ -358,7 +372,14 @@ export async function handleJoblog(request, env, url, json) {
   if (!row) return json({ ok: false, message: 'That job is no longer in the log.' }, 404);
 
   if (method === 'DELETE') {
-    await env.JOBLOG_DB.prepare('DELETE FROM jobs WHERE id = ?').bind(id).run();
+    const now = new Date().toISOString();
+    await env.JOBLOG_DB.batch([
+      env.JOBLOG_DB.prepare(`INSERT INTO removed_jobs (job_id, filename, file_path, added_at, paid_at, started_at, completed_at, removed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(row.id, row.filename, row.file_path, row.added_at, row.paid_at, row.started_at, row.completed_at, now),
+      env.JOBLOG_DB.prepare('DELETE FROM jobs WHERE id = ?').bind(id),
+      env.JOBLOG_DB.prepare('DELETE FROM removed_jobs WHERE removed_at < ?').bind(isoIn(-REMOVED_KEEP_DAYS * 24 * 60 * 60 * 1000)),
+    ]);
     await env.JOBLOG_KV.delete(`payload:${id}`);
     return json({ ok: true }, 200);
   }
