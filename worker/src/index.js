@@ -1,3 +1,5 @@
+import { handleJoblog } from './joblog.js';
+
 const ALLOWED_ORIGINS = new Set([
   'https://precisionlasermark.com',
   'https://www.precisionlasermark.com',
@@ -35,8 +37,8 @@ function corsHeaders(origin) {
   const allowed = isOriginAllowed(origin) ? origin : '';
   return {
     'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     Vary: 'Origin',
   };
 }
@@ -62,6 +64,14 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders(origin) });
+    }
+
+    // Shared Job Log (see joblog.js). Not origin-locked like the RFQ form
+    // below: the desktop app calls it from Node with no Origin header at
+    // all -- every route but login is gated by a signed token instead.
+    const url = new URL(request.url);
+    if (url.pathname === '/joblog' || url.pathname.startsWith('/joblog/')) {
+      return handleJoblog(request, env, url, (data, status) => json(data, status, origin));
     }
     if (request.method !== 'POST') {
       return json({ success: false, message: 'Method not allowed' }, 405, origin);

@@ -14,3 +14,32 @@ namespace_id = "1001"
   [ratelimits.simple]
   limit = 3
   period = 60
+
+# ---- Shared Job Log (src/joblog.js) ----
+# Login attempts per IP: 5 per minute.
+[[ratelimits]]
+name = "LOGIN_LIMITER"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
+
+# Board rows. Create once with `wrangler d1 create plm-joblog`, paste the
+# database_id it prints below, then apply the schema with
+# `wrangler d1 migrations apply plm-joblog --remote`.
+[[d1_databases]]
+binding = "JOBLOG_DB"
+database_name = "plm-joblog"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Full job files. Create once with `wrangler kv namespace create JOBLOG_KV`
+# and paste the id it prints below.
+[[kv_namespaces]]
+binding = "JOBLOG_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Secrets (set with `wrangler secret put <NAME>`, never committed):
+#   JOBLOG_PASSWORD -- the shared log password
+#   JOBLOG_SECRET   -- any long random string; signs sign-in tokens

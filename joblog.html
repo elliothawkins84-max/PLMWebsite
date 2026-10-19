@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- Internal shop page: the shared Job Log board (same data as the PLM
+       Job Viewer app's Job Log). Not linked from anywhere, not in the
+       sitemap, and kept out of search results. The data itself is behind
+       the password, checked by the Worker (worker/src/joblog.js) -- this
+       page holds nothing until signed in. -->
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Job Log</title>
+  <link rel="icon" type="image/png" href="favicon-tab.png" />
+  <style>
+    :root {
+      --bg: #000; --panel: #0d0d0d; --card: #151515; --line: #2a2a2a;
+      --fg: #f2f2f2; --muted: #8a8a8a; --danger: #ef4444;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--mono); }
+    button, input, select { font: inherit; color: inherit; }
+    .topbar {
+      position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+      padding: 14px 20px; background: rgba(0,0,0,0.92); border-bottom: 1px solid var(--line);
+    }
+    .topbar h1 { font-size: 1rem; margin: 0; letter-spacing: 0.04em; }
+    .topbar .status { font-size: 0.72rem; color: var(--muted); margin-right: auto; }
+    .btn { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 0.76rem; }
+    .btn:hover { border-color: var(--fg); }
+
+    .login { max-width: 340px; margin: 18vh auto 0; padding: 0 16px; }
+    .login h2 { font-size: 1.1rem; margin: 0 0 16px; }
+    .login input { width: 100%; padding: 11px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+    .login input:focus { outline: none; border-color: var(--fg); }
+    .login .btn { width: 100%; margin-top: 12px; padding: 11px; background: var(--fg); color: var(--bg); border-color: var(--fg); }
+    .login .err { color: var(--danger); font-size: 0.78rem; min-height: 1.2em; margin-top: 10px; }
+
+    .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding: 16px 20px 40px; align-items: start; }
+    .col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-height: 160px; }
+    .col-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+    .col-count { font-size: 0.7rem; color: var(--muted); background: #1c1c1c; border-radius: 10px; padding: 2px 8px; }
+    .col-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 100px; }
+    .col-body.is-over { background: rgba(255,255,255,0.04); }
+    .empty { color: var(--muted); font-size: 0.78rem; text-align: center; padding: 18px 0; }
+
+    .card { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+    .card.is-dragging { opacity: 0.4; }
+    .card[draggable="true"] { cursor: grab; }
+    .card-thumb { width: 100%; max-height: 140px; object-fit: contain; border-radius: 6px; background: #0a0a0a; margin-bottom: 8px; display: block; }
+    .card-title { font-weight: 700; font-size: 0.86rem; padding-right: 26px; word-break: break-word; }
+    .card-meta { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+    .card-hist { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+    .card-remove { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); background: none; cursor: pointer; line-height: 1; color: var(--muted); }
+    .card-remove:hover { color: var(--danger); border-color: var(--danger); }
+    .progress { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .prow { display: flex; align-items: center; gap: 6px; font-size: 0.74rem; color: var(--muted); }
+    .prow-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .prow input { width: 52px; text-align: center; padding: 5px 4px; background: rgba(255,255,255,0.04); border: 1px solid var(--line); border-radius: 6px; color: var(--fg); -moz-appearance: textfield; }
+    .prow input::-webkit-inner-spin-button, .prow input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .prow input:focus { outline: none; border-color: var(--fg); }
+    .step { width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--line); background: none; cursor: pointer; font-size: 1rem; line-height: 1; color: var(--fg); }
+    .step:hover { border-color: var(--fg); }
+    .prow-of { min-width: 5ch; }
+    /* A custom job's counters are named after its items -- the name gets
+       its own line so it isn't cut off in a narrow column. */
+    .prow.is-item { flex-wrap: wrap; }
+    .prow.is-item .prow-label { flex-basis: 100%; white-space: normal; color: var(--fg); }
+    .move { margin-top: 10px; display: flex; align-items: center; gap: 8px; font-size: 0.7rem; color: var(--muted); }
+    .move select { flex: 1; padding: 6px 8px; background: #0a0a0a; border: 1px solid var(--line); border-radius: 6px; color: var(--fg); }
+
+    .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #2a0d0d; border: 1px solid var(--danger); color: #fecaca; padding: 10px 14px; border-radius: 8px; font-size: 0.8rem; display: none; z-index: 10; }
+
+    @media (max-width: 1000px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 600px) {
+      .board { grid-template-columns: 1fr; padding: 12px 16px 40px; }
+      .topbar { padding: 12px 16px; gap: 8px; }
+      .topbar h1, .btn { white-space: nowrap; }
+      .topbar .btn { padding: 6px 9px; font-size: 0.7rem; }
+      .topbar .status { font-size: 0.64rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>Job Log</h1>
+    <span class="status" id="status"></span>
+    <button type="button" class="btn" id="refresh-btn" hidden>Refresh</button>
+    <button type="button" class="btn" id="signout-btn" hidden>Sign out</button>
+  </div>
+
+  <form class="login" id="login" hidden>
+    <h2>Sign in</h2>
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required />
+    <button type="submit" class="btn">Sign in</button>
+    <div class="err" id="login-err"></div>
+  </form>
+
+  <main class="board" id="board" hidden></main>
+  <div class="toast" id="toast"></div>
+
+  <script>
+  (function () {
+    // Same Worker the site's quote form posts to. A local copy of this
+    // page (served from localhost) may point at a local `wrangler dev`
+    // instead with ?api=http://localhost:8787 -- never honored on the
+    // live site, so a link can't redirect the password anywhere else.
+    const LIVE_API = 'https://plm-rfq.precisionlasermark.workers.dev';
+    const isLocal = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+    const apiParam = new URLSearchParams(location.search).get('api');
+    const API = (isLocal && apiParam) ? apiParam.replace(/\/+$/, '') : LIVE_API;
+    const TOKEN_KEY = 'plmJoblogToken';
+
+    const STATUSES = ['awaiting-payment', 'not-started', 'in-progress', 'done'];
+    const LABELS = { 'awaiting-payment': 'Awaiting Payment', 'not-started': 'Queue', 'in-progress': 'In Progress', done: 'Done (Not Shipped)' };
+    const POLL_MS = 10000;
+
+    const $ = (id) => document.getElementById(id);
+    const board = $('board');
+    let jobs = [];
+    let busy = 0;
+    let pollTimer = null;
+
+    function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
+    function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) { /* private mode */ } }
+    function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+    function toast(msg) {
+      const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+      clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.style.display = 'none'; }, 4000);
+    }
+    function fmtDate(iso) {
+      const d = iso ? new Date(iso) : null;
+      return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(API + path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}`, ...(opts.headers || {}) },
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) { /* empty */ }
+      if (res.status === 401 && path !== '/joblog/login') { signedOut(); throw new Error('Signed out'); }
+      if (!res.ok || data.ok === false) throw new Error(data.message || `Request failed (${res.status})`);
+      return data;
+    }
+
+    // ---- Sign in / out ----
+    function signedOut() {
+      setToken('');
+      clearInterval(pollTimer);
+      board.hidden = true;
+      $('refresh-btn').hidden = true;
+      $('signout-btn').hidden = true;
+      $('status').textContent = '';
+      $('login').hidden = false;
+      $('password').focus();
+    }
+    $('login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('login-err').textContent = '';
+      try {
+        const res = await fetch(`${API}/joblog/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: $('password').value }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.token) throw new Error(data.message || 'Could not sign in.');
+        setToken(data.token);
+        $('password').value = '';
+        start();
+      } catch (err) {
+        $('login-err').textContent = err.message;
+      }
+    });
+    $('signout-btn').addEventListener('click', signedOut);
+    $('refresh-btn').addEventListener('click', () => load());
+
+    // ---- Board ----
+    function itemsOf(job) { return Array.isArray(job.items) && job.items.length ? job.items : null; }
+    function counterRows(job) {
+      const items = itemsOf(job);
+      const p = job.progress || {};
+      if (items) {
+        const done = Array.isArray(p.items) ? p.items : [];
+        // The first item picks up an older single "Front" count, same as the app.
+        return items.map((it, i) => ({ side: `item-${i}`, label: it.label, max: it.quantity, value: done[i] != null ? done[i] : (i === 0 ? p.front || 0 : 0) }));
+      }
+      const rows = [{ side: 'front', label: 'Front', max: job.quantity, value: p.front || 0 }];
+      if (job.hasBack) rows.push({ side: 'back', label: 'Back', max: job.quantity, value: p.back || 0 });
+      return rows;
+    }
+    function cardHTML(job) {
+      const items = itemsOf(job);
+      const qtyBit = items && items.length > 1 ? `${items.length} items` : `Qty ${(items ? items[0].quantity : job.quantity) || 'n/a'}`;
+      const meta = [job.cardTypeLabel, qtyBit].filter(Boolean).join(' · ');
+      const hist = [['Logged', job.addedAt], ['Paid', job.paidAt], ['Started', job.startedAt], ['Complete', job.completedAt]]
+        .filter(([, iso]) => iso).map(([l, iso]) => `<div class="card-hist">${l}: ${esc(fmtDate(iso))}</div>`).join('');
+      const progress = job.status === 'in-progress' ? `
+        <div class="progress">
+          ${counterRows(job).map((r) => `
+            <div class="prow${r.side.startsWith('item-') ? ' is-item' : ''}" data-side="${esc(r.side)}" data-max="${r.max || 0}">
+              <span class="prow-label" title="${esc(r.label)}">${esc(r.label)}</span>
+              <button type="button" class="step" data-step="-1" aria-label="One less">−</button>
+              <input type="number" inputmode="numeric" min="0" ${r.max ? `max="${r.max}"` : ''} value="${r.value}" aria-label="${esc(r.label)} completed" />
+              <button type="button" class="step" data-step="1" aria-label="One more">+</button>
+              <span class="prow-of">/ ${r.max || '?'}</span>
+            </div>`).join('')}
+        </div>` : '';
+      return `
+        <div class="card" draggable="true" data-id="${esc(job.id)}">
+          <button type="button" class="card-remove" title="Remove from log" aria-label="Remove from log">×</button>
+          ${job.thumbnail ? `<img class="card-thumb" src="${esc(job.thumbnail)}" alt="" />` : ''}
+          <div class="card-title">${esc(job.orderName || job.filename || 'Untitled job')}</div>
+          <div class="card-meta">${esc(meta)}</div>
+          ${hist}
+          ${progress}
+          <label class="move">Move to
+            <select>${STATUSES.map((s) => `<option value="${s}"${s === job.status ? ' selected' : ''}>${LABELS[s]}</option>`).join('')}</select>
+          </label>
+        </div>`;
+    }
+    function render() {
+      board.innerHTML = STATUSES.map((s) => {
+        const inCol = jobs.filter((j) => j.status === s);
+        return `
+          <section class="col" data-status="${s}">
+            <div class="col-head"><span>${LABELS[s]}</span><span class="col-count">${inCol.length}</span></div>
+            <div class="col-body">${inCol.length ? inCol.map(cardHTML).join('') : '<div class="empty">No jobs</div>'}</div>
+          </section>`;
+      }).join('');
+    }
+    async function load() {
+      if (busy) return;
+      try {
+        const data = await api('/joblog/jobs');
+        // Don't redraw underneath someone typing into a counter.
+        if (busy || board.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+        jobs = data.jobs;
+        render();
+        $('status').textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+      } catch (err) {
+        if (err.message !== 'Signed out') $('status').textContent = 'Offline — retrying…';
+      }
+    }
+    // Applies a change on screen immediately, sends it, then takes the
+    // server's copy of that job (which has the clamped counts / new
+    // timestamps). On failure, reloads the board so it never shows a
+    // change that didn't actually save.
+    async function change(id, method, body) {
+      busy++;
+      try {
+        const data = await api(`/joblog/jobs/${encodeURIComponent(id)}`, { method, body: body ? JSON.stringify(body) : undefined });
+        if (method === 'DELETE') jobs = jobs.filter((j) => j.id !== id);
+        else jobs = jobs.map((j) => (j.id === id ? data.job : j));
+      } catch (err) {
+        if (err.message !== 'Signed out') toast(`Not saved: ${err.message}`);
+        busy--; await load(); return;
+      }
+      busy--;
+      render();
+    }
+    function jobFor(el) { const card = el.closest('.card'); return card ? jobs.find((j) => j.id === card.dataset.id) : null; }
+
+    board.addEventListener('click', (e) => {
+      const job = jobFor(e.target);
+      if (!job) return;
+      if (e.target.closest('.card-remove')) {
+        if (confirm(`Remove "${job.orderName || job.filename || 'this job'}" from the log?`)) change(job.id, 'DELETE');
+        return;
+      }
+      const step = e.target.closest('.step');
+      if (step) {
+        const row = step.closest('.prow');
+        const input = row.querySelector('input');
+        const max = Number(row.dataset.max) || Infinity;
+        const next = Math.max(0, Math.min(max, (Number(input.value) || 0) + Number(step.dataset.step)));
+        input.value = next;
+        change(job.id, 'PATCH', { side: row.dataset.side, value: next });
+      }
+    });
+    board.addEventListener('change', (e) => {
+      const job = jobFor(e.target);
+      if (!job) return;
+      if (e.target.tagName === 'SELECT') {
+        change(job.id, 'PATCH', { status: e.target.value });
+      } else if (e.target.tagName === 'INPUT') {
+        change(job.id, 'PATCH', { side: e.target.closest('.prow').dataset.side, value: Number(e.target.value) || 0 });
+      }
+    });
+    // Drag a card onto another column (mouse); phones use the "Move to" menu.
+    board.addEventListener('dragstart', (e) => {
+      const card = e.target.closest && e.target.closest('.card');
+      if (!card) return;
+      if (e.target.closest('input, select, button')) { e.preventDefault(); return; }
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+      e.dataTransfer.effectAllowed = 'move';
+      requestAnimationFrame(() => card.classList.add('is-dragging'));
+    });
+    board.addEventListener('dragend', (e) => { const c = e.target.closest && e.target.closest('.card'); if (c) c.classList.remove('is-dragging'); });
+    board.addEventListener('dragover', (e) => {
+      const body = e.target.closest('.col-body');
+      if (!body) return;
+      e.preventDefault();
+      board.querySelectorAll('.col-body.is-over').forEach((b) => b !== body && b.classList.remove('is-over'));
+      body.classList.add('is-over');
+    });
+    board.addEventListener('dragleave', (e) => { const body = e.target.closest('.col-body'); if (body && !body.contains(e.relatedTarget)) body.classList.remove('is-over'); });
+    board.addEventListener('drop', (e) => {
+      const body = e.target.closest('.col-body');
+      if (!body) return;
+      e.preventDefault();
+      body.classList.remove('is-over');
+      const id = e.dataTransfer.getData('text/plain');
+      const status = body.closest('.col').dataset.status;
+      const job = jobs.find((j) => j.id === id);
+      if (job && job.status !== status) change(id, 'PATCH', { status });
+    });
+
+    function start() {
+      $('login').hidden = true;
+      board.hidden = false;
+      $('refresh-btn').hidden = false;
+      $('signout-btn').hidden = false;
+      load();
+      clearInterval(pollTimer);
+      pollTimer = setInterval(() => { if (!document.hidden) load(); }, POLL_MS);
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && getToken()) load(); });
+
+    if (getToken()) start(); else signedOut();
+  })();
+  </script>
+</body>
+</html>
