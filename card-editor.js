@@ -5756,6 +5756,18 @@ if (fabricCanvasEl && window.fabric) {
       // the minimum off in the Viewer and still have a real rate to price
       // from instead of nothing.
       unitPrice: nextModalDirectCost !== null && qty ? nextModalDirectCost * ratioForQty(qty) : null,
+      // Everything PLMJobViewer needs to re-price this exact design at any
+      // other quantity, the same way this editor does: per-card price =
+      // directCost x the quantity curve's ratio at that quantity (see
+      // ratioForQty), with the flat order minimum for small orders (see
+      // getNextModalPricing). Stored with the job, not looked up later, so
+      // an old order keeps the curve it was quoted with.
+      pricing: nextModalDirectCost !== null ? {
+        directCost: nextModalDirectCost,
+        qtyRatioAnchors: PRICING_QTY_RATIO_ANCHORS.map((a) => ({ qty: a.qty, ratio: a.ratio })),
+        minOrderFlat: PRICING_MIN_ORDER_FLAT,
+        minChargeMaxQty: 10,
+      } : null,
       subtotal: pricing ? pricing.total : null,
       isMinCharge: pricing ? pricing.isMinCharge : false,
       address: String(formData.get('address') || '').trim(),
