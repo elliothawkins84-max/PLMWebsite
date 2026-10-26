@@ -2098,9 +2098,11 @@ if (fabricCanvasEl && window.fabric) {
   // re-center its children on the group's own bounding box, which for a
   // non-equilateral triangle isn't the true shape center, and the two
   // hairlines would land misaligned.
-  function buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand) {
-    const contours = [outerDelta + halfBand, outerDelta - halfBand, innerDelta + halfBand, innerDelta - halfBand]
-      .map((d) => triangleOffsetLocalPoints(obj, d));
+  function buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand, outerOnly) {
+    const deltas = outerOnly
+      ? [outerDelta + halfBand, outerDelta - halfBand]
+      : [outerDelta + halfBand, outerDelta - halfBand, innerDelta + halfBand, innerDelta - halfBand];
+    const contours = deltas.map((d) => triangleOffsetLocalPoints(obj, d));
     const d = contours.map((pts) => `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`).join(' ');
     const path = new fabric.Path(d, { fillRule: 'evenodd', left: 0, top: 0, originX: 'left', originY: 'top' });
     // Path centers on its own bounding box (pathOffset) — pin it back to
@@ -2114,7 +2116,9 @@ if (fabricCanvasEl && window.fabric) {
   // area the object already paints, so it also returns a wide-enough
   // underlying paint: a big native stroke for most shapes, a grown fill
   // for a triangle (see buildTriangleDoubleStrokeClip).
-  function buildDoubleStrokeClip(obj) {
+  // outerOnly: just the ring's outer edge -- what the laser actually traces
+  // for a Texture finish's Outline (see ringOutlineCompanionFor).
+  function buildDoubleStrokeClip(obj, outerOnly) {
     const desired = obj._strokeWidthPx || 0.5 * PX_PER_MM;
     const align = obj.strokeAlign || 'center';
     let outerDelta;
@@ -2125,13 +2129,14 @@ if (fabricCanvasEl && window.fabric) {
     const halfBand = RENDER_LINE_WIDTH_PX / 2;
     const reach = Math.max(Math.abs(outerDelta), Math.abs(innerDelta)) + halfBand;
     if (obj.type === 'triangle') {
-      const clipPath = buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand);
+      const clipPath = buildTriangleDoubleStrokeClip(obj, outerDelta, innerDelta, halfBand, outerOnly);
       const growth = 1 + (reach * 6) / Math.min(obj.width, obj.height);
       return { clipPath, paintMode: 'fill', growWidth: obj.width * growth, growHeight: obj.height * growth };
     }
     const outerBand = makeEdgeBandClip(obj, outerDelta, halfBand);
-    const innerBand = makeEdgeBandClip(obj, innerDelta, halfBand);
-    const clipPath = new fabric.Group([outerBand, innerBand], { left: 0, top: 0, originX: 'center', originY: 'center' });
+    const clipPath = outerOnly
+      ? new fabric.Group([outerBand], { left: 0, top: 0, originX: 'center', originY: 'center' })
+      : new fabric.Group([outerBand, makeEdgeBandClip(obj, innerDelta, halfBand)], { left: 0, top: 0, originX: 'center', originY: 'center' });
     // A rounded rect's inner hairline follows a rounder-than-concentric
     // corner (see makeStrokeOffsetShapeFor) that sits a bit further in.
     const radiusReal = obj.type === 'rect' ? Math.max(obj.rx || 0, obj.ry || 0) * Math.max(obj.scaleX || 1, obj.scaleY || 1) : 0;
@@ -3797,13 +3802,17 @@ if (fabricCanvasEl && window.fabric) {
       // Outline checkbox's own editor-visibility width, wider than the
       // shared render line width) so every line in this preview reads
       // as the same physical thickness, texture hatch included.
+      // A shape with holes gets its outline along the outermost edge only
+      // (see applyOuterContourOutline) -- the laser doesn't trace the holes.
+      const outerCmds = obj.cardFinishOutline ? outerContourCommands(obj) : null;
       obj.set({
         fill: hatch,
-        stroke: obj.cardFinishOutline ? 'rgb(250,250,250)' : null,
+        stroke: obj.cardFinishOutline && !outerCmds ? 'rgb(250,250,250)' : null,
         strokeWidth: RENDER_LINE_WIDTH_PX,
         strokeUniform: true,
         opacity: 1,
       });
+      if (outerCmds) applyOuterContourOutline(obj, outerCmds);
       return;
     }
     if (finish === 'white') {
@@ -3841,7 +3850,7 @@ if (fabricCanvasEl && window.fabric) {
     const ringMm = (obj._strokeWidthPx || 0.5 * PX_PER_MM) / PX_PER_MM;
     const isPrimitive = ['rect', 'circle', 'ellipse', 'triangle'].includes(obj.type);
     if (shapeFillModeFor(obj) === 'stroke' && isPrimitive && ringMm >= THIN_RING_MAX_MM) {
-      const result = buildDoubleStrokeClip(obj);
+      const result = buildDoubleStrokeClip(obj, !!obj._outerEdgeOnly);
       if (result.paintMode === 'fill') {
         // Growing the box would shift anything not anchored at its center.
         const center = obj.getCenterPoint();
@@ -3885,8 +3894,99 @@ if (fabricCanvasEl && window.fabric) {
     const Klass = fabric.util.getKlass(obj.type);
     const copy = new Klass({ ...obj.toObject(['strokeAlign', '_strokeWidthPx']), clipPath: null });
     copy.cardFinish = 'stroke';
+    // The laser outlines only the ring's outermost edge, not its inner one.
+    copy._outerEdgeOnly = true;
     styleForRender(copy);
     return copy;
+  }
+  // ---- Outermost-contour outline for shapes with holes ----
+  // A path's Texture Outline is traced by the laser along its outermost
+  // edge only -- the edges around holes inside it (the middle of an "O",
+  // the inside of a frame) aren't outlined. Fabric 5 stores a path as
+  // absolute M/L/C/Q/Z commands, so each M starts a contour; a contour is
+  // "outer" when its first point isn't inside any other contour.
+  function pathSubpaths(cmds) {
+    const subs = [];
+    cmds.forEach((c) => {
+      if (c[0] === 'M' || !subs.length) subs.push([]);
+      subs[subs.length - 1].push(c);
+    });
+    return subs;
+  }
+  function subpathPolygon(sub) {
+    const pts = [];
+    let x = 0;
+    let y = 0;
+    sub.forEach((c) => {
+      const cmd = c[0];
+      if (cmd === 'M' || cmd === 'L') { x = c[1]; y = c[2]; pts.push([x, y]); }
+      else if (cmd === 'C') {
+        for (let i = 1; i <= 6; i++) {
+          const t = i / 6; const u = 1 - t;
+          pts.push([u * u * u * x + 3 * u * u * t * c[1] + 3 * u * t * t * c[3] + t * t * t * c[5],
+            u * u * u * y + 3 * u * u * t * c[2] + 3 * u * t * t * c[4] + t * t * t * c[6]]);
+        }
+        x = c[5]; y = c[6];
+      } else if (cmd === 'Q') {
+        for (let i = 1; i <= 4; i++) {
+          const t = i / 4; const u = 1 - t;
+          pts.push([u * u * x + 2 * u * t * c[1] + t * t * c[3], u * u * y + 2 * u * t * c[2] + t * t * c[4]]);
+        }
+        x = c[3]; y = c[4];
+      }
+    });
+    return pts;
+  }
+  function pointInPolygon(px, py, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i];
+      const [xj, yj] = poly[j];
+      if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  const outerContourCache = new WeakMap();
+  // The path's commands for only its outermost contours, or null when it
+  // has no holes (then the normal stroke already traces just the outside).
+  function outerContourCommands(obj) {
+    if (obj.type !== 'path' || !Array.isArray(obj.path)) return null;
+    if (outerContourCache.has(obj.path)) return outerContourCache.get(obj.path);
+    const subs = pathSubpaths(obj.path);
+    let result = null;
+    if (subs.length > 1) {
+      const polys = subs.map(subpathPolygon);
+      const outer = subs.filter((sub, i) => {
+        const p = polys[i][0];
+        return !p || !polys.some((poly, j) => j !== i && poly.length > 2 && pointInPolygon(p[0], p[1], poly));
+      });
+      if (outer.length < subs.length) result = [].concat(...outer);
+    }
+    outerContourCache.set(obj.path, result);
+    return result;
+  }
+  // Draws the hairline outline along just those outer contours, on top of
+  // the object's own (hatch) fill -- in place of its normal stroke, which
+  // would also trace every hole.
+  function applyOuterContourOutline(obj, outerCmds) {
+    const { scaleX, scaleY } = fabric.util.qrDecompose(obj.calcTransformMatrix());
+    const lineWidth = RENDER_LINE_WIDTH_PX / ((Math.abs(scaleX) + Math.abs(scaleY)) / 2 || 1);
+    const baseRender = obj._render;
+    obj.objectCaching = false;
+    obj._render = function (ctx) {
+      baseRender.call(this, ctx);
+      const full = this.path;
+      this.path = outerCmds;
+      ctx.save();
+      ctx.beginPath();
+      this._renderPathCommands(ctx);
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = 'rgb(250,250,250)';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.restore();
+      this.path = full;
+    };
   }
   const outlineRenderCache = makeSnapshotCache(24);
   // A web font finishing its load changes how the same snapshot's text
