@@ -5874,6 +5874,7 @@ if (fabricCanvasEl && window.fabric) {
       city: String(formData.get('city') || '').trim(),
       state: String(formData.get('state') || '').trim(),
       zip: String(formData.get('zip') || '').trim(),
+      discountCode: String(formData.get('discount') || '').trim(),
       message: String(formData.get('message') || '').trim(),
     };
   }

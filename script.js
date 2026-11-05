@@ -1345,6 +1345,7 @@ if (tagRfqModal) {
         city: formData.get('city') || '',
         state: formData.get('state') || '',
         zip: formData.get('zip') || '',
+        discountCode: String(formData.get('discount') || '').trim(),
         message: formData.get('message') || '',
       },
       items: collectOrderItems(),
