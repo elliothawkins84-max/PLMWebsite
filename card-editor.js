@@ -6081,6 +6081,19 @@ if (fabricCanvasEl && window.fabric) {
         surveySending = false;
         closeSurveyModal();
         showRfqSuccessModal();
+      } else if (data.field === 'discount') {
+        // The code is on the form behind the survey: close the survey and
+        // point at the field there, so it can be fixed (or cleared).
+        surveySending = false;
+        closeSurveyModal();
+        nextModalStatus.textContent = data.message;
+        nextModalStatus.className = 'form-status error';
+        const input = nextModalForm.querySelector('[name="discount"]');
+        if (input) {
+          input.classList.add('is-invalid');
+          input.focus();
+          input.addEventListener('input', () => input.classList.remove('is-invalid'), { once: true });
+        }
       } else {
         showSurveyError(data.message || 'Something went wrong — please try again.');
       }

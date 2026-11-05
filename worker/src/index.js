@@ -1,4 +1,4 @@
-import { handleJoblog } from './joblog.js';
+import { handleJoblog, findDiscount } from './joblog.js';
 
 const ALLOWED_ORIGINS = new Set([
   'https://precisionlasermark.com',
@@ -124,6 +124,18 @@ export default {
       return json({ success: false, message: 'One of the fields is too long — please shorten it and try again.' }, 400, origin);
     }
 
+    // A discount code has to be one the shop has switched on (and not past
+    // its expiry) in the Job Viewer's Discount Codes tab -- otherwise the
+    // request isn't sent and the customer is told, so they can fix it or
+    // clear the field.
+    let discountInfo = null;
+    if (discount) {
+      discountInfo = await findDiscount(env, discount);
+      if (!discountInfo) {
+        return json({ success: false, field: 'discount', message: `"${discount}" isn't a valid discount code — check it, or leave the field blank.` }, 400, origin);
+      }
+    }
+
     const attachments = [];
     let totalBytes = 0;
     for (const value of form.getAll('attachment')) {
@@ -157,7 +169,7 @@ export default {
         subject: `New RFQ from ${name} — precisionlasermark.com`,
         html: `<p><strong>Name:</strong> ${escapeHtml(name)}</p>
 <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-${discount ? `<p><strong>Discount code:</strong> ${escapeHtml(discount)}</p>\n` : ''}<p><strong>Project details:</strong></p>
+${discountInfo ? `<p><strong>Discount code:</strong> ${escapeHtml(discountInfo.code)}${discountInfo.description ? ` (${escapeHtml(discountInfo.description)})` : ''}</p>\n` : ''}<p><strong>Project details:</strong></p>
 <p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>`,
         attachments: attachments.length ? attachments : undefined,
       }),

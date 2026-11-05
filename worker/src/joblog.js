@@ -188,6 +188,57 @@ async function sessionFor(env, request) {
   return s;
 }
 
+// ---- Discount codes ----
+// The shop's list of codes customers may enter on the website's quote
+// forms, managed from the desktop app's Discount Codes tab and kept in KV
+// (one small JSON list). The RFQ handler (index.js) checks a submitted code
+// against it with findDiscount; the list itself is never sent to the
+// public site.
+const DISCOUNTS_KEY = 'discount-codes';
+const MAX_DISCOUNTS = 500;
+const normCode = (c) => String(c || '').trim().toUpperCase();
+function sanitizeDiscounts(list) {
+  const seen = new Set();
+  const out = [];
+  for (const d of Array.isArray(list) ? list : []) {
+    // Letters, numbers, - and _ only (the app's field enforces the same).
+    const code = String((d && d.code) || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+    if (!code || seen.has(normCode(code))) continue;
+    seen.add(normCode(code));
+    const expires = /^\d{4}-\d{2}-\d{2}$/.test(String(d.expires || '')) ? d.expires : '';
+    out.push({
+      code,
+      description: String(d.description || '').slice(0, 200),
+      active: d.active !== false,
+      expires,
+      createdAt: isoOrNull(d.createdAt) || new Date().toISOString(),
+    });
+    if (out.length >= MAX_DISCOUNTS) break;
+  }
+  return out;
+}
+async function readDiscounts(env) {
+  try {
+    const text = await env.JOBLOG_KV.get(DISCOUNTS_KEY);
+    const data = text ? JSON.parse(text) : null;
+    return sanitizeDiscounts(data && data.codes);
+  } catch {
+    return [];
+  }
+}
+// Today's date (YYYY-MM-DD) in the shop's own time zone -- a code that
+// expires on a date is good through the end of that day there.
+function shopToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+// The active, unexpired code matching `code` (any case), or null.
+export async function findDiscount(env, code) {
+  const want = normCode(code);
+  if (!want || !env.JOBLOG_KV) return null;
+  const today = shopToday();
+  return (await readDiscounts(env)).find((d) => d.active && normCode(d.code) === want && (!d.expires || today <= d.expires)) || null;
+}
+
 async function readJson(request) {
   try { return await request.json(); } catch { return null; }
 }
@@ -308,6 +359,20 @@ export async function handleJoblog(request, env, url, json) {
     if (!full) return fullOnly();
     await env.JOBLOG_DB.prepare('UPDATE sessions SET revoked = 1 WHERE id = ?').bind(decodeURIComponent(sm[1])).run();
     return json({ ok: true }, 200);
+  }
+
+  // Discount codes (desktop app only): the whole list, and replace it.
+  if (path === '/joblog/discounts') {
+    if (!full) return fullOnly();
+    if (method === 'GET') return json({ ok: true, codes: await readDiscounts(env) }, 200);
+    if (method === 'PUT') {
+      const body = await readJson(request);
+      if (!body || !Array.isArray(body.codes)) return json({ ok: false, message: 'Bad request.' }, 400);
+      const codes = sanitizeDiscounts(body.codes);
+      await env.JOBLOG_KV.put(DISCOUNTS_KEY, JSON.stringify({ codes, updatedAt: new Date().toISOString() }));
+      return json({ ok: true, codes }, 200);
+    }
+    return json({ ok: false, message: 'Method not allowed.' }, 405);
   }
 
   // GET /joblog/jobs -- the whole board (no payloads). The desktop app

@@ -529,6 +529,18 @@ if (fileField) {
 // Quote form — submits to our own Cloudflare Worker, which relays the
 // request to Resend as an email (with attachment) to info@precisionlasermark.com.
 const RFQ_ENDPOINT = 'https://plm-rfq.precisionlasermark.workers.dev';
+// The Worker turns away a discount code that isn't active (see the Job
+// Viewer's Discount Codes tab) and says which field: outline that box and
+// put the cursor in it, so it's obvious what to fix. Cleared as soon as
+// the code is edited.
+function flagRfqField(form, data) {
+  if (!form || !data || data.field !== 'discount') return;
+  const input = form.querySelector('[name="discount"]');
+  if (!input) return;
+  input.classList.add('is-invalid');
+  input.focus();
+  input.addEventListener('input', () => input.classList.remove('is-invalid'), { once: true });
+}
 const rfqForm = document.getElementById('rfq-form');
 if (rfqForm) {
   const status = document.getElementById('form-status');
@@ -562,6 +574,7 @@ if (rfqForm) {
       } else {
         status.textContent = data.message || 'Something went wrong — please try again.';
         status.className = 'form-status error';
+        flagRfqField(rfqForm, data);
       }
     } catch (err) {
       status.textContent = 'Network error — please try again.';
@@ -1397,6 +1410,7 @@ if (tagRfqModal) {
         } else if (statusEl) {
           statusEl.textContent = data.message || 'Something went wrong — please try again.';
           statusEl.className = 'form-status error';
+          flagRfqField(form, data);
         }
       } catch (err) {
         if (statusEl) {
