@@ -32,6 +32,7 @@ const ALLOWED_EXTENSIONS = new Set([
 const MAX_NAME_CHARS = 200;
 const MAX_EMAIL_CHARS = 254;
 const MAX_MESSAGE_CHARS = 20000;
+const MAX_DISCOUNT_CHARS = 64;
 
 function corsHeaders(origin) {
   const allowed = isOriginAllowed(origin) ? origin : '';
@@ -113,11 +114,13 @@ export default {
     const name = (form.get('name') || '').toString().trim();
     const email = (form.get('email') || '').toString().trim();
     const message = (form.get('message') || '').toString().trim();
+    // Optional on every form (contact, card editor, round tags).
+    const discount = (form.get('discount') || '').toString().trim();
 
     if (!name || !email || !message || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return json({ success: false, message: 'Please fill in all fields with a valid email.' }, 400, origin);
     }
-    if (name.length > MAX_NAME_CHARS || email.length > MAX_EMAIL_CHARS || message.length > MAX_MESSAGE_CHARS) {
+    if (name.length > MAX_NAME_CHARS || email.length > MAX_EMAIL_CHARS || message.length > MAX_MESSAGE_CHARS || discount.length > MAX_DISCOUNT_CHARS) {
       return json({ success: false, message: 'One of the fields is too long — please shorten it and try again.' }, 400, origin);
     }
 
@@ -154,7 +157,7 @@ export default {
         subject: `New RFQ from ${name} — precisionlasermark.com`,
         html: `<p><strong>Name:</strong> ${escapeHtml(name)}</p>
 <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-<p><strong>Project details:</strong></p>
+${discount ? `<p><strong>Discount code:</strong> ${escapeHtml(discount)}</p>\n` : ''}<p><strong>Project details:</strong></p>
 <p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>`,
         attachments: attachments.length ? attachments : undefined,
       }),
