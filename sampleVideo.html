@@ -24,7 +24,9 @@
     .sample-video-link video {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      /* Fills the whole screen; on phones taller than the video's 9:16 a
+         little is trimmed off the left and right instead of black bars. */
+      object-fit: cover;
       pointer-events: none;
     }
     .sample-video-hint {
@@ -33,11 +35,18 @@
       right: 0;
       bottom: calc(24px + env(safe-area-inset-bottom));
       text-align: center;
-      font: 500 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: rgba(255, 255, 255, 0.75);
-      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+      padding: 0 20px;
+      font: 600 18px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: rgba(255, 255, 255, 0.85);
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
       animation: sample-video-hint-fade 6s ease-in-out 2s infinite;
       opacity: 0;
+    }
+    /* While the video hasn't started (see the script below), keep the
+       "tap to play" prompt on screen instead of fading it in and out. */
+    .sample-video-link.is-paused .sample-video-hint {
+      animation: none;
+      opacity: 1;
     }
     @keyframes sample-video-hint-fade {
       0%, 100% { opacity: 0; }
@@ -47,12 +56,38 @@
 </head>
 <body>
   <a class="sample-video-link" href="/" aria-label="Visit Precision Laser Mark">
-    <!-- Muted + playsinline are what let phones autoplay it. The poster is
-         its first frame, shown while the video loads. Web copy of the
+    <!-- Muted + playsinline are what let phones autoplay it. The poster (a
+         frame just after the fade-in from black) shows until it plays. Web copy of the
          SampleVideo.mp4 master (1080x1920, 30fps; the master stays out of
          the repo -- see .gitignore). -->
     <video src="sample-video.mp4" poster="sample-video-poster.jpg" autoplay muted loop playsinline preload="auto"></video>
     <span class="sample-video-hint">Tap anywhere to visit our website</span>
   </a>
+  <script>
+    // Low Power Mode (and some data-saver settings) block autoplay, so the
+    // first tap has to start the video. A tap only goes to the website
+    // once the video is actually playing -- otherwise it plays it instead.
+    (function () {
+      var link = document.querySelector('.sample-video-link');
+      var video = link.querySelector('video');
+      var hint = link.querySelector('.sample-video-hint');
+      function sync() {
+        var paused = video.paused;
+        link.classList.toggle('is-paused', paused);
+        hint.textContent = paused ? 'Tap to play' : 'Tap anywhere to visit our website';
+      }
+      link.addEventListener('click', function (e) {
+        if (!video.paused) return;
+        e.preventDefault();
+        var p = video.play();
+        if (p && p.catch) p.catch(function () {});
+      });
+      video.addEventListener('play', sync);
+      video.addEventListener('playing', sync);
+      video.addEventListener('pause', sync);
+      // Give autoplay a moment to kick in before showing "Tap to play".
+      setTimeout(sync, 1200);
+    })();
+  </script>
 </body>
 </html>
