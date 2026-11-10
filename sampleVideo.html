@@ -47,9 +47,11 @@
 </head>
 <body>
   <a class="sample-video-link" href="/" aria-label="Visit Precision Laser Mark">
-    <!-- Muted + playsinline are what let phones autoplay it. Placeholder:
-         swap the src for the real sample video once it's made. -->
-    <video src="hero-video.mp4" autoplay muted loop playsinline preload="auto"></video>
+    <!-- Muted + playsinline are what let phones autoplay it. The poster is
+         its first frame, shown while the video loads. Web copy of the
+         SampleVideo.mp4 master (1080x1920, 30fps; the master stays out of
+         the repo -- see .gitignore). -->
+    <video src="sample-video.mp4" poster="sample-video-poster.jpg" autoplay muted loop playsinline preload="auto"></video>
     <span class="sample-video-hint">Tap anywhere to visit our website</span>
   </a>
 </body>

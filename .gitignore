@@ -6,3 +6,6 @@ node_modules/
 # actually-deployed output committed to the repo.
 ProductVid/
 worker/.dev.vars
+# Full-resolution master of the sample-QR video (~450MB) -- the site uses
+# the compressed sample-video.mp4 made from it.
+SampleVideo.mp4
