@@ -2141,6 +2141,9 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .outlet-color-group { display: flex; flex-direction: column; gap: 26px; }
 .outlet-color-group[hidden] { display: none; }
 .outlet-mark-note { margin-top: -14px; }
+.outlet-blank-note { font-family: var(--mono); font-size: 0.74rem; line-height: 1.5; color: var(--fg); border: 1px solid var(--line); padding: 10px 12px; margin-top: -10px; }
+.outlet-blank-note[hidden] { display: none; }
+.outlet-blank-note a { color: var(--fg); text-decoration: underline; }
 .outlet-char-count { font-style: normal; color: var(--muted); opacity: 0.7; }
 .outlet-order-table .outlet-qty-input {
   background: transparent; border: 1px solid var(--line); color: var(--fg);

@@ -10,11 +10,12 @@
   const $ = (id) => document.getElementById(id);
 
   const GANG_OPTIONS = Object.keys(P.GANGS).map((g) => [g, P.GANGS[g].label]);
+  const TYPE_OPTIONS = Object.keys(P.TYPES).map((t) => [t, P.TYPES[t].label]);
   const MATERIAL_OPTIONS = Object.keys(P.MATERIALS).map((m) => [m, P.MATERIALS[m].label]);
   const COLOR_OPTIONS = Object.keys(P.COLORS).map((c) => [c, P.COLORS[c].label]);
 
   // ---- Builder ----
-  const state = { gang: 2, material: 'thermoset', color: 'white', text: '' };
+  const state = { type: 'duplex', gang: 2, material: 'thermoset', color: 'white', text: '' };
   const preview = $('outletPreview');
   const textInput = $('outletTextInput');
   const fitWarning = $('outletFitWarning');
@@ -38,12 +39,31 @@
     preview.dataset.gang = state.gang;
     const stainless = state.material === 'stainless';
     colorGroup.hidden = stainless;
+    const group = P.TYPES[state.type].group;
+    setChips('outletTypeChips', 'group', group);
+    setChips('outletReceptacleChips', 'type', state.type);
+    $('outletReceptacleGroup').hidden = group !== 'receptacle';
+    $('outletBlankNote').hidden = state.type !== 'blank';
     markNote.textContent = markSentence(state.material, state.color);
     charCount.textContent = `— ${state.text.length}/${max}`;
     const fits = P.textFits(state.text.trim(), state.gang);
     fitWarning.hidden = fits;
     $('outletAddToOrderBtn').disabled = !fits;
   }
+  // Plate type: Receptacle remembers whether it was single or duplex.
+  let lastReceptacle = 'duplex';
+  $('outletTypeChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    state.type = chip.dataset.group === 'receptacle' ? lastReceptacle : chip.dataset.group;
+    renderBuilder();
+  });
+  $('outletReceptacleChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    state.type = lastReceptacle = chip.dataset.type;
+    renderBuilder();
+  });
   $('outletGangChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
@@ -75,6 +95,7 @@
   function rowItem(row) {
     const material = row.querySelector('.outlet-material-select').value;
     return {
+      type: row.querySelector('.outlet-type-select').value,
       gang: Number(row.querySelector('.outlet-gang-select').value),
       material,
       color: material === 'stainless' ? null : row.querySelector('.outlet-color-select').value,
@@ -104,12 +125,13 @@
     [...orderBody.querySelectorAll('.tag-order-row')].forEach((row, i) => { row.querySelector('.tag-order-num').textContent = i + 1; });
   }
   function addRow(initial) {
-    const it = { gang: 2, material: 'thermoset', color: 'white', text: '', qty: 1, ...(initial || {}) };
+    const it = { type: 'duplex', gang: 2, material: 'thermoset', color: 'white', text: '', qty: 1, ...(initial || {}) };
     const row = document.createElement('tr');
     row.className = 'tag-order-row';
     row.innerHTML = `
       <td class="tag-order-num"></td>
       <td><select class="outlet-gang-select">${optionsHTML(GANG_OPTIONS, it.gang)}</select></td>
+      <td><select class="outlet-type-select">${optionsHTML(TYPE_OPTIONS, it.type)}</select></td>
       <td><select class="outlet-material-select">${optionsHTML(MATERIAL_OPTIONS, it.material)}</select></td>
       <td>
         <select class="outlet-color-select">${optionsHTML(COLOR_OPTIONS, it.color || 'white')}</select>
@@ -148,6 +170,8 @@
     } else if (e.target.closest('.tag-order-view')) {
       // Loads this row into the builder above (same as clicking its chips).
       const item = rowItem(row);
+      state.type = item.type;
+      if (P.TYPES[item.type].group === 'receptacle') lastReceptacle = item.type;
       $('outletGangChips').querySelector(`[data-gang="${item.gang}"]`).click();
       $('outletMaterialChips').querySelector(`[data-material="${item.material}"]`).click();
       if (item.color) $('outletColorChips').querySelector(`[data-color="${item.color}"]`).click();
@@ -165,9 +189,10 @@
   const addLabel = addBtn.textContent;
   let addTimer = null;
   addBtn.addEventListener('click', () => {
-    const item = { gang: state.gang, material: state.material, color: state.material === 'stainless' ? null : state.color, text: state.text.trim(), qty: 1 };
+    const item = { type: state.type, gang: state.gang, material: state.material, color: state.material === 'stainless' ? null : state.color, text: state.text.trim(), qty: 1 };
     const blank = [...orderBody.querySelectorAll('.tag-order-row')].find((r) => !r.querySelector('.outlet-text-input').value.trim());
     if (blank) {
+      blank.querySelector('.outlet-type-select').value = item.type;
       blank.querySelector('.outlet-gang-select').value = item.gang;
       blank.querySelector('.outlet-material-select').value = item.material;
       if (item.color) blank.querySelector('.outlet-color-select').value = item.color;
@@ -194,7 +219,7 @@
     });
   }
   function describe(item) {
-    const parts = [P.GANGS[item.gang].label, P.MATERIALS[item.material].short];
+    const parts = [P.GANGS[item.gang].label, P.TYPES[item.type].label, P.MATERIALS[item.material].short];
     if (item.material !== 'stainless') parts.push(P.COLORS[item.color].label);
     return `${parts.join(' · ')} (${P.MARKS[item.markColor].label.toLowerCase()} mark)`;
   }

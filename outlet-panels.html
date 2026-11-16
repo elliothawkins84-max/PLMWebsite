@@ -63,7 +63,7 @@
         <p class="eyebrow">( SPECIALTY / OUTLET PANELS )</p>
         <h1 class="display sm">Laser Marked Electrical Outlet Panels</h1>
         <p class="lead">Duplex outlet plates with your circuit, panel or room label permanently laser marked across the top — no stickers or label tape to peel, fade or smear.</p>
-        <p class="hero-specs">Standard size &middot; 4.50in tall &middot; 1 to 4 gang &middot; thermoset, nylon or stainless steel</p>
+        <p class="hero-specs">Standard size &middot; 4.50in tall &middot; 1 to 4 gang &middot; receptacle, toggle, rocker or blank &middot; thermoset, nylon or stainless steel</p>
       </header>
       <div class="tag-configurator outlet-configurator">
         <div class="tag-photo-column outlet-photo-column">
@@ -72,6 +72,21 @@
           <button type="button" id="outletAddToOrderBtn" class="btn btn-ghost">Add to Order List &rarr;</button>
         </div>
         <div class="tag-panel">
+          <span class="sel-label">PLATE TYPE</span>
+          <div class="sel-btns" id="outletTypeChips">
+            <button type="button" class="chip is-on" data-group="receptacle">Receptacle</button>
+            <button type="button" class="chip" data-group="toggle">Toggle Switch</button>
+            <button type="button" class="chip" data-group="rocker">Rocker / Decorative</button>
+            <button type="button" class="chip" data-group="blank">Blank</button>
+          </div>
+          <div class="outlet-color-group" id="outletReceptacleGroup">
+            <span class="sel-label">RECEPTACLES PER GANG</span>
+            <div class="sel-btns" id="outletReceptacleChips">
+              <button type="button" class="chip" data-type="single">1 &middot; Single</button>
+              <button type="button" class="chip is-on" data-type="duplex">2 &middot; Duplex</button>
+            </div>
+          </div>
+          <p class="outlet-blank-note" id="outletBlankNote" hidden>Want your logo on a blank plate? <a href="index#contact">Request a custom quote</a> or email us at <a href="mailto:info@precisionlasermark.com">info@precisionlasermark.com</a> — this page only adds a line of text.</p>
           <span class="sel-label">PLATE SIZE</span>
           <div class="sel-btns" id="outletGangChips">
             <button type="button" class="chip" data-gang="1">1-Gang</button>
@@ -120,6 +135,7 @@
             <tr>
               <th>#</th>
               <th>Plate</th>
+              <th>Type</th>
               <th>Material</th>
               <th>Color</th>
               <th>Text</th>

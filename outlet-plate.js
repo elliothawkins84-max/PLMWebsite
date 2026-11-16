@@ -1,8 +1,8 @@
 // Laser-marked electrical outlet panels: the shared plate model + SVG
 // renderer. The exact same file is used by the website's builder
 // (outlet-panels.html) and by PLM Job Viewer (renderer/outlet-plate.js), so
-// a plate looks identical in both. Standard-size duplex wall plates, 4.50in
-// tall; one duplex receptacle opening pair (with its center screw) per gang.
+// a plate looks identical in both. Standard-size wall plates, 4.50in tall,
+// 1 to 4 gang; every gang of a plate gets the same opening (see TYPES).
 (function (root) {
   const PLATE_H_IN = 4.5;
   // Standard-size plate widths by gang count; gangs sit 1.8125in apart.
@@ -13,6 +13,19 @@
     4: { label: '4-Gang', widthIn: 8.19 },
   };
   const GANG_SPACING_IN = 1.8125;
+
+  // Plate types. `receptacles` groups the two receptacle types under one
+  // "Receptacle" choice with a 1-or-2 option on the website.
+  const TYPES = {
+    duplex: { label: 'Duplex Receptacle', short: 'Duplex', group: 'receptacle', receptacles: 2 },
+    single: { label: 'Single Receptacle', short: 'Single Receptacle', group: 'receptacle', receptacles: 1 },
+    toggle: { label: 'Toggle Switch', short: 'Toggle', group: 'toggle' },
+    rocker: { label: 'Rocker / Decorative', short: 'Rocker', group: 'rocker' },
+    blank: { label: 'Blank', short: 'Blank', group: 'blank' },
+  };
+  function typeOf(item) {
+    return TYPES[item && item.type] ? item.type : 'duplex';
+  }
 
   const MATERIALS = {
     thermoset: { label: 'Durable Thermoset Plastic', short: 'Thermoset' },
@@ -85,23 +98,40 @@
     const mark = MARKS[markFor(material, color)];
     const W = widthOf(gang) * 100;
     const H = PLATE_H_IN * 100;
+    const type = typeOf(item);
     const id = `op${(uidCounter += 1)}`;
     const dark = !stainless && color === 'black';
     const base = stainless ? `url(#${id}-steel)` : COLORS[color].hex;
 
-    // Duplex openings: a 1.32in round with flats top and bottom, 1.5in
-    // apart, plus the screw between them -- one set per gang.
-    const r = 66;
-    const flat = 56;
+    // Openings (and screws) for one gang, centered at cx, in hundredths of
+    // an inch: duplex 1.343in x 1.125in (round with flats top and bottom)
+    // 1.5in apart with a center screw; single receptacle a 1.406in round;
+    // toggle a 0.401in x 0.925in slot; rocker/decorative a 1.310in x 2.630in
+    // opening with no screws (screwless plate); blank none. Toggle, single
+    // and blank plates have screws 2.375in apart, above and below.
+    const cy = H / 2;
+    const r = 67.15;
+    const flat = 56.25;
     const dx = Math.sqrt(r * r - flat * flat);
-    const opening = (cx, cy) => `M ${cx - dx} ${cy - flat} L ${cx + dx} ${cy - flat} A ${r} ${r} 0 0 1 ${cx + dx} ${cy + flat} L ${cx - dx} ${cy + flat} A ${r} ${r} 0 0 1 ${cx - dx} ${cy - flat} Z`;
+    const flatRound = (cx, y) => `M ${cx - dx} ${y - flat} L ${cx + dx} ${y - flat} A ${r} ${r} 0 0 1 ${cx + dx} ${y + flat} L ${cx - dx} ${y + flat} A ${r} ${r} 0 0 1 ${cx - dx} ${y - flat} Z`;
+    const roundRect = (cx, y, w, h, rr) => `M ${cx - w / 2 + rr} ${y - h / 2} H ${cx + w / 2 - rr} Q ${cx + w / 2} ${y - h / 2} ${cx + w / 2} ${y - h / 2 + rr} V ${y + h / 2 - rr} Q ${cx + w / 2} ${y + h / 2} ${cx + w / 2 - rr} ${y + h / 2} H ${cx - w / 2 + rr} Q ${cx - w / 2} ${y + h / 2} ${cx - w / 2} ${y + h / 2 - rr} V ${y - h / 2 + rr} Q ${cx - w / 2} ${y - h / 2} ${cx - w / 2 + rr} ${y - h / 2} Z`;
+    const circle = (cx, y, rad) => `M ${cx - rad} ${y} A ${rad} ${rad} 0 1 0 ${cx + rad} ${y} A ${rad} ${rad} 0 1 0 ${cx - rad} ${y} Z`;
+    const screw = (cx, y) => `<circle cx="${cx}" cy="${y}" r="10" fill="${stainless ? '#9ea3a8' : base}" stroke="rgba(0,0,0,0.35)" stroke-width="1.5"/>`
+      + `<line x1="${cx - 6}" y1="${y}" x2="${cx + 6}" y2="${y}" stroke="rgba(0,0,0,0.45)" stroke-width="1.8" stroke-linecap="round"/>`;
     let holes = '';
     let screws = '';
     for (let i = 0; i < gang; i++) {
       const cx = W / 2 + (i - (gang - 1) / 2) * GANG_SPACING_IN * 100;
-      holes += `<path d="${opening(cx, H / 2 - 75)}"/><path d="${opening(cx, H / 2 + 75)}"/>`;
-      screws += `<circle cx="${cx}" cy="${H / 2}" r="10" fill="${stainless ? '#9ea3a8' : base}" stroke="rgba(0,0,0,0.35)" stroke-width="1.5"/>`
-        + `<line x1="${cx - 6}" y1="${H / 2}" x2="${cx + 6}" y2="${H / 2}" stroke="rgba(0,0,0,0.45)" stroke-width="1.8" stroke-linecap="round"/>`;
+      if (type === 'duplex') {
+        holes += `<path d="${flatRound(cx, cy - 75)}"/><path d="${flatRound(cx, cy + 75)}"/>`;
+        screws += screw(cx, cy);
+      } else if (type === 'rocker') {
+        holes += `<path d="${roundRect(cx, cy, 131, 263, 5)}"/>`;
+      } else {
+        if (type === 'single') holes += `<path d="${circle(cx, cy, 70.3)}"/>`;
+        if (type === 'toggle') holes += `<path d="${roundRect(cx, cy, 40.1, 92.5, 4)}"/>`;
+        screws += screw(cx, cy - 118.75) + screw(cx, cy + 118.75);
+      }
     }
 
     const text = String(item.text || '').trim();
@@ -109,7 +139,7 @@
       ? `<text x="${W / 2}" y="${TEXT.baselineIn * 100}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}">${esc(text)}</text>`
       : (o.placeholder ? `<text x="${W / 2}" y="${TEXT.baselineIn * 100}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}" opacity="0.25">${esc(o.placeholder)}</text>` : '');
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 ${W + 12} ${H + 12}" class="${esc(o.className || 'outlet-plate-svg')}" role="img" aria-label="${esc(`${GANGS[gang].label} ${MATERIALS[material].short}${stainless ? '' : ` ${COLORS[color].label}`} outlet plate${text ? `, marked ${text}` : ''}`)}">
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 ${W + 12} ${H + 12}" class="${esc(o.className || 'outlet-plate-svg')}" role="img" aria-label="${esc(`${GANGS[gang].label} ${TYPES[type].label} ${MATERIALS[material].short}${stainless ? '' : ` ${COLORS[color].label}`} outlet plate${text ? `, marked ${text}` : ''}`)}">
   <defs>
     <linearGradient id="${id}-steel" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f1f3f5"/><stop offset="30%" stop-color="#aab0b6"/><stop offset="55%" stop-color="#e3e6e9"/><stop offset="80%" stop-color="#a3a9af"/><stop offset="100%" stop-color="#d2d6da"/>
@@ -137,7 +167,7 @@
   }
 
   root.OutletPlate = {
-    PLATE_H_IN, GANGS, GANG_SPACING_IN, MATERIALS, COLORS, MARKS, TEXT,
-    markFor, widthOf, textRoomIn, textWidthIn, textFits, plateSVG,
+    PLATE_H_IN, GANGS, GANG_SPACING_IN, TYPES, MATERIALS, COLORS, MARKS, TEXT,
+    typeOf, markFor, widthOf, textRoomIn, textWidthIn, textFits, plateSVG,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
