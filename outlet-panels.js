@@ -8,6 +8,15 @@
   const P = window.OutletPlate;
   if (!P || !document.getElementById('outletPreview')) return;
   const $ = (id) => document.getElementById(id);
+  // Plate text is all caps: uppercase it as it's typed (keeping the cursor
+  // where it was).
+  function forceCaps(input) {
+    const upper = input.value.toUpperCase();
+    if (upper === input.value) return;
+    const { selectionStart, selectionEnd } = input;
+    input.value = upper;
+    try { input.setSelectionRange(selectionStart, selectionEnd); } catch (e) { /* not focused */ }
+  }
 
   const GANG_OPTIONS = Object.keys(P.GANGS).map((g) => [g, P.GANGS[g].label]);
   const TYPE_OPTIONS = Object.keys(P.TYPES).map((t) => [t, P.TYPES[t].label]);
@@ -85,7 +94,7 @@
     setChips('outletColorChips', 'color', state.color);
     renderBuilder();
   });
-  textInput.addEventListener('input', renderBuilder);
+  textInput.addEventListener('input', () => { forceCaps(textInput); renderBuilder(); });
 
   // ---- Order table ----
   const orderBody = $('outletOrderBody');
@@ -99,7 +108,7 @@
       gang: Number(row.querySelector('.outlet-gang-select').value),
       material,
       color: material === 'stainless' ? null : row.querySelector('.outlet-color-select').value,
-      text: row.querySelector('.outlet-text-input').value.trim(),
+      text: P.caps(row.querySelector('.outlet-text-input').value).trim(),
       qty: Math.max(1, Math.round(Number(row.querySelector('.outlet-qty-input').value) || 1)),
     };
   }
@@ -144,7 +153,7 @@
         <button type="button" class="tag-order-view" aria-label="View this plate in the builder above">View</button>
         <button type="button" class="tag-order-remove" aria-label="Remove this plate">✕</button>
       </div></td>`;
-    row.querySelector('.outlet-text-input').value = it.text || '';
+    row.querySelector('.outlet-text-input').value = P.caps(it.text);
     orderBody.appendChild(row);
     syncRow(row);
     renumber();
@@ -152,7 +161,9 @@
   }
   orderBody.addEventListener('input', (e) => {
     const row = e.target.closest('.tag-order-row');
-    if (row) syncRow(row);
+    if (!row) return;
+    if (e.target.matches('.outlet-text-input')) forceCaps(e.target);
+    syncRow(row);
   });
   orderBody.addEventListener('change', (e) => {
     const row = e.target.closest('.tag-order-row');

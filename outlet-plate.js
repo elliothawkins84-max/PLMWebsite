@@ -77,8 +77,12 @@
     measureCtx.font = `100px ${TEXT.font}`;
     return (measureCtx.measureText(String(text || '')).width / 100) * TEXT.sizeIn;
   }
+  // Plate text is always all caps.
+  function caps(text) {
+    return String(text == null ? '' : text).toUpperCase();
+  }
   function textFits(text, gang) {
-    const w = textWidthIn(text);
+    const w = textWidthIn(caps(text));
     return w == null || w <= textRoomIn(gang);
   }
 
@@ -134,7 +138,7 @@
       }
     }
 
-    const text = String(item.text || '').trim();
+    const text = caps(item.text).trim();
     const label = text
       ? `<text x="${W / 2}" y="${TEXT.baselineIn * 100}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}">${esc(text)}</text>`
       : (o.placeholder ? `<text x="${W / 2}" y="${TEXT.baselineIn * 100}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}" opacity="0.25">${esc(o.placeholder)}</text>` : '');
@@ -168,6 +172,6 @@
 
   root.OutletPlate = {
     PLATE_H_IN, GANGS, GANG_SPACING_IN, TYPES, MATERIALS, COLORS, MARKS, TEXT,
-    typeOf, markFor, widthOf, textRoomIn, textWidthIn, textFits, plateSVG,
+    typeOf, caps, markFor, widthOf, textRoomIn, textWidthIn, textFits, plateSVG,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
