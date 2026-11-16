@@ -2128,6 +2128,36 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   color: var(--fg);
 }
 
+/* ---- Outlet panels (outlet-panels.html) ----
+   Builds on the Round ID Tags builder/table styles above; these are only
+   the outlet-specific pieces. The preview box keeps one fixed height so the
+   page doesn't jump as the plate goes from 1 to 4 gangs wide. */
+.outlet-configurator { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.outlet-photo-column { max-width: none; }
+.outlet-preview { width: 100%; height: 320px; display: flex; align-items: center; justify-content: center; }
+.outlet-preview svg { max-width: 100%; max-height: 100%; height: 100%; width: auto; display: block; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.45)); }
+.outlet-fit-warning { font-family: var(--mono); font-size: 0.74rem; color: #f87171; text-align: center; margin: -8px 0 0; }
+.outlet-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.35); }
+.outlet-color-group { display: flex; flex-direction: column; gap: 26px; }
+.outlet-color-group[hidden] { display: none; }
+.outlet-mark-note { margin-top: -14px; }
+.outlet-char-count { font-style: normal; color: var(--muted); opacity: 0.7; }
+.outlet-order-table .outlet-qty-input {
+  background: transparent; border: 1px solid var(--line); color: var(--fg);
+  font-family: var(--mono); font-size: 0.82rem; padding: 9px 8px; width: 70px;
+}
+.outlet-order-table .outlet-qty-input:focus { outline: none; border-color: var(--fg); }
+.outlet-order-table .outlet-text-input.is-too-long { border-color: #f87171; }
+.outlet-order-table select { min-width: 110px; }
+.outlet-color-na { display: inline-block; font-size: 0.78rem; color: var(--muted); padding: 9px 0; }
+.outlet-color-na[hidden] { display: none; }
+.outlet-mark-cell { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--muted); margin-top: 6px; white-space: nowrap; }
+.outlet-rfq-total { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
+@media (max-width: 860px) {
+  .outlet-configurator { grid-template-columns: 1fr; }
+  .outlet-preview { height: 220px; }
+}
+
 /* ---- RFQ modal (round-id-tags.html) ----
    Ported from card-editor.css's Next/RFQ-success modal so this page's
    "Request a Quote" flow shares the exact same look/behavior, since this
