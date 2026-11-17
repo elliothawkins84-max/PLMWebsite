@@ -131,11 +131,11 @@
   // drawings (80703 / PJ8 duplex, 80701 / PJ1 toggle): a duplex's two
   // outlets are 1.53in apart; toggle (and single receptacle) plates screw to
   // the device 2.375in apart; a blank plate screws to the box itself, whose
-  // holes are 3-9/32in (3.28in) apart. A rocker/decorative plate (screwless,
-  // one opening) has none.
+  // holes are 3-9/32in (3.28in) apart; a rocker/Decora plate (PJ26 /
+  // 80401) has screws 3.81in apart, above and below its opening.
   function holeHalfSpacing(type) {
     if (type === 'duplex') return 76.5;
-    if (type === 'rocker') return null;
+    if (type === 'rocker') return 190.5;
     if (type === 'blank') return 164.0625;
     return 118.75;
   }
@@ -192,7 +192,7 @@
     // an inch (Leviton's drawings): duplex 1.35in x 1.13in (round with flats
     // top and bottom) 1.53in apart with a center screw; single receptacle a
     // 1.406in round; toggle a 0.406in x 0.942in slot; rocker/decorative a
-    // 1.310in x 2.630in opening with no screws (screwless plate); blank none.
+    // 1.310in x 2.630in opening; blank none.
     // Screws above and below as holeHalfSpacing says.
     const cy = H / 2;
     const r = 67.5;
@@ -210,9 +210,8 @@
       if (type === 'duplex') {
         holes += `<path d="${flatRound(cx, cy - 76.5)}"/><path d="${flatRound(cx, cy + 76.5)}"/>`;
         screws += screw(cx, cy);
-      } else if (type === 'rocker') {
-        holes += `<path d="${roundRect(cx, cy, 131, 263, 5)}"/>`;
       } else {
+        if (type === 'rocker') holes += `<path d="${roundRect(cx, cy, 131, 263, 5)}"/>`;
         if (type === 'single') holes += `<path d="${circle(cx, cy, 70.3)}"/>`;
         if (type === 'toggle') holes += `<path d="${roundRect(cx, cy, 40.6, 94.2, 4)}"/>`;
         const sh = holeHalfSpacing(type);
