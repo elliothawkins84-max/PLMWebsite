@@ -32,7 +32,7 @@
   }
 
   // ---- Builder ----
-  const state = { type: 'duplex', gang: 2, size: 'standard', material: 'thermoset', color: 'white', text: '' };
+  const state = { type: 'duplex', gang: 1, size: 'standard', material: 'thermoset', color: 'white', text: '' };
   const preview = $('outletPreview');
   const textInput = $('outletTextInput');
   const fitWarning = $('outletFitWarning');
@@ -162,7 +162,7 @@
     [...orderBody.querySelectorAll('.tag-order-row')].forEach((row, i) => { row.querySelector('.tag-order-num').textContent = i + 1; });
   }
   function addRow(initial) {
-    const it = { type: 'duplex', gang: 2, size: 'standard', material: 'thermoset', color: 'white', text: '', qty: 1, ...(initial || {}) };
+    const it = { type: 'duplex', gang: 1, size: 'standard', material: 'thermoset', color: 'white', text: '', qty: 1, ...(initial || {}) };
     const row = document.createElement('tr');
     row.className = 'tag-order-row';
     row.innerHTML = `
