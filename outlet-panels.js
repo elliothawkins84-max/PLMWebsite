@@ -55,7 +55,7 @@
       c.disabled = !ok;
       c.title = ok ? '' : `Not made in ${P.GANGS[state.gang].label.toLowerCase()}`;
     });
-    $('outletSizeNote').textContent = `${P.dimsLabel(state.gang, state.size)}.${P.hasSize(state.gang, 'midsize') ? '' : ` Midsize isn't made in ${P.GANGS[state.gang].label.toLowerCase()}.`} Measure your current plate to be sure.`;
+    $('outletSizeNote').textContent = `${P.dimsLabel(state.gang, state.size)}.${P.hasSize(state.gang, 'midsize') ? '' : ` Midsize isn't made in ${P.GANGS[state.gang].label.toLowerCase()}.`}`;
     const max = P.maxCharsFor(state.gang, state.size);
     textInput.maxLength = max;
     if (textInput.value.length > max) textInput.value = textInput.value.slice(0, max);
