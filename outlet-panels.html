@@ -73,6 +73,9 @@
       <div class="tag-configurator outlet-configurator">
         <div class="tag-photo-column outlet-photo-column">
           <div class="outlet-preview" id="outletPreview"></div>
+          <!-- "Switched to ..." after a choice changed others: laid over the
+               preview, so showing/hiding it never moves the buttons. -->
+          <p class="outlet-stock-note" id="outletStockNote" role="status" aria-live="polite"></p>
           <p class="outlet-fit-warning" id="outletFitWarning" hidden>Too long for this plate — shorten the text or pick a wider plate.</p>
           <button type="button" id="outletAddToOrderBtn" class="btn btn-ghost">Add to Order List &rarr;</button>
         </div>
@@ -126,7 +129,6 @@
             </div>
           </div>
           <p class="tag-size-hint outlet-size-note" id="outletSizeNote"></p>
-          <p class="outlet-stock-note" id="outletStockNote" role="status" aria-live="polite" hidden></p>
           <div class="outlet-opt">
             <span class="sel-label">MATERIAL</span>
             <div class="sel-btns" id="outletMaterialChips">

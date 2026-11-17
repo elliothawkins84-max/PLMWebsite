@@ -274,7 +274,9 @@
     const W = widthOf(gang, size) * 100;
     const H = heightOf(gang, size) * 100;
     const type = typeOf(item);
-    const id = `op${(uidCounter += 1)}`;
+    // opts.id: a fixed id prefix (one preview redrawn in place keeps the
+    // same markup when nothing changed); otherwise a unique one.
+    const id = o.id || `op${(uidCounter += 1)}`;
     const dark = !stainless && color === 'black';
     const base = stainless ? `url(#${id}-steel)` : COLORS[color].hex;
 

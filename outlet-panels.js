@@ -67,6 +67,7 @@
   // ---- Builder ----
   const state = { type: 'duplex', gang: 1, size: 'standard', material: 'thermoset', color: 'white', text: '' };
   const stockNote = $('outletStockNote');
+  let lastPreviewSvg = '';
   let stockNoteTimer = null;
   // Applies one choice (key = value) and fixes the rest to a stock plate.
   function choose(key, value) {
@@ -75,9 +76,11 @@
     Object.assign(state, P.stockFix(state, LOCK_FOR[key]));
     const note = changesNote(before, state, key);
     clearTimeout(stockNoteTimer);
-    stockNote.textContent = note;
-    stockNote.hidden = !note;
-    if (note) stockNoteTimer = setTimeout(() => { stockNote.hidden = true; }, 5000);
+    if (note) {
+      stockNote.textContent = note;
+      stockNote.classList.add('is-shown');
+      stockNoteTimer = setTimeout(() => stockNote.classList.remove('is-shown'), 5000);
+    }
     renderBuilder();
   }
   // Grays out (and disables) the chips no stock plate has.
@@ -117,7 +120,10 @@
     textInput.maxLength = max;
     if (textInput.value.length > max) textInput.value = textInput.value.slice(0, max);
     state.text = textInput.value;
-    preview.innerHTML = P.plateSVG(state, { placeholder: 'YOUR TEXT', dims: true });
+    // Only redrawn when the plate actually changed (a fixed id keeps the
+    // markup identical otherwise), so nothing blinks.
+    const svg = P.plateSVG(state, { placeholder: 'YOUR TEXT', dims: true, id: 'opb' });
+    if (svg !== lastPreviewSvg) { preview.innerHTML = svg; lastPreviewSvg = svg; }
     preview.dataset.gang = state.gang;
     const stainless = state.material === 'stainless';
     // Stainless has no plate color: the color chips stay in place but are

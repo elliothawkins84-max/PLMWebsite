@@ -2137,7 +2137,7 @@ a.product-row-photo { display: block; }
    the outlet-specific pieces. The preview box keeps one fixed height so the
    page doesn't jump as the plate goes from 1 to 4 gangs wide. */
 .outlet-configurator { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
-.outlet-photo-column { max-width: none; }
+.outlet-photo-column { max-width: none; position: relative; }
 .outlet-preview { width: 100%; height: 360px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 .outlet-preview svg { max-width: 100%; max-height: 100%; height: 100%; width: auto; display: block; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.45)); }
 .outlet-fit-warning { font-family: var(--mono); font-size: 0.74rem; color: #f87171; text-align: center; margin: -8px 0 0; }
@@ -2163,9 +2163,19 @@ a.product-row-photo { display: block; }
 #outletColorGroup.is-disabled { opacity: 0.35; }
 /* Options no stock (Leviton) plate has: grayed out, not clickable. */
 .outlet-panel .chip.is-unstocked { opacity: 0.3; cursor: not-allowed; }
-/* "Switched to standard size ..." after a choice changed others. */
-.outlet-stock-note { font-family: var(--mono); font-size: 0.72rem; line-height: 1.45; color: var(--fg); border-left: 2px solid var(--fg); padding: 4px 0 4px 10px; margin-top: -6px; }
-.outlet-stock-note[hidden] { display: none; }
+/* "Switched to standard size ..." after a choice changed others -- laid
+   over the top of the preview and faded, so it never moves anything. */
+.outlet-stock-note {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2; margin: 0;
+  font-family: var(--mono); font-size: 0.72rem; line-height: 1.45; color: var(--fg);
+  background: rgba(0, 0, 0, 0.85); border: 1px solid var(--line); padding: 8px 12px;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+.outlet-stock-note.is-shown { opacity: 1; }
+/* The option buttons switch state instantly (no fade), and a disabled one
+   never shows the hover tint. */
+.outlet-panel .chip { transition: none; }
+.outlet-panel .chip:disabled:hover { background: transparent; }
 #outletColorGroup.is-disabled .chip { cursor: not-allowed; }
 .outlet-blank-note { font-family: var(--mono); font-size: 0.74rem; line-height: 1.5; color: var(--fg); border: 1px solid var(--line); padding: 10px 12px; margin-top: -10px; }
 .outlet-blank-note[hidden] { display: none; }
