@@ -127,12 +127,16 @@
   // (hundredths of an inch).
   const DIM_ROOM = 80;
   // Half the center-to-center spacing of a plate type's holes (hundredths
-  // of an inch), measured on the right: a duplex's two outlets are 1.50in
-  // apart; single receptacle, toggle and blank plates have screws 2.375in
-  // apart. A rocker/decorative plate (screwless, one opening) has none.
+  // of an inch), measured on the right. From Leviton's dimensional
+  // drawings (80703 / PJ8 duplex, 80701 / PJ1 toggle): a duplex's two
+  // outlets are 1.53in apart; toggle (and single receptacle) plates screw to
+  // the device 2.375in apart; a blank plate screws to the box itself, whose
+  // holes are 3-9/32in (3.28in) apart. A rocker/decorative plate (screwless,
+  // one opening) has none.
   function holeHalfSpacing(type) {
-    if (type === 'duplex') return 75;
+    if (type === 'duplex') return 76.5;
     if (type === 'rocker') return null;
+    if (type === 'blank') return 164.0625;
     return 118.75;
   }
   // The SVG's full size in viewBox units, for callers sizing an image of it.
@@ -185,14 +189,14 @@
     const base = stainless ? `url(#${id}-steel)` : COLORS[color].hex;
 
     // Openings (and screws) for one gang, centered at cx, in hundredths of
-    // an inch: duplex 1.343in x 1.125in (round with flats top and bottom)
-    // 1.5in apart with a center screw; single receptacle a 1.406in round;
-    // toggle a 0.401in x 0.925in slot; rocker/decorative a 1.310in x 2.630in
-    // opening with no screws (screwless plate); blank none. Toggle, single
-    // and blank plates have screws 2.375in apart, above and below.
+    // an inch (Leviton's drawings): duplex 1.35in x 1.13in (round with flats
+    // top and bottom) 1.53in apart with a center screw; single receptacle a
+    // 1.406in round; toggle a 0.406in x 0.942in slot; rocker/decorative a
+    // 1.310in x 2.630in opening with no screws (screwless plate); blank none.
+    // Screws above and below as holeHalfSpacing says.
     const cy = H / 2;
-    const r = 67.15;
-    const flat = 56.25;
+    const r = 67.5;
+    const flat = 56.5;
     const dx = Math.sqrt(r * r - flat * flat);
     const flatRound = (cx, y) => `M ${cx - dx} ${y - flat} L ${cx + dx} ${y - flat} A ${r} ${r} 0 0 1 ${cx + dx} ${y + flat} L ${cx - dx} ${y + flat} A ${r} ${r} 0 0 1 ${cx - dx} ${y - flat} Z`;
     const roundRect = (cx, y, w, h, rr) => `M ${cx - w / 2 + rr} ${y - h / 2} H ${cx + w / 2 - rr} Q ${cx + w / 2} ${y - h / 2} ${cx + w / 2} ${y - h / 2 + rr} V ${y + h / 2 - rr} Q ${cx + w / 2} ${y + h / 2} ${cx + w / 2 - rr} ${y + h / 2} H ${cx - w / 2 + rr} Q ${cx - w / 2} ${y + h / 2} ${cx - w / 2} ${y + h / 2 - rr} V ${y - h / 2 + rr} Q ${cx - w / 2} ${y - h / 2} ${cx - w / 2 + rr} ${y - h / 2} Z`;
@@ -204,19 +208,24 @@
     for (let i = 0; i < gang; i++) {
       const cx = W / 2 + (i - (gang - 1) / 2) * GANG_SPACING_IN * 100;
       if (type === 'duplex') {
-        holes += `<path d="${flatRound(cx, cy - 75)}"/><path d="${flatRound(cx, cy + 75)}"/>`;
+        holes += `<path d="${flatRound(cx, cy - 76.5)}"/><path d="${flatRound(cx, cy + 76.5)}"/>`;
         screws += screw(cx, cy);
       } else if (type === 'rocker') {
         holes += `<path d="${roundRect(cx, cy, 131, 263, 5)}"/>`;
       } else {
         if (type === 'single') holes += `<path d="${circle(cx, cy, 70.3)}"/>`;
-        if (type === 'toggle') holes += `<path d="${roundRect(cx, cy, 40.1, 92.5, 4)}"/>`;
-        screws += screw(cx, cy - 118.75) + screw(cx, cy + 118.75);
+        if (type === 'toggle') holes += `<path d="${roundRect(cx, cy, 40.6, 94.2, 4)}"/>`;
+        const sh = holeHalfSpacing(type);
+        screws += screw(cx, cy - sh) + screw(cx, cy + sh);
       }
     }
 
     // The text keeps the same spacing above the openings on a taller plate.
-    const baseline = (TEXT.baselineIn + (H / 100 - PLATE_H_IN) / 2) * 100;
+    // A blank plate's box screws sit higher than the text line would, so
+    // there it goes just below the top screw instead.
+    const baseline = type === 'blank'
+      ? cy - holeHalfSpacing('blank') + 50
+      : (TEXT.baselineIn + (H / 100 - PLATE_H_IN) / 2) * 100;
     const text = caps(item.text).trim();
     const label = text
       ? `<text x="${W / 2}" y="${baseline}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}">${esc(text)}</text>`
