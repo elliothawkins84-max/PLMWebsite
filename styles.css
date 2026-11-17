@@ -2217,7 +2217,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   margin-bottom: 20px;
 }
 
-#tag-rfq-modal .editor-modal { width: 900px; max-height: 97vh; overflow-y: auto; padding: 14px 20px; }
+#tag-rfq-modal .editor-modal, #outlet-rfq-modal .editor-modal { width: 900px; max-height: 97vh; overflow-y: auto; padding: 14px 20px; }
 .editor-next-modal { position: relative; }
 .editor-next-modal-intro {
   font-size: 0.76rem;
@@ -2226,7 +2226,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
   max-width: 640px;
   margin: -4px 0 12px;
 }
-#tag-rfq-modal .editor-modal-title { margin-bottom: 8px; }
+#tag-rfq-modal .editor-modal-title, #outlet-rfq-modal .editor-modal-title { margin-bottom: 8px; }
 .editor-next-modal-close {
   position: absolute;
   top: 12px;
@@ -2378,7 +2378,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
    top/bottom instead, and let the modal itself shrink to fit the viewport
    (it's a fixed 900px otherwise). */
 @media (max-width: 640px) {
-  #tag-rfq-modal .editor-modal { width: calc(100vw - 32px); padding: 14px 16px; }
+  #tag-rfq-modal .editor-modal, #outlet-rfq-modal .editor-modal { width: calc(100vw - 32px); padding: 14px 16px; }
   .editor-next-modal-body { flex-direction: column; gap: 20px; }
   .editor-next-modal-renderings { width: 100%; position: static; }
   .editor-next-modal-form-row { flex-direction: column; gap: 10px; }
