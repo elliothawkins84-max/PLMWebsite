@@ -122,13 +122,25 @@
   }
 
   // With opts.dims, dimension lines (|---- 4.56in ----|) are drawn below
-  // and to the left of the plate, in this much extra room (hundredths of an
-  // inch).
+  // and to the left of the plate (its size), and on the right the
+  // center-to-center spacing of its holes, each in this much extra room
+  // (hundredths of an inch).
   const DIM_ROOM = 80;
+  // Half the center-to-center spacing of a plate type's holes (hundredths
+  // of an inch), measured on the right: a duplex's two outlets are 1.50in
+  // apart; single receptacle, toggle and blank plates have screws 2.375in
+  // apart. A rocker/decorative plate (screwless, one opening) has none.
+  function holeHalfSpacing(type) {
+    if (type === 'duplex') return 75;
+    if (type === 'rocker') return null;
+    return 118.75;
+  }
   // The SVG's full size in viewBox units, for callers sizing an image of it.
   function svgBox(item, opts) {
-    const extra = opts && opts.dims ? DIM_ROOM : 0;
-    return { w: widthOf(item.gang, item.size) * 100 + 12 + extra, h: heightOf(item.gang, item.size) * 100 + 12 + extra };
+    const dims = !!(opts && opts.dims);
+    const extra = dims ? DIM_ROOM : 0;
+    const right = dims && holeHalfSpacing(typeOf(item)) != null ? DIM_ROOM : 0;
+    return { w: widthOf(item.gang, item.size) * 100 + 12 + extra + right, h: heightOf(item.gang, item.size) * 100 + 12 + extra };
   }
   // A solid dimension line from (x1,y1) to (x2,y2) (horizontal or
   // vertical), end bars at both ends and the label in a gap at the middle.
@@ -212,12 +224,23 @@
 
     const room = o.dims ? DIM_ROOM : 0;
     const dimColor = o.dimColor || 'currentColor';
-    const dims = o.dims
+    let dims = o.dims
       ? dimLine(-room + 22, 0, -room + 22, H, `${(H / 100).toFixed(2)} in`, dimColor)
         + dimLine(0, H + room - 22, W, H + room - 22, `${(W / 100).toFixed(2)} in`, dimColor)
       : '';
+    // Hole spacing on the right, with dashed guide lines from the
+    // right-most gang's hole centers out to it.
+    const half = o.dims ? holeHalfSpacing(type) : null;
+    const rightRoom = half != null ? DIM_ROOM : 0;
+    if (half != null) {
+      const x = W + rightRoom - 22;
+      const cxLast = W / 2 + ((gang - 1) / 2) * GANG_SPACING_IN * 100;
+      const guide = (y) => `<line x1="${cxLast}" y1="${y}" x2="${x + 14}" y2="${y}" stroke="${dimColor}" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.7"/>`;
+      dims += guide(cy - half) + guide(cy + half)
+        + dimLine(x, cy - half, x, cy + half, `${((half * 2) / 100).toFixed(2)} in`, dimColor);
+    }
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-6 - room} -6 ${W + 12 + room} ${H + 12 + room}" class="${esc(o.className || 'outlet-plate-svg')}" role="img" aria-label="${esc(`${GANGS[gang].label} ${SIZES[size].label} ${TYPES[type].label} ${MATERIALS[material].short}${stainless ? '' : ` ${COLORS[color].label}`} outlet plate, ${dimsLabel(gang, size)}${text ? `, marked ${text}` : ''}`)}">
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-6 - room} -6 ${W + 12 + room + rightRoom} ${H + 12 + room}" class="${esc(o.className || 'outlet-plate-svg')}" role="img" aria-label="${esc(`${GANGS[gang].label} ${SIZES[size].label} ${TYPES[type].label} ${MATERIALS[material].short}${stainless ? '' : ` ${COLORS[color].label}`} outlet plate, ${dimsLabel(gang, size)}${half != null ? `, holes ${((half * 2) / 100).toFixed(2)}in apart` : ''}${text ? `, marked ${text}` : ''}`)}">
   <defs>
     <linearGradient id="${id}-steel" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f1f3f5"/><stop offset="30%" stop-color="#aab0b6"/><stop offset="55%" stop-color="#e3e6e9"/><stop offset="80%" stop-color="#a3a9af"/><stop offset="100%" stop-color="#d2d6da"/>

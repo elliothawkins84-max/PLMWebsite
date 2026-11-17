@@ -2149,6 +2149,7 @@ a.product-row-photo { display: block; }
    bit tighter, gangs + plate size share a row. */
 .outlet-panel { gap: 20px; }
 .outlet-opt, .outlet-panel .outlet-color-group { display: flex; flex-direction: column; gap: 10px; }
+.outlet-panel .outlet-color-group[hidden] { display: none; }
 .outlet-opt .tag-size-hint { margin-top: -2px; }
 .outlet-panel .outlet-mark-note, .outlet-panel .outlet-size-note { margin-top: -10px; }
 .outlet-opt-pair { display: flex; flex-wrap: wrap; gap: 20px 32px; }
