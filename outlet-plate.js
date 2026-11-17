@@ -15,11 +15,12 @@
   // Gangs sit 1.8125in apart on every size.
   const GANG_SPACING_IN = 1.8125;
   // Plate sizes: outside dimensions (in) by gang count, with the character
-  // limit for the text line. Midsize ("midway") is only offered where it's
-  // a common, mass-produced plate -- 1 to 3 gang.
+  // limit for the text line (Leviton: Midway is 0.375in taller and wider;
+  // +1.81in per gang). Which plates are actually offered in each size is
+  // STOCK's job, below.
   const SIZES = {
     standard: { label: 'Standard', heightIn: 4.5, widthIn: { 1: 2.75, 2: 4.56, 3: 6.37, 4: 8.19 }, maxChars: { 1: 14, 2: 24, 3: 36, 4: 46 } },
-    midsize: { label: 'Midsize', heightIn: 4.88, widthIn: { 1: 3.13, 2: 4.94, 3: 6.75 }, maxChars: { 1: 16, 2: 27, 3: 38 } },
+    midsize: { label: 'Midsize', heightIn: 4.88, widthIn: { 1: 3.13, 2: 4.94, 3: 6.75, 4: 8.56 }, maxChars: { 1: 16, 2: 27, 3: 38, 4: 48 } },
   };
   // The size a plate actually is: midsize only where that gang count comes
   // in midsize, otherwise (and for older orders with no size) standard.
@@ -51,7 +52,9 @@
   // Plate colors (plastic and nylon only -- stainless is its own finish).
   const COLORS = {
     white: { label: 'White', hex: '#f3f2ec' },
-    tan: { label: 'Tan', hex: '#d8c7a3' },
+    // Leviton's "Light Almond" (kept under the key 'tan' so older orders
+    // still read).
+    tan: { label: 'Light Almond', hex: '#e2d5bb' },
     gray: { label: 'Gray', hex: '#c9cbcd' },
     black: { label: 'Black', hex: '#1f1f20' },
   };
@@ -102,6 +105,93 @@
 
   let measureCtx = null;
   // How wide `text` prints, in inches (null where there's no canvas).
+  // ---- Stock plates ----
+  // Only plates Leviton catalogs (Wallplates catalog, section E: Leviton
+  // catalog numbers exist for each) are offered, so every plate on an order
+  // is one we can simply buy. type -> material -> size -> gang -> the
+  // colors it comes in (W white, T light almond, G gray, B black);
+  // stainless steel is a single finish (true). Leviton makes no Midway
+  // stainless plate.
+  const STOCK = {
+    toggle: {
+      thermoset: { standard: { 1: 'WTG', 2: 'WTG', 3: 'WTG', 4: 'WTG' }, midsize: { 1: 'WT', 2: 'WT', 3: 'WT', 4: 'WT' } },
+      nylon: { standard: { 1: 'WTGB', 2: 'WTGB', 3: 'WTGB', 4: 'WTB' }, midsize: { 1: 'WTGB', 2: 'WTGB', 3: 'WTB', 4: 'WT' } },
+      stainless: { standard: { 1: true, 2: true, 3: true, 4: true } },
+    },
+    duplex: {
+      thermoset: { standard: { 1: 'WTG', 2: 'WTG', 3: 'W', 4: 'W' }, midsize: { 1: 'WT', 2: 'WT' } },
+      nylon: { standard: { 1: 'WTGB', 2: 'WTGB', 3: 'WG' }, midsize: { 1: 'WTGB', 2: 'WTGB' } },
+      stainless: { standard: { 1: true, 2: true, 3: true, 4: true } },
+    },
+    rocker: {
+      thermoset: { standard: { 1: 'WTGB', 2: 'WTGB', 3: 'WTGB', 4: 'WTGB' }, midsize: { 1: 'WT', 2: 'WT', 3: 'WT', 4: 'WT' } },
+      nylon: { standard: { 1: 'WTGB', 2: 'WTGB', 3: 'WTGB', 4: 'WT' }, midsize: { 1: 'WTGB', 2: 'WTGB', 3: 'WTG', 4: 'WTG' } },
+      stainless: { standard: { 1: true, 2: true, 3: true, 4: true } },
+    },
+    blank: {
+      thermoset: { standard: { 1: 'WTG', 2: 'WTG', 3: 'W', 4: 'W' }, midsize: { 1: 'WT', 2: 'WT', 3: 'W' } },
+      nylon: { standard: { 1: 'WTGB', 2: 'WTGB', 3: 'WGB' }, midsize: { 1: 'WTGB', 2: 'WTG' } },
+      stainless: { standard: { 1: true, 2: true, 3: true, 4: true } },
+    },
+    single: {
+      thermoset: { standard: { 1: 'WT', 2: 'W' }, midsize: { 1: 'WT' } },
+      nylon: { standard: { 1: 'WTGB' }, midsize: { 1: 'WT' } },
+      stainless: { standard: { 1: true, 2: true } },
+    },
+  };
+  const COLOR_CODE = { white: 'W', tan: 'T', gray: 'G', black: 'B' };
+  // The order choices are made in, most important first.
+  const STOCK_KEYS = ['type', 'gang', 'size', 'material', 'color'];
+  // Every stock plate, as { type, gang, size, material, color } (color null
+  // for stainless).
+  const STOCK_LIST = [];
+  Object.keys(STOCK).forEach((type) => Object.keys(STOCK[type]).forEach((material) => {
+    Object.keys(STOCK[type][material]).forEach((size) => Object.keys(STOCK[type][material][size]).forEach((g) => {
+      const colors = STOCK[type][material][size][g];
+      const gang = Number(g);
+      if (colors === true) STOCK_LIST.push({ type, gang, size, material, color: null });
+      else Object.keys(COLOR_CODE).forEach((color) => { if (colors.includes(COLOR_CODE[color])) STOCK_LIST.push({ type, gang, size, material, color }); });
+    }));
+  }));
+  // An item's value for a stock key, as STOCK_LIST has it (older orders
+  // carry no type or size: duplex, standard).
+  function stockValue(it, k) {
+    if (k === 'type') return typeOf(it);
+    if (k === 'gang') return GANGS[it.gang] ? Number(it.gang) : 1;
+    if (k === 'size') return SIZES[it.size] ? it.size : 'standard';
+    if (k === 'material') return MATERIALS[it.material] ? it.material : 'thermoset';
+    return it[k];
+  }
+  const same = (c, it, k) => (k === 'color' && c.material === 'stainless') || String(c[k]) === String(stockValue(it, k));
+  function isStock(it) {
+    return STOCK_LIST.some((c) => STOCK_KEYS.every((k) => same(c, it, k)));
+  }
+  // The values of `key` that a stock plate has, with the `fixed` keys kept
+  // as they are in `it` (e.g. which sizes come in this type and gang count).
+  function stockValues(it, key, fixed) {
+    const out = new Set();
+    STOCK_LIST.forEach((c) => { if (fixed.every((k) => same(c, it, k))) out.add(String(c[key])); });
+    return out;
+  }
+  // The stock plate closest to `it` that keeps the `locked` keys as they
+  // are -- keeping as many of the other choices as it can, the more
+  // important ones (STOCK_KEYS order) first. Returns `it` with its type,
+  // gang, size, material and color set to that plate's (a stainless plate
+  // keeps the color it had, for switching back).
+  function stockFix(it, locked) {
+    let best = null;
+    let bestScore = -1;
+    STOCK_LIST.forEach((c) => {
+      if (!locked.every((k) => same(c, it, k))) return;
+      let score = 0;
+      STOCK_KEYS.forEach((k, i) => { if (same(c, it, k)) score += 1 << (STOCK_KEYS.length - i); });
+      if (score > bestScore) { best = c; bestScore = score; }
+    });
+    // Nothing keeps every locked choice: let go of the least important.
+    if (!best) return locked.length > 1 ? stockFix(it, locked.slice(0, -1)) : { ...it };
+    return { ...it, type: best.type, gang: best.gang, size: best.size, material: best.material, color: best.color || it.color };
+  }
+
   function textWidthIn(text) {
     if (typeof document === 'undefined') return null;
     if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
@@ -278,6 +368,7 @@
 
   root.OutletPlate = {
     PLATE_H_IN, GANGS, GANG_SPACING_IN, SIZES, TYPES, MATERIALS, COLORS, MARKS, TEXT,
+    STOCK, STOCK_KEYS, isStock, stockValues, stockFix,
     typeOf, caps, markFor, sizeFor, hasSize, widthOf, heightOf, maxCharsFor, dimsLabel,
     textRoomIn, textWidthIn, textFits, svgBox, plateSVG,
   };

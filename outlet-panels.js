@@ -22,17 +22,74 @@
   const TYPE_OPTIONS = Object.keys(P.TYPES).map((t) => [t, P.TYPES[t].label]);
   const MATERIAL_OPTIONS = Object.keys(P.MATERIALS).map((m) => [m, P.MATERIALS[m].label]);
   const COLOR_OPTIONS = Object.keys(P.COLORS).map((c) => [c, P.COLORS[c].label]);
-  // Size options for a gang count: midsize is left out (disabled) where it
-  // isn't made, e.g. 4-gang.
-  function sizeOptionsHTML(gang, current) {
-    return Object.keys(P.SIZES).map((k) => {
-      const ok = P.hasSize(gang, k);
-      return `<option value="${k}"${k === current ? ' selected' : ''}${ok ? '' : ' disabled'}>${P.SIZES[k].label}${ok ? '' : ' (n/a)'}</option>`;
-    }).join('');
+  // ---- Stock plates only (P.STOCK, Leviton's catalog) ----
+  // Each choice is offered only where some stock plate has it, given the
+  // choices above it: gangs given the type; size and material given the
+  // type and gangs; colors given everything else. Picking something that
+  // rules out the rest switches the rest to the closest stock plate.
+  const FIXED_FOR = {
+    type: [],
+    gang: ['type'],
+    size: ['type', 'gang'],
+    material: ['type', 'gang'],
+    color: ['type', 'gang', 'size', 'material'],
+  };
+  const LOCK_FOR = {
+    type: ['type'],
+    gang: ['type', 'gang'],
+    size: ['type', 'gang', 'size'],
+    material: ['type', 'gang', 'material'],
+    color: ['type', 'gang', 'size', 'material', 'color'],
+  };
+  function offered(item, key) {
+    return P.stockValues(item, key, FIXED_FOR[key]);
+  }
+  // "Switched to standard size and white" -- what a choice changed besides
+  // itself ('' when nothing).
+  function changesNote(before, after, key) {
+    const bits = [];
+    if (before.gang !== after.gang && key !== 'gang') bits.push(P.GANGS[after.gang].label.toLowerCase());
+    if (before.size !== after.size && key !== 'size') bits.push(`${P.SIZES[after.size].label.toLowerCase()} size`);
+    if (before.material !== after.material && key !== 'material') bits.push(P.MATERIALS[after.material].short.toLowerCase());
+    if (after.material !== 'stainless' && before.color !== after.color && key !== 'color') bits.push(P.COLORS[after.color].label.toLowerCase());
+    if (!bits.length) return '';
+    const list = bits.length > 1 ? `${bits.slice(0, -1).join(', ')} and ${bits[bits.length - 1]}` : bits[0];
+    return `Switched to ${list} — that's what this plate comes in.`;
+  }
+  function optionLabel(map, k, ok) {
+    return `${map[k].label}${ok ? '' : ' (n/a)'}`;
+  }
+  function stockOptionsHTML(map, key, item) {
+    const ok = offered(item, key);
+    return Object.keys(map).map((k) => `<option value="${k}"${String(k) === String(item[key]) ? ' selected' : ''}${ok.has(String(k)) ? '' : ' disabled'}>${optionLabel(map, k, ok.has(String(k)))}</option>`).join('');
   }
 
   // ---- Builder ----
   const state = { type: 'duplex', gang: 1, size: 'standard', material: 'thermoset', color: 'white', text: '' };
+  const stockNote = $('outletStockNote');
+  let stockNoteTimer = null;
+  // Applies one choice (key = value) and fixes the rest to a stock plate.
+  function choose(key, value) {
+    const before = { ...state };
+    state[key] = value;
+    Object.assign(state, P.stockFix(state, LOCK_FOR[key]));
+    const note = changesNote(before, state, key);
+    clearTimeout(stockNoteTimer);
+    stockNote.textContent = note;
+    stockNote.hidden = !note;
+    if (note) stockNoteTimer = setTimeout(() => { stockNote.hidden = true; }, 5000);
+    renderBuilder();
+  }
+  // Grays out (and disables) the chips no stock plate has.
+  function syncStockChips(groupId, attr, key) {
+    const ok = offered(state, key);
+    $(groupId).querySelectorAll('.chip').forEach((c) => {
+      const has = ok.has(String(c.dataset[attr]));
+      c.disabled = !has;
+      c.classList.toggle('is-unstocked', !has);
+      c.title = has ? '' : 'Not made in this plate';
+    });
+  }
   const preview = $('outletPreview');
   const textInput = $('outletTextInput');
   const fitWarning = $('outletFitWarning');
@@ -48,14 +105,14 @@
     $(groupId).querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-on', c.dataset[attr] === String(value)));
   }
   function renderBuilder() {
-    state.size = P.sizeFor(state.gang, state.size);
+    setChips('outletGangChips', 'gang', state.gang);
     setChips('outletSizeChips', 'size', state.size);
-    $('outletSizeChips').querySelectorAll('.chip').forEach((c) => {
-      const ok = P.hasSize(state.gang, c.dataset.size);
-      c.disabled = !ok;
-      c.title = ok ? '' : `Not made in ${P.GANGS[state.gang].label.toLowerCase()}`;
-    });
-    $('outletSizeNote').textContent = `${P.dimsLabel(state.gang, state.size)}.${P.hasSize(state.gang, 'midsize') ? '' : ` Midsize isn't made in ${P.GANGS[state.gang].label.toLowerCase()}.`}`;
+    setChips('outletMaterialChips', 'material', state.material);
+    setChips('outletColorChips', 'color', state.color);
+    syncStockChips('outletGangChips', 'gang', 'gang');
+    syncStockChips('outletSizeChips', 'size', 'size');
+    syncStockChips('outletMaterialChips', 'material', 'material');
+    $('outletSizeNote').textContent = `${P.dimsLabel(state.gang, state.size)}.`;
     const max = P.maxCharsFor(state.gang, state.size);
     textInput.maxLength = max;
     if (textInput.value.length > max) textInput.value = textInput.value.slice(0, max);
@@ -66,10 +123,15 @@
     // Stainless has no plate color: the color chips stay in place but are
     // grayed out and can't be clicked until another material is picked.
     colorGroup.classList.toggle('is-disabled', stainless);
-    colorGroup.querySelectorAll('.chip').forEach((c) => {
-      c.disabled = stainless;
-      c.title = stainless ? 'Stainless steel has its own finish — no color choice' : '';
-    });
+    if (stainless) {
+      colorGroup.querySelectorAll('.chip').forEach((c) => {
+        c.disabled = true;
+        c.classList.remove('is-unstocked');
+        c.title = 'Stainless steel has its own finish — no color choice';
+      });
+    } else {
+      syncStockChips('outletColorChips', 'color', 'color');
+    }
     const group = P.TYPES[state.type].group;
     setChips('outletTypeChips', 'group', group);
     setChips('outletReceptacleChips', 'type', state.type);
@@ -86,41 +148,33 @@
   $('outletTypeChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    state.type = chip.dataset.group === 'receptacle' ? lastReceptacle : chip.dataset.group;
-    renderBuilder();
+    choose('type', chip.dataset.group === 'receptacle' ? lastReceptacle : chip.dataset.group);
   });
   $('outletReceptacleChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    state.type = lastReceptacle = chip.dataset.type;
-    renderBuilder();
+    lastReceptacle = chip.dataset.type;
+    choose('type', chip.dataset.type);
   });
   $('outletGangChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
-    if (!chip) return;
-    state.gang = Number(chip.dataset.gang);
-    setChips('outletGangChips', 'gang', state.gang);
-    renderBuilder();
+    if (!chip || chip.disabled) return;
+    choose('gang', Number(chip.dataset.gang));
   });
   $('outletSizeChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip || chip.disabled) return;
-    state.size = chip.dataset.size;
-    renderBuilder();
+    choose('size', chip.dataset.size);
   });
   $('outletMaterialChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
-    if (!chip) return;
-    state.material = chip.dataset.material;
-    setChips('outletMaterialChips', 'material', state.material);
-    renderBuilder();
+    if (!chip || chip.disabled) return;
+    choose('material', chip.dataset.material);
   });
   $('outletColorChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip || chip.disabled) return;
-    state.color = chip.dataset.color;
-    setChips('outletColorChips', 'color', state.color);
-    renderBuilder();
+    choose('color', chip.dataset.color);
   });
   textInput.addEventListener('input', () => { forceCaps(textInput); renderBuilder(); });
 
@@ -141,15 +195,24 @@
       qty: Math.max(1, Math.round(Number(row.querySelector('.outlet-qty-input').value) || 1)),
     };
   }
-  // Keeps a row's color/text fields in step with its plate and material:
-  // stainless has no color choice, and the text limit follows the gang.
-  function syncRow(row) {
-    const item = rowItem(row);
-    // Midsize isn't offered for every gang count: fall back to standard.
+  const ROW_KEYS = { 'outlet-type-select': 'type', 'outlet-gang-select': 'gang', 'outlet-size-select': 'size', 'outlet-material-select': 'material', 'outlet-color-select': 'color' };
+  // Keeps a row on a stock plate (changedKey = the select just changed;
+  // the others switch to the closest stock plate if they have to) and its
+  // color/text fields in step: stainless has no color choice, and the text
+  // limit follows the plate.
+  function syncRow(row, changedKey) {
+    let item = rowItem(row);
+    item.color = row.querySelector('.outlet-color-select').value;
+    if (changedKey) item = P.stockFix(item, LOCK_FOR[changedKey]);
+    else if (!P.isStock(item)) item = P.stockFix(item, ['type']);
+    row.querySelector('.outlet-type-select').value = item.type;
+    row.querySelector('.outlet-gang-select').innerHTML = stockOptionsHTML(P.GANGS, 'gang', item);
+    row.querySelector('.outlet-size-select').innerHTML = stockOptionsHTML(P.SIZES, 'size', item);
+    row.querySelector('.outlet-material-select').innerHTML = stockOptionsHTML(P.MATERIALS, 'material', item);
+    row.querySelector('.outlet-color-select').innerHTML = stockOptionsHTML(P.COLORS, 'color', item);
     const sizeSelect = row.querySelector('.outlet-size-select');
-    item.size = P.sizeFor(item.gang, item.size);
-    sizeSelect.innerHTML = sizeOptionsHTML(item.gang, item.size);
     sizeSelect.title = P.dimsLabel(item.gang, item.size);
+    if (item.material === 'stainless') item.color = null;
     const colorSelect = row.querySelector('.outlet-color-select');
     const stainless = item.material === 'stainless';
     colorSelect.disabled = stainless;
@@ -174,7 +237,7 @@
     row.innerHTML = `
       <td class="tag-order-num"></td>
       <td><select class="outlet-gang-select">${optionsHTML(GANG_OPTIONS, it.gang)}</select></td>
-      <td><select class="outlet-size-select">${sizeOptionsHTML(it.gang, P.sizeFor(it.gang, it.size))}</select></td>
+      <td><select class="outlet-size-select">${optionsHTML(Object.keys(P.SIZES).map((k) => [k, P.SIZES[k].label]), it.size)}</select></td>
       <td><select class="outlet-type-select">${optionsHTML(TYPE_OPTIONS, it.type)}</select></td>
       <td><select class="outlet-material-select">${optionsHTML(MATERIAL_OPTIONS, it.material)}</select></td>
       <td>
@@ -204,7 +267,7 @@
     const row = e.target.closest('.tag-order-row');
     if (!row) return;
     if (e.target.matches('.outlet-qty-input')) e.target.value = rowItem(row).qty;
-    syncRow(row);
+    syncRow(row, ROW_KEYS[[...e.target.classList].find((c) => ROW_KEYS[c])]);
   });
   orderBody.addEventListener('click', (e) => {
     const row = e.target.closest('.tag-order-row');
@@ -214,14 +277,11 @@
       row.remove();
       renumber();
     } else if (e.target.closest('.tag-order-view')) {
-      // Loads this row into the builder above (same as clicking its chips).
+      // Loads this row (always a stock plate) into the builder above.
       const item = rowItem(row);
-      state.type = item.type;
       if (P.TYPES[item.type].group === 'receptacle') lastReceptacle = item.type;
-      $('outletGangChips').querySelector(`[data-gang="${item.gang}"]`).click();
-      state.size = item.size;
-      $('outletMaterialChips').querySelector(`[data-material="${item.material}"]`).click();
-      if (item.color) $('outletColorChips').querySelector(`[data-color="${item.color}"]`).click();
+      Object.assign(state, { type: item.type, gang: item.gang, size: item.size, material: item.material });
+      if (item.color) state.color = item.color;
       textInput.value = item.text;
       renderBuilder();
       const top = document.querySelector('.outlet-configurator').getBoundingClientRect().top + window.scrollY - 160;
@@ -241,7 +301,7 @@
     if (blank) {
       blank.querySelector('.outlet-type-select').value = item.type;
       blank.querySelector('.outlet-gang-select').value = item.gang;
-      blank.querySelector('.outlet-size-select').innerHTML = sizeOptionsHTML(item.gang, item.size);
+      blank.querySelector('.outlet-size-select').value = item.size;
       blank.querySelector('.outlet-material-select').value = item.material;
       if (item.color) blank.querySelector('.outlet-color-select').value = item.color;
       blank.querySelector('.outlet-text-input').value = item.text;

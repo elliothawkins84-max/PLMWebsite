@@ -2161,6 +2161,11 @@ a.product-row-photo { display: block; }
 }
 #outletSizeChips .chip:disabled { opacity: 0.35; cursor: not-allowed; }
 #outletColorGroup.is-disabled { opacity: 0.35; }
+/* Options no stock (Leviton) plate has: grayed out, not clickable. */
+.outlet-panel .chip.is-unstocked { opacity: 0.3; cursor: not-allowed; }
+/* "Switched to standard size ..." after a choice changed others. */
+.outlet-stock-note { font-family: var(--mono); font-size: 0.72rem; line-height: 1.45; color: var(--fg); border-left: 2px solid var(--fg); padding: 4px 0 4px 10px; margin-top: -6px; }
+.outlet-stock-note[hidden] { display: none; }
 #outletColorGroup.is-disabled .chip { cursor: not-allowed; }
 .outlet-blank-note { font-family: var(--mono); font-size: 0.74rem; line-height: 1.5; color: var(--fg); border: 1px solid var(--line); padding: 10px 12px; margin-top: -10px; }
 .outlet-blank-note[hidden] { display: none; }
