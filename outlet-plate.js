@@ -1,18 +1,34 @@
 // Laser-marked electrical outlet panels: the shared plate model + SVG
 // renderer. The exact same file is used by the website's builder
 // (outlet-panels.html) and by PLM Job Viewer (renderer/outlet-plate.js), so
-// a plate looks identical in both. Standard-size wall plates, 4.50in tall,
-// 1 to 4 gang; every gang of a plate gets the same opening (see TYPES).
+// a plate looks identical in both. Standard (4.50in tall) or midsize
+// (4.88in tall) wall plates, 1 to 4 gang (midsize 1 to 3); every gang of a
+// plate gets the same opening (see TYPES).
 (function (root) {
-  const PLATE_H_IN = 4.5;
-  // Standard-size plate widths by gang count; gangs sit 1.8125in apart.
+  const PLATE_H_IN = 4.5; // standard height (see SIZES for midsize)
   const GANGS = {
-    1: { label: '1-Gang', widthIn: 2.75 },
-    2: { label: '2-Gang', widthIn: 4.56 },
-    3: { label: '3-Gang', widthIn: 6.375 },
-    4: { label: '4-Gang', widthIn: 8.19 },
+    1: { label: '1-Gang' },
+    2: { label: '2-Gang' },
+    3: { label: '3-Gang' },
+    4: { label: '4-Gang' },
   };
+  // Gangs sit 1.8125in apart on every size.
   const GANG_SPACING_IN = 1.8125;
+  // Plate sizes: outside dimensions (in) by gang count, with the character
+  // limit for the text line. Midsize ("midway") is only offered where it's
+  // a common, mass-produced plate -- 1 to 3 gang.
+  const SIZES = {
+    standard: { label: 'Standard', heightIn: 4.5, widthIn: { 1: 2.75, 2: 4.56, 3: 6.37, 4: 8.19 }, maxChars: { 1: 14, 2: 24, 3: 36, 4: 46 } },
+    midsize: { label: 'Midsize', heightIn: 4.88, widthIn: { 1: 3.13, 2: 4.94, 3: 6.75 }, maxChars: { 1: 16, 2: 27, 3: 38 } },
+  };
+  // The size a plate actually is: midsize only where that gang count comes
+  // in midsize, otherwise (and for older orders with no size) standard.
+  function sizeFor(gang, size) {
+    return SIZES[size] && SIZES[size].widthIn[gang] ? size : 'standard';
+  }
+  function hasSize(gang, size) {
+    return !!(SIZES[size] && SIZES[size].widthIn[gang]);
+  }
 
   // Plate types. `receptacles` groups the two receptacle types under one
   // "Receptacle" choice with a 1-or-2 option on the website.
@@ -57,16 +73,31 @@
     baselineIn: 0.74,
     sideMarginIn: 0.25,
     font: 'Arial, Helvetica, sans-serif',
-    // Character limits by gang, roughly what fits at that size.
-    maxChars: { 1: 14, 2: 24, 3: 36, 4: 46 },
+    // Standard-size character limits by gang (see SIZES / maxCharsFor).
+    maxChars: SIZES.standard.maxChars,
   };
 
-  function widthOf(gang) {
-    return (GANGS[gang] || GANGS[1]).widthIn;
+  function gangOf(gang) {
+    return GANGS[gang] ? Number(gang) : 1;
+  }
+  function widthOf(gang, size) {
+    const g = gangOf(gang);
+    return SIZES[sizeFor(g, size)].widthIn[g];
+  }
+  function heightOf(gang, size) {
+    return SIZES[sizeFor(gangOf(gang), size)].heightIn;
+  }
+  function maxCharsFor(gang, size) {
+    const g = gangOf(gang);
+    return SIZES[sizeFor(g, size)].maxChars[g];
+  }
+  // '4.56in W x 4.50in H'
+  function dimsLabel(gang, size) {
+    return `${widthOf(gang, size).toFixed(2)}in W × ${heightOf(gang, size).toFixed(2)}in H`;
   }
   // Width available for the text line, in inches.
-  function textRoomIn(gang) {
-    return widthOf(gang) - TEXT.sideMarginIn * 2;
+  function textRoomIn(gang, size) {
+    return widthOf(gang, size) - TEXT.sideMarginIn * 2;
   }
 
   let measureCtx = null;
@@ -81,27 +112,61 @@
   function caps(text) {
     return String(text == null ? '' : text).toUpperCase();
   }
-  function textFits(text, gang) {
+  function textFits(text, gang, size) {
     const w = textWidthIn(caps(text));
-    return w == null || w <= textRoomIn(gang);
+    return w == null || w <= textRoomIn(gang, size);
   }
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // With opts.dims, dimension lines (|---- 4.56in ----|) are drawn below
+  // and to the left of the plate, in this much extra room (hundredths of an
+  // inch).
+  const DIM_ROOM = 80;
+  // The SVG's full size in viewBox units, for callers sizing an image of it.
+  function svgBox(item, opts) {
+    const extra = opts && opts.dims ? DIM_ROOM : 0;
+    return { w: widthOf(item.gang, item.size) * 100 + 12 + extra, h: heightOf(item.gang, item.size) * 100 + 12 + extra };
+  }
+  // A solid dimension line from (x1,y1) to (x2,y2) (horizontal or
+  // vertical), end bars at both ends and the label in a gap at the middle.
+  function dimLine(x1, y1, x2, y2, label, color) {
+    const vertical = x1 === x2;
+    const mx = (x1 + x2) / 2;
+    const my = (y1 + y2) / 2;
+    const fs = 24;
+    const half = label.length * fs * 0.29 + 10;
+    const bar = 14;
+    const stroke = `stroke="${color}" stroke-width="2"`;
+    let out = '';
+    if (vertical) {
+      out += `<line x1="${x1}" y1="${y1}" x2="${x1}" y2="${my - half}" ${stroke}/><line x1="${x1}" y1="${my + half}" x2="${x1}" y2="${y2}" ${stroke}/>`;
+      out += `<line x1="${x1 - bar}" y1="${y1}" x2="${x1 + bar}" y2="${y1}" ${stroke}/><line x1="${x1 - bar}" y1="${y2}" x2="${x1 + bar}" y2="${y2}" ${stroke}/>`;
+      out += `<text x="${mx}" y="${my}" transform="rotate(-90 ${mx} ${my})" text-anchor="middle" dominant-baseline="central" font-family="${TEXT.font}" font-size="${fs}" fill="${color}">${esc(label)}</text>`;
+    } else {
+      out += `<line x1="${x1}" y1="${y1}" x2="${mx - half}" y2="${y1}" ${stroke}/><line x1="${mx + half}" y1="${y1}" x2="${x2}" y2="${y1}" ${stroke}/>`;
+      out += `<line x1="${x1}" y1="${y1 - bar}" x2="${x1}" y2="${y1 + bar}" ${stroke}/><line x1="${x2}" y1="${y1 - bar}" x2="${x2}" y2="${y1 + bar}" ${stroke}/>`;
+      out += `<text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="central" font-family="${TEXT.font}" font-size="${fs}" fill="${color}">${esc(label)}</text>`;
+    }
+    return out;
+  }
+
   let uidCounter = 0;
-  // An SVG string of one plate. item: { gang, material, color, text }.
-  // Drawn in hundredths of an inch (viewBox width = plate width x 100).
+  // An SVG string of one plate. item: { gang, size, type, material, color,
+  // text }. Drawn in hundredths of an inch (viewBox width = plate width x
+  // 100). opts: { placeholder, className, dims, dimColor }.
   function plateSVG(item, opts) {
     const o = opts || {};
-    const gang = GANGS[item.gang] ? Number(item.gang) : 1;
+    const gang = gangOf(item.gang);
+    const size = sizeFor(gang, item.size);
     const material = MATERIALS[item.material] ? item.material : 'thermoset';
     const stainless = material === 'stainless';
     const color = COLORS[item.color] ? item.color : 'white';
     const mark = MARKS[markFor(material, color)];
-    const W = widthOf(gang) * 100;
-    const H = PLATE_H_IN * 100;
+    const W = widthOf(gang, size) * 100;
+    const H = heightOf(gang, size) * 100;
     const type = typeOf(item);
     const id = `op${(uidCounter += 1)}`;
     const dark = !stainless && color === 'black';
@@ -138,12 +203,21 @@
       }
     }
 
+    // The text keeps the same spacing above the openings on a taller plate.
+    const baseline = (TEXT.baselineIn + (H / 100 - PLATE_H_IN) / 2) * 100;
     const text = caps(item.text).trim();
     const label = text
-      ? `<text x="${W / 2}" y="${TEXT.baselineIn * 100}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}">${esc(text)}</text>`
-      : (o.placeholder ? `<text x="${W / 2}" y="${TEXT.baselineIn * 100}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}" opacity="0.25">${esc(o.placeholder)}</text>` : '');
+      ? `<text x="${W / 2}" y="${baseline}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}">${esc(text)}</text>`
+      : (o.placeholder ? `<text x="${W / 2}" y="${baseline}" text-anchor="middle" font-family="${TEXT.font}" font-size="${TEXT.sizeIn * 100}" fill="${mark.hex}" opacity="0.25">${esc(o.placeholder)}</text>` : '');
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 ${W + 12} ${H + 12}" class="${esc(o.className || 'outlet-plate-svg')}" role="img" aria-label="${esc(`${GANGS[gang].label} ${TYPES[type].label} ${MATERIALS[material].short}${stainless ? '' : ` ${COLORS[color].label}`} outlet plate${text ? `, marked ${text}` : ''}`)}">
+    const room = o.dims ? DIM_ROOM : 0;
+    const dimColor = o.dimColor || 'currentColor';
+    const dims = o.dims
+      ? dimLine(-room + 22, 0, -room + 22, H, `${(H / 100).toFixed(2)} in`, dimColor)
+        + dimLine(0, H + room - 22, W, H + room - 22, `${(W / 100).toFixed(2)} in`, dimColor)
+      : '';
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-6 - room} -6 ${W + 12 + room} ${H + 12 + room}" class="${esc(o.className || 'outlet-plate-svg')}" role="img" aria-label="${esc(`${GANGS[gang].label} ${SIZES[size].label} ${TYPES[type].label} ${MATERIALS[material].short}${stainless ? '' : ` ${COLORS[color].label}`} outlet plate, ${dimsLabel(gang, size)}${text ? `, marked ${text}` : ''}`)}">
   <defs>
     <linearGradient id="${id}-steel" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f1f3f5"/><stop offset="30%" stop-color="#aab0b6"/><stop offset="55%" stop-color="#e3e6e9"/><stop offset="80%" stop-color="#a3a9af"/><stop offset="100%" stop-color="#d2d6da"/>
@@ -167,11 +241,13 @@
   <g fill="none" stroke="rgba(0,0,0,${dark ? 0.7 : 0.28})" stroke-width="2.5">${holes}</g>
   ${screws}
   ${label}
+  ${dims}
 </svg>`;
   }
 
   root.OutletPlate = {
-    PLATE_H_IN, GANGS, GANG_SPACING_IN, TYPES, MATERIALS, COLORS, MARKS, TEXT,
-    typeOf, caps, markFor, widthOf, textRoomIn, textWidthIn, textFits, plateSVG,
+    PLATE_H_IN, GANGS, GANG_SPACING_IN, SIZES, TYPES, MATERIALS, COLORS, MARKS, TEXT,
+    typeOf, caps, markFor, sizeFor, hasSize, widthOf, heightOf, maxCharsFor, dimsLabel,
+    textRoomIn, textWidthIn, textFits, svgBox, plateSVG,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

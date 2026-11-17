@@ -2134,13 +2134,14 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
    page doesn't jump as the plate goes from 1 to 4 gangs wide. */
 .outlet-configurator { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 .outlet-photo-column { max-width: none; }
-.outlet-preview { width: 100%; height: 320px; display: flex; align-items: center; justify-content: center; }
+.outlet-preview { width: 100%; height: 360px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 .outlet-preview svg { max-width: 100%; max-height: 100%; height: 100%; width: auto; display: block; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.45)); }
 .outlet-fit-warning { font-family: var(--mono); font-size: 0.74rem; color: #f87171; text-align: center; margin: -8px 0 0; }
 .outlet-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.35); }
 .outlet-color-group { display: flex; flex-direction: column; gap: 26px; }
 .outlet-color-group[hidden] { display: none; }
-.outlet-mark-note { margin-top: -14px; }
+.outlet-mark-note, .outlet-size-note { margin-top: -14px; }
+#outletSizeChips .chip:disabled { opacity: 0.35; cursor: not-allowed; }
 .outlet-blank-note { font-family: var(--mono); font-size: 0.74rem; line-height: 1.5; color: var(--fg); border: 1px solid var(--line); padding: 10px 12px; margin-top: -10px; }
 .outlet-blank-note[hidden] { display: none; }
 .outlet-blank-note a { color: var(--fg); text-decoration: underline; }
@@ -2160,7 +2161,7 @@ h3 { font-size: 1.25rem; letter-spacing: 0; }
 .outlet-rfq-total { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
 @media (max-width: 860px) {
   .outlet-configurator { grid-template-columns: 1fr; }
-  .outlet-preview { height: 220px; }
+  .outlet-preview { height: 260px; }
 }
 
 /* ---- RFQ modal (round-id-tags.html) ----

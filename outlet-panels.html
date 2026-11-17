@@ -63,7 +63,7 @@
         <p class="eyebrow">( SPECIALTY / OUTLET PANELS )</p>
         <h1 class="display sm">Laser Marked Electrical Outlet Panels</h1>
         <p class="lead">Duplex outlet plates with your circuit, panel or room label permanently laser marked across the top — no stickers or label tape to peel, fade or smear.</p>
-        <p class="hero-specs">Standard size &middot; 4.50in tall &middot; 1 to 4 gang &middot; receptacle, toggle, rocker or blank &middot; thermoset, nylon or stainless steel</p>
+        <p class="hero-specs">Standard (4.50in tall) or midsize (4.88in tall) &middot; 1 to 4 gang &middot; receptacle, toggle, rocker or blank &middot; thermoset, nylon or stainless steel</p>
       </header>
       <div class="tag-configurator outlet-configurator">
         <div class="tag-photo-column outlet-photo-column">
@@ -87,13 +87,19 @@
             </div>
           </div>
           <p class="outlet-blank-note" id="outletBlankNote" hidden>Want your logo on a blank plate? <a href="index#contact">Request a custom quote</a> or email us at <a href="mailto:info@precisionlasermark.com">info@precisionlasermark.com</a> — this page only adds a line of text.</p>
-          <span class="sel-label">PLATE SIZE</span>
+          <span class="sel-label">GANGS</span>
           <div class="sel-btns" id="outletGangChips">
             <button type="button" class="chip" data-gang="1">1-Gang</button>
             <button type="button" class="chip is-on" data-gang="2">2-Gang</button>
             <button type="button" class="chip" data-gang="3">3-Gang</button>
             <button type="button" class="chip" data-gang="4">4-Gang</button>
           </div>
+          <span class="sel-label">PLATE SIZE</span>
+          <div class="sel-btns" id="outletSizeChips">
+            <button type="button" class="chip is-on" data-size="standard">Standard</button>
+            <button type="button" class="chip" data-size="midsize">Midsize</button>
+          </div>
+          <p class="tag-size-hint outlet-size-note" id="outletSizeNote"></p>
           <span class="sel-label">MATERIAL</span>
           <div class="sel-btns" id="outletMaterialChips">
             <button type="button" class="chip is-on" data-material="thermoset">Durable Thermoset Plastic</button>
@@ -135,6 +141,7 @@
             <tr>
               <th>#</th>
               <th>Plate</th>
+              <th>Size</th>
               <th>Type</th>
               <th>Material</th>
               <th>Color</th>
@@ -204,7 +211,7 @@
         <div class="editor-next-modal-renderings tag-rfq-summary">
           <div class="editor-next-modal-section">
             <span class="editor-next-modal-section-label">Plate Specs</span>
-            <p class="tag-rfq-specs">Standard size &middot; 4.50in tall &middot; text centered across the top</p>
+            <p class="tag-rfq-specs">Standard or midsize &middot; text centered across the top</p>
           </div>
           <div class="editor-next-modal-section">
             <span class="editor-next-modal-section-label">Order Summary</span>

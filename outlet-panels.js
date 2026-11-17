@@ -22,9 +22,17 @@
   const TYPE_OPTIONS = Object.keys(P.TYPES).map((t) => [t, P.TYPES[t].label]);
   const MATERIAL_OPTIONS = Object.keys(P.MATERIALS).map((m) => [m, P.MATERIALS[m].label]);
   const COLOR_OPTIONS = Object.keys(P.COLORS).map((c) => [c, P.COLORS[c].label]);
+  // Size options for a gang count: midsize is left out (disabled) where it
+  // isn't made, e.g. 4-gang.
+  function sizeOptionsHTML(gang, current) {
+    return Object.keys(P.SIZES).map((k) => {
+      const ok = P.hasSize(gang, k);
+      return `<option value="${k}"${k === current ? ' selected' : ''}${ok ? '' : ' disabled'}>${P.SIZES[k].label}${ok ? '' : ' (n/a)'}</option>`;
+    }).join('');
+  }
 
   // ---- Builder ----
-  const state = { type: 'duplex', gang: 2, material: 'thermoset', color: 'white', text: '' };
+  const state = { type: 'duplex', gang: 2, size: 'standard', material: 'thermoset', color: 'white', text: '' };
   const preview = $('outletPreview');
   const textInput = $('outletTextInput');
   const fitWarning = $('outletFitWarning');
@@ -40,11 +48,19 @@
     $(groupId).querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-on', c.dataset[attr] === String(value)));
   }
   function renderBuilder() {
-    const max = P.TEXT.maxChars[state.gang];
+    state.size = P.sizeFor(state.gang, state.size);
+    setChips('outletSizeChips', 'size', state.size);
+    $('outletSizeChips').querySelectorAll('.chip').forEach((c) => {
+      const ok = P.hasSize(state.gang, c.dataset.size);
+      c.disabled = !ok;
+      c.title = ok ? '' : `Not made in ${P.GANGS[state.gang].label.toLowerCase()}`;
+    });
+    $('outletSizeNote').textContent = `${P.dimsLabel(state.gang, state.size)}.${P.hasSize(state.gang, 'midsize') ? '' : ` Midsize isn't made in ${P.GANGS[state.gang].label.toLowerCase()}.`} Measure your current plate to be sure.`;
+    const max = P.maxCharsFor(state.gang, state.size);
     textInput.maxLength = max;
     if (textInput.value.length > max) textInput.value = textInput.value.slice(0, max);
     state.text = textInput.value;
-    preview.innerHTML = P.plateSVG(state, { placeholder: 'YOUR TEXT' });
+    preview.innerHTML = P.plateSVG(state, { placeholder: 'YOUR TEXT', dims: true });
     preview.dataset.gang = state.gang;
     const stainless = state.material === 'stainless';
     colorGroup.hidden = stainless;
@@ -55,7 +71,7 @@
     $('outletBlankNote').hidden = state.type !== 'blank';
     markNote.textContent = markSentence(state.material, state.color);
     charCount.textContent = `— ${state.text.length}/${max}`;
-    const fits = P.textFits(state.text.trim(), state.gang);
+    const fits = P.textFits(state.text.trim(), state.gang, state.size);
     fitWarning.hidden = fits;
     $('outletAddToOrderBtn').disabled = !fits;
   }
@@ -78,6 +94,12 @@
     if (!chip) return;
     state.gang = Number(chip.dataset.gang);
     setChips('outletGangChips', 'gang', state.gang);
+    renderBuilder();
+  });
+  $('outletSizeChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip || chip.disabled) return;
+    state.size = chip.dataset.size;
     renderBuilder();
   });
   $('outletMaterialChips').addEventListener('click', (e) => {
@@ -106,6 +128,7 @@
     return {
       type: row.querySelector('.outlet-type-select').value,
       gang: Number(row.querySelector('.outlet-gang-select').value),
+      size: row.querySelector('.outlet-size-select').value,
       material,
       color: material === 'stainless' ? null : row.querySelector('.outlet-color-select').value,
       text: P.caps(row.querySelector('.outlet-text-input').value).trim(),
@@ -116,6 +139,11 @@
   // stainless has no color choice, and the text limit follows the gang.
   function syncRow(row) {
     const item = rowItem(row);
+    // Midsize isn't offered for every gang count: fall back to standard.
+    const sizeSelect = row.querySelector('.outlet-size-select');
+    item.size = P.sizeFor(item.gang, item.size);
+    sizeSelect.innerHTML = sizeOptionsHTML(item.gang, item.size);
+    sizeSelect.title = P.dimsLabel(item.gang, item.size);
     const colorSelect = row.querySelector('.outlet-color-select');
     const stainless = item.material === 'stainless';
     colorSelect.disabled = stainless;
@@ -123,9 +151,9 @@
     row.querySelector('.outlet-color-na').hidden = !stainless;
     colorSelect.hidden = stainless;
     const text = row.querySelector('.outlet-text-input');
-    text.maxLength = P.TEXT.maxChars[item.gang];
+    text.maxLength = P.maxCharsFor(item.gang, item.size);
     if (text.value.length > text.maxLength) text.value = text.value.slice(0, text.maxLength);
-    const fits = P.textFits(text.value.trim(), item.gang);
+    const fits = P.textFits(text.value.trim(), item.gang, item.size);
     text.classList.toggle('is-too-long', !fits);
     text.title = fits ? '' : 'Too long for this plate';
     row.querySelector('.outlet-mark-cell').textContent = `${P.MARKS[P.markFor(item.material, item.color || 'white')].label} mark`;
@@ -134,12 +162,13 @@
     [...orderBody.querySelectorAll('.tag-order-row')].forEach((row, i) => { row.querySelector('.tag-order-num').textContent = i + 1; });
   }
   function addRow(initial) {
-    const it = { type: 'duplex', gang: 2, material: 'thermoset', color: 'white', text: '', qty: 1, ...(initial || {}) };
+    const it = { type: 'duplex', gang: 2, size: 'standard', material: 'thermoset', color: 'white', text: '', qty: 1, ...(initial || {}) };
     const row = document.createElement('tr');
     row.className = 'tag-order-row';
     row.innerHTML = `
       <td class="tag-order-num"></td>
       <td><select class="outlet-gang-select">${optionsHTML(GANG_OPTIONS, it.gang)}</select></td>
+      <td><select class="outlet-size-select">${sizeOptionsHTML(it.gang, P.sizeFor(it.gang, it.size))}</select></td>
       <td><select class="outlet-type-select">${optionsHTML(TYPE_OPTIONS, it.type)}</select></td>
       <td><select class="outlet-material-select">${optionsHTML(MATERIAL_OPTIONS, it.material)}</select></td>
       <td>
@@ -184,6 +213,7 @@
       state.type = item.type;
       if (P.TYPES[item.type].group === 'receptacle') lastReceptacle = item.type;
       $('outletGangChips').querySelector(`[data-gang="${item.gang}"]`).click();
+      state.size = item.size;
       $('outletMaterialChips').querySelector(`[data-material="${item.material}"]`).click();
       if (item.color) $('outletColorChips').querySelector(`[data-color="${item.color}"]`).click();
       textInput.value = item.text;
@@ -200,11 +230,12 @@
   const addLabel = addBtn.textContent;
   let addTimer = null;
   addBtn.addEventListener('click', () => {
-    const item = { type: state.type, gang: state.gang, material: state.material, color: state.material === 'stainless' ? null : state.color, text: state.text.trim(), qty: 1 };
+    const item = { type: state.type, gang: state.gang, size: state.size, material: state.material, color: state.material === 'stainless' ? null : state.color, text: state.text.trim(), qty: 1 };
     const blank = [...orderBody.querySelectorAll('.tag-order-row')].find((r) => !r.querySelector('.outlet-text-input').value.trim());
     if (blank) {
       blank.querySelector('.outlet-type-select').value = item.type;
       blank.querySelector('.outlet-gang-select').value = item.gang;
+      blank.querySelector('.outlet-size-select').innerHTML = sizeOptionsHTML(item.gang, item.size);
       blank.querySelector('.outlet-material-select').value = item.material;
       if (item.color) blank.querySelector('.outlet-color-select').value = item.color;
       blank.querySelector('.outlet-text-input').value = item.text;
@@ -226,11 +257,11 @@
   function collectItems() {
     return [...orderBody.querySelectorAll('.tag-order-row')].map((row) => {
       const item = rowItem(row);
-      return { ...item, markColor: P.markFor(item.material, item.color) };
+      return { ...item, widthIn: P.widthOf(item.gang, item.size), heightIn: P.heightOf(item.gang, item.size), markColor: P.markFor(item.material, item.color) };
     });
   }
   function describe(item) {
-    const parts = [P.GANGS[item.gang].label, P.TYPES[item.type].label, P.MATERIALS[item.material].short];
+    const parts = [`${P.GANGS[item.gang].label} ${P.SIZES[item.size].label} (${P.dimsLabel(item.gang, item.size)})`, P.TYPES[item.type].label, P.MATERIALS[item.material].short];
     if (item.material !== 'stainless') parts.push(P.COLORS[item.color].label);
     return `${parts.join(' · ')} (${P.MARKS[item.markColor].label.toLowerCase()} mark)`;
   }
@@ -253,7 +284,7 @@
       + `<div class="tag-rfq-summary-row outlet-rfq-total"><span class="tag-rfq-summary-count">${total}</span><span class="tag-rfq-summary-dash">-</span><span>plate${total === 1 ? '' : 's'} total</span></div>`;
   }
   function openModal() {
-    const tooLong = collectItems().some((it) => !P.textFits(it.text, it.gang));
+    const tooLong = collectItems().some((it) => !P.textFits(it.text, it.gang, it.size));
     if (tooLong) {
       const bad = orderBody.querySelector('.outlet-text-input.is-too-long');
       if (bad) { bad.focus(); bad.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
@@ -298,7 +329,7 @@
       kind: 'plmj',
       version: 1,
       createdAt: new Date().toISOString(),
-      specs: { plateHeightIn: P.PLATE_H_IN, textSizeIn: P.TEXT.sizeIn, placement: 'top center' },
+      specs: { textSizeIn: P.TEXT.sizeIn, placement: 'top center' },
       order: {
         name: fd.get('name') || '',
         email: fd.get('email') || '',
