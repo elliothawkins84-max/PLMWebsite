@@ -75,8 +75,10 @@
     state[key] = value;
     Object.assign(state, P.stockFix(state, LOCK_FOR[key]));
     const note = changesNote(before, state, key);
-    clearTimeout(stockNoteTimer);
+    // A new note restarts the 3-second timer; a choice with nothing to say
+    // leaves any note on screen to fade out on its own timer.
     if (note) {
+      clearTimeout(stockNoteTimer);
       stockNote.textContent = note;
       stockNote.classList.add('is-shown');
       stockNoteTimer = setTimeout(() => stockNote.classList.remove('is-shown'), 3000);
