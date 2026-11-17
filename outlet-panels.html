@@ -76,13 +76,28 @@
           <p class="outlet-fit-warning" id="outletFitWarning" hidden>Too long for this plate — shorten the text or pick a wider plate.</p>
           <button type="button" id="outletAddToOrderBtn" class="btn btn-ghost">Add to Order List &rarr;</button>
         </div>
-        <div class="tag-panel">
-          <span class="sel-label">PLATE TYPE</span>
-          <div class="sel-btns" id="outletTypeChips">
-            <button type="button" class="chip is-on" data-group="receptacle">Receptacle</button>
-            <button type="button" class="chip" data-group="toggle">Toggle Switch</button>
-            <button type="button" class="chip" data-group="rocker">Rocker / Decorative</button>
-            <button type="button" class="chip" data-group="blank">Blank</button>
+        <!-- Options, compact: the text first (what people came to change),
+             gangs + size side by side. -->
+        <div class="tag-panel outlet-panel">
+          <div class="outlet-opt">
+            <div class="tag-inputs">
+              <label class="tag-input-row">
+                <div class="tag-input-inner">
+                  <span>Text <em class="outlet-char-count" id="outletCharCount"></em></span>
+                  <input type="text" id="outletTextInput" maxlength="14" placeholder="e.g. 2EQ-12" autocomplete="off" />
+                </div>
+              </label>
+            </div>
+            <p class="tag-size-hint">One text size, always centered across the top of the plate.</p>
+          </div>
+          <div class="outlet-opt">
+            <span class="sel-label">PLATE TYPE</span>
+            <div class="sel-btns" id="outletTypeChips">
+              <button type="button" class="chip is-on" data-group="receptacle">Receptacle</button>
+              <button type="button" class="chip" data-group="toggle">Toggle Switch</button>
+              <button type="button" class="chip" data-group="rocker">Rocker / Decorative</button>
+              <button type="button" class="chip" data-group="blank">Blank</button>
+            </div>
           </div>
           <div class="outlet-color-group" id="outletReceptacleGroup">
             <span class="sel-label">RECEPTACLES PER GANG</span>
@@ -92,24 +107,32 @@
             </div>
           </div>
           <p class="outlet-blank-note" id="outletBlankNote" hidden>Want your logo on a blank plate? <a href="index#contact">Request a custom quote</a> or email us at <a href="mailto:info@precisionlasermark.com">info@precisionlasermark.com</a> — this page only adds a line of text.</p>
-          <span class="sel-label">GANGS</span>
-          <div class="sel-btns" id="outletGangChips">
-            <button type="button" class="chip is-on" data-gang="1">1-Gang</button>
-            <button type="button" class="chip" data-gang="2">2-Gang</button>
-            <button type="button" class="chip" data-gang="3">3-Gang</button>
-            <button type="button" class="chip" data-gang="4">4-Gang</button>
-          </div>
-          <span class="sel-label">PLATE SIZE</span>
-          <div class="sel-btns" id="outletSizeChips">
-            <button type="button" class="chip is-on" data-size="standard">Standard</button>
-            <button type="button" class="chip" data-size="midsize">Midsize</button>
+          <div class="outlet-opt-pair">
+            <div class="outlet-opt">
+              <span class="sel-label">GANGS</span>
+              <div class="sel-btns" id="outletGangChips">
+                <button type="button" class="chip is-on" data-gang="1" aria-label="1-Gang">1</button>
+                <button type="button" class="chip" data-gang="2" aria-label="2-Gang">2</button>
+                <button type="button" class="chip" data-gang="3" aria-label="3-Gang">3</button>
+                <button type="button" class="chip" data-gang="4" aria-label="4-Gang">4</button>
+              </div>
+            </div>
+            <div class="outlet-opt">
+              <span class="sel-label">PLATE SIZE</span>
+              <div class="sel-btns" id="outletSizeChips">
+                <button type="button" class="chip is-on" data-size="standard">Standard</button>
+                <button type="button" class="chip" data-size="midsize">Midsize</button>
+              </div>
+            </div>
           </div>
           <p class="tag-size-hint outlet-size-note" id="outletSizeNote"></p>
-          <span class="sel-label">MATERIAL</span>
-          <div class="sel-btns" id="outletMaterialChips">
-            <button type="button" class="chip is-on" data-material="thermoset">Durable Thermoset Plastic</button>
-            <button type="button" class="chip" data-material="nylon">Flexible Thermoplastic Nylon</button>
-            <button type="button" class="chip" data-material="stainless">Stainless Steel</button>
+          <div class="outlet-opt">
+            <span class="sel-label">MATERIAL</span>
+            <div class="sel-btns" id="outletMaterialChips">
+              <button type="button" class="chip is-on" data-material="thermoset">Durable Thermoset Plastic</button>
+              <button type="button" class="chip" data-material="nylon">Flexible Thermoplastic Nylon</button>
+              <button type="button" class="chip" data-material="stainless">Stainless Steel</button>
+            </div>
           </div>
           <div class="outlet-color-group" id="outletColorGroup">
             <span class="sel-label">PLATE COLOR</span>
@@ -121,15 +144,6 @@
             </div>
           </div>
           <p class="tag-size-hint outlet-mark-note" id="outletMarkNote">Marked in dark gray.</p>
-          <div class="tag-inputs">
-            <label class="tag-input-row">
-              <div class="tag-input-inner">
-                <span>Text <em class="outlet-char-count" id="outletCharCount"></em></span>
-                <input type="text" id="outletTextInput" maxlength="14" placeholder="e.g. 2EQ-12" autocomplete="off" />
-              </div>
-            </label>
-          </div>
-          <p class="tag-size-hint">One text size, always centered across the top of the plate.</p>
         </div>
       </div>
     </section>
