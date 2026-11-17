@@ -66,7 +66,7 @@ if (heroVideoFrame) {
 // Product listing videos (products.html): same autoplay/reduced-motion
 // handling as the hero video above, just generalized to however many of
 // these show up on a page instead of one specific element by id.
-const productVideos = [...document.querySelectorAll('.product-row-video')];
+const productVideos = [...document.querySelectorAll('video.product-row-video')];
 if (productVideos.length) {
   if (reduceMotion) {
     productVideos.forEach((video) => {
@@ -1352,12 +1352,9 @@ if (tagRfqModal) {
       createdAt: new Date().toISOString(),
       specs: { diameterIn: 2, holeMm: 3, thicknessMm: 0.71, material: 'aluminum' },
       order: {
-        name: formData.get('name') || '',
-        email: formData.get('email') || '',
-        address: formData.get('address') || '',
-        city: formData.get('city') || '',
-        state: formData.get('state') || '',
-        zip: formData.get('zip') || '',
+        // name, company, email, phone, pickup, shipping + billing address
+        // (rfq-contact.js)
+        ...window.RfqContact.read(formData),
         discountCode: String(formData.get('discount') || '').trim(),
         message: formData.get('message') || '',
       },
@@ -1392,7 +1389,7 @@ if (tagRfqModal) {
         const contextLines = [
           `${payload.items.length} tag${payload.items.length === 1 ? '' : 's'} requested:`,
           summarizeOrderItems(payload.items),
-          `Shipping address: ${payload.order.address || 'n/a'}, ${payload.order.city || 'n/a'}, ${payload.order.state || 'n/a'} ${payload.order.zip || 'n/a'}`,
+          ...window.RfqContact.lines(payload.order),
         ];
         const userMessage = String(formData.get('message') || '').trim();
         formData.set('message', `${contextLines.join('\n')}${userMessage ? `\n\n${userMessage}` : ''}`);

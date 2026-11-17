@@ -277,32 +277,7 @@
           <form class="contact-form editor-next-modal-form" id="tagRfqForm">
             <span class="editor-next-modal-section-label">Your Information</span>
             <input type="text" name="company" class="botcheck" tabindex="-1" autocomplete="off" />
-            <label>
-              <span>Name</span>
-              <input type="text" name="name" id="tagRfqName" placeholder="Your name" required />
-            </label>
-            <label>
-              <span>Email</span>
-              <input type="email" name="email" id="tagRfqEmail" placeholder="you@example.com" required />
-            </label>
-            <label>
-              <span>Shipping address <em>— for calculating shipping</em></span>
-              <input type="text" name="address" id="tagRfqAddress" placeholder="Street address" required />
-            </label>
-            <div class="editor-next-modal-form-row">
-              <label>
-                <span>City</span>
-                <input type="text" name="city" id="tagRfqCity" placeholder="City" required />
-              </label>
-              <label>
-                <span>State</span>
-                <input type="text" name="state" id="tagRfqState" placeholder="State" required />
-              </label>
-              <label>
-                <span>ZIP code</span>
-                <input type="text" name="zip" id="tagRfqZip" placeholder="ZIP" inputmode="numeric" required />
-              </label>
-            </div>
+            <div class="rfq-contact" data-rfq-contact></div>
             <label>
               <span>Discount code <em>— optional</em></span>
               <input type="text" name="discount" id="tagRfqDiscount" placeholder="Discount code" maxlength="64" autocomplete="off" />
@@ -342,6 +317,7 @@
        injected by script.js. -->
   <div class="scroll-ruler" aria-hidden="true"></div>
 
+  <script src="rfq-contact.js"></script>
   <script src="script.min.js"></script>
 </body>
 </html>

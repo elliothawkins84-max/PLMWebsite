@@ -5870,10 +5870,8 @@ if (fabricCanvasEl && window.fabric) {
       } : null,
       subtotal: pricing ? pricing.total : null,
       isMinCharge: pricing ? pricing.isMinCharge : false,
-      address: String(formData.get('address') || '').trim(),
-      city: String(formData.get('city') || '').trim(),
-      state: String(formData.get('state') || '').trim(),
-      zip: String(formData.get('zip') || '').trim(),
+      // company, phone, pickup, shipping + billing address (rfq-contact.js)
+      ...(window.RfqContact ? window.RfqContact.read(formData) : {}),
       discountCode: String(formData.get('discount') || '').trim(),
       message: String(formData.get('message') || '').trim(),
     };
@@ -6066,7 +6064,7 @@ if (fabricCanvasEl && window.fabric) {
           : pricing.isMinCharge
             ? `Estimated total: $${pricing.total.toFixed(2)} min charge`
             : `Estimated total: $${pricing.total.toFixed(2)} ($${pricing.each.toFixed(2)} ea.)`,
-        `Shipping address: ${address || 'n/a'}, ${city || 'n/a'}, ${state || 'n/a'} ${zip || 'n/a'}`,
+        ...(window.RfqContact ? window.RfqContact.lines(window.RfqContact.read(formData)) : [`Shipping address: ${address || 'n/a'}, ${city || 'n/a'}, ${state || 'n/a'} ${zip || 'n/a'}`]),
       ];
       const userMessage = String(formData.get('message') || '').trim();
       const surveyBlock = surveyMessageBlock();

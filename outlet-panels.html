@@ -227,32 +227,7 @@
           <form class="contact-form editor-next-modal-form" id="outletRfqForm">
             <span class="editor-next-modal-section-label">Your Information</span>
             <input type="text" name="company" class="botcheck" tabindex="-1" autocomplete="off" />
-            <label>
-              <span>Name</span>
-              <input type="text" name="name" placeholder="Your name" required />
-            </label>
-            <label>
-              <span>Email</span>
-              <input type="email" name="email" placeholder="you@example.com" required />
-            </label>
-            <label>
-              <span>Shipping address <em>— for calculating shipping</em></span>
-              <input type="text" name="address" placeholder="Street address" required />
-            </label>
-            <div class="editor-next-modal-form-row">
-              <label>
-                <span>City</span>
-                <input type="text" name="city" placeholder="City" required />
-              </label>
-              <label>
-                <span>State</span>
-                <input type="text" name="state" placeholder="State" required />
-              </label>
-              <label>
-                <span>ZIP code</span>
-                <input type="text" name="zip" placeholder="ZIP" inputmode="numeric" required />
-              </label>
-            </div>
+            <div class="rfq-contact" data-rfq-contact></div>
             <label>
               <span>Discount code <em>— optional</em></span>
               <input type="text" name="discount" placeholder="Discount code" maxlength="64" autocomplete="off" />
@@ -289,6 +264,7 @@
 
   <div class="scroll-ruler" aria-hidden="true"></div>
 
+  <script src="rfq-contact.js"></script>
   <script src="script.min.js"></script>
   <script src="outlet-plate.js"></script>
   <script src="outlet-panels.js"></script>

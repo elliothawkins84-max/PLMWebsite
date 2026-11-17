@@ -1342,32 +1342,7 @@
           <form class="contact-form editor-next-modal-form" id="next-modal-rfq-form">
             <span class="editor-next-modal-section-label">Your Information</span>
             <input type="text" name="company" class="botcheck" tabindex="-1" autocomplete="off" />
-            <label>
-              <span>Name</span>
-              <input type="text" name="name" id="next-modal-name" placeholder="Your name" required />
-            </label>
-            <label>
-              <span>Email</span>
-              <input type="email" name="email" id="next-modal-email" placeholder="you@example.com" required />
-            </label>
-            <label>
-              <span>Shipping address <em>— for calculating shipping</em></span>
-              <input type="text" name="address" id="next-modal-address" placeholder="Street address" required />
-            </label>
-            <div class="editor-next-modal-form-row">
-              <label>
-                <span>City</span>
-                <input type="text" name="city" id="next-modal-city" placeholder="City" required />
-              </label>
-              <label>
-                <span>State</span>
-                <input type="text" name="state" id="next-modal-state" placeholder="State" required />
-              </label>
-              <label>
-                <span>ZIP code</span>
-                <input type="text" name="zip" id="next-modal-zip" placeholder="ZIP" inputmode="numeric" required />
-              </label>
-            </div>
+            <div class="rfq-contact" data-rfq-contact></div>
             <label>
               <span>Discount code <em>— optional</em></span>
               <input type="text" name="discount" id="next-modal-discount" placeholder="Discount code" maxlength="64" autocomplete="off" />
@@ -1466,6 +1441,7 @@
   <script src="templates/templates-data.min.js" onload="window.__plmStepDone()" onerror="window.__plmStepDone()"></script>
   <script src="card-types/card-types-data.min.js" onload="window.__plmStepDone()" onerror="window.__plmStepDone()"></script>
   <script src="fonts/fonts-data.min.js" onload="window.__plmStepDone()" onerror="window.__plmStepDone()"></script>
+  <script src="rfq-contact.js"></script>
   <script src="card-editor.min.js"></script>
 </body>
 </html>

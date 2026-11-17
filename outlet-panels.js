@@ -331,12 +331,9 @@
       createdAt: new Date().toISOString(),
       specs: { textSizeIn: P.TEXT.sizeIn, placement: 'top center' },
       order: {
-        name: fd.get('name') || '',
-        email: fd.get('email') || '',
-        address: fd.get('address') || '',
-        city: fd.get('city') || '',
-        state: fd.get('state') || '',
-        zip: fd.get('zip') || '',
+        // name, company, email, phone, pickup, shipping + billing address
+        // (rfq-contact.js)
+        ...window.RfqContact.read(fd),
         discountCode: String(fd.get('discount') || '').trim(),
         message: fd.get('message') || '',
       },
@@ -360,7 +357,7 @@
       fd.set('message', [
         `${total} outlet plate${total === 1 ? '' : 's'} requested:`,
         ...lines,
-        `Shipping address: ${payload.order.address || 'n/a'}, ${payload.order.city || 'n/a'}, ${payload.order.state || 'n/a'} ${payload.order.zip || 'n/a'}`,
+        ...window.RfqContact.lines(payload.order),
       ].join('\n') + (userMessage ? `\n\n${userMessage}` : ''));
       const bytes = await encodePlmjFile(payload);
       const base = (payload.order.name || 'outlet-panels').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'outlet-panels';
