@@ -37,7 +37,7 @@
     duplex: { label: 'Duplex Receptacle', short: 'Duplex', group: 'receptacle', receptacles: 2 },
     single: { label: 'Single Receptacle', short: 'Single Receptacle', group: 'receptacle', receptacles: 1 },
     toggle: { label: 'Toggle Switch', short: 'Toggle', group: 'toggle' },
-    rocker: { label: 'Rocker / Decorative', short: 'Rocker', group: 'rocker' },
+    rocker: { label: 'Rocker / GFCI', short: 'Rocker/GFCI', group: 'rocker' },
     blank: { label: 'Blank', short: 'Blank', group: 'blank' },
   };
   function typeOf(item) {
