@@ -2159,6 +2159,8 @@ a.product-row-photo { display: block; }
   .outlet-photo-column { position: sticky; top: 96px; align-self: start; }
 }
 #outletSizeChips .chip:disabled { opacity: 0.35; cursor: not-allowed; }
+#outletColorGroup.is-disabled { opacity: 0.35; }
+#outletColorGroup.is-disabled .chip { cursor: not-allowed; }
 .outlet-blank-note { font-family: var(--mono); font-size: 0.74rem; line-height: 1.5; color: var(--fg); border: 1px solid var(--line); padding: 10px 12px; margin-top: -10px; }
 .outlet-blank-note[hidden] { display: none; }
 .outlet-blank-note a, .outlet-intro a { color: var(--fg); text-decoration: underline; }

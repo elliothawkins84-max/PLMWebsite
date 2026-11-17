@@ -63,7 +63,13 @@
     preview.innerHTML = P.plateSVG(state, { placeholder: 'YOUR TEXT', dims: true });
     preview.dataset.gang = state.gang;
     const stainless = state.material === 'stainless';
-    colorGroup.hidden = stainless;
+    // Stainless has no plate color: the color chips stay in place but are
+    // grayed out and can't be clicked until another material is picked.
+    colorGroup.classList.toggle('is-disabled', stainless);
+    colorGroup.querySelectorAll('.chip').forEach((c) => {
+      c.disabled = stainless;
+      c.title = stainless ? 'Stainless steel has its own finish — no color choice' : '';
+    });
     const group = P.TYPES[state.type].group;
     setChips('outletTypeChips', 'group', group);
     setChips('outletReceptacleChips', 'type', state.type);
@@ -111,7 +117,7 @@
   });
   $('outletColorChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
-    if (!chip) return;
+    if (!chip || chip.disabled) return;
     state.color = chip.dataset.color;
     setChips('outletColorChips', 'color', state.color);
     renderBuilder();
