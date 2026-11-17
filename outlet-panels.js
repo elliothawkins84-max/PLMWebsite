@@ -54,7 +54,7 @@
     if (after.material !== 'stainless' && before.color !== after.color && key !== 'color') bits.push(P.COLORS[after.color].label.toLowerCase());
     if (!bits.length) return '';
     const list = bits.length > 1 ? `${bits.slice(0, -1).join(', ')} and ${bits[bits.length - 1]}` : bits[0];
-    return `Switched to ${list} — that's what this plate comes in.`;
+    return `Switched to ${list} — previous combination not available.`;
   }
   function optionLabel(map, k, ok) {
     return `${map[k].label}${ok ? '' : ' (n/a)'}`;
@@ -79,7 +79,7 @@
     if (note) {
       stockNote.textContent = note;
       stockNote.classList.add('is-shown');
-      stockNoteTimer = setTimeout(() => stockNote.classList.remove('is-shown'), 5000);
+      stockNoteTimer = setTimeout(() => stockNote.classList.remove('is-shown'), 3000);
     }
     renderBuilder();
   }
