@@ -1576,6 +1576,8 @@ a.product-row-photo { display: block; }
   color: var(--muted);
   max-width: 60ch;
 }
+/* A one-line description that shouldn't wrap at 60ch (outlet panels). */
+.product-desc.product-desc-wide { max-width: none; }
 .product-features {
   font-size: 0.72rem;
   color: var(--muted);
